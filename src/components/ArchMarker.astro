@@ -1,0 +1,10 @@
+---
+// Repère invisible placé dans un module : dès qu'il passe au-dessus du milieu de l'écran,
+// la barre latérale (ArchSidebar) allume les parties listées dans `parts`.
+interface Props {
+  parts?: string;
+  label: string;
+}
+const { parts = '', label } = Astro.props;
+---
+<div data-arch-marker data-parts={parts} data-label={label}></div>

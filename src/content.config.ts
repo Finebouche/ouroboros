@@ -1,0 +1,15 @@
+import { defineCollection, z } from 'astro:content';
+import { glob } from 'astro/loaders';
+
+const modules = defineCollection({
+  loader: glob({ pattern: '**/*.{md,mdx}', base: './src/content/modules' }),
+  schema: z.object({
+    num: z.number(),
+    title: z.string(),
+    summary: z.string(),
+    status: z.enum(['a-venir', 'en-cours', 'termine']).default('a-venir'),
+    sidebar: z.enum(['transformer']).optional(),
+  }),
+});
+
+export const collections = { modules };

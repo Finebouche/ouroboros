@@ -1,0 +1,95 @@
+:root {
+  --bg: #fbfaf7;
+  --surface: #ffffff;
+  --surface-2: #f3f1ea;
+  --text: #1f1e1b;
+  --text-2: #5f5e5a;
+  --border: #dedcd2;
+  --accent: #185fa5;
+  --accent-bg: #e6f1fb;
+  --ok: #5dcaa5;
+  --ok-soft: #9fe1cb;
+  --warn: #ef9f27;
+  --bad: #e24b4a;
+  --hl-bg: #faeeda;
+  --hl-stroke: #ba7517;
+  --hl-text: #633806;
+  --radius: 8px;
+  --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1a1917;
+    --surface: #23221f;
+    --surface-2: #2c2b27;
+    --text: #ecebe5;
+    --text-2: #a9a79d;
+    --border: #3a3935;
+    --accent: #85b7eb;
+    --accent-bg: #0c447c;
+    --hl-bg: #633806;
+    --hl-stroke: #ef9f27;
+    --hl-text: #fac775;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 17px/1.7 var(--font);
+}
+a { color: var(--accent); }
+code { font-family: var(--mono); font-size: 0.9em; background: var(--surface-2); padding: 0.1em 0.35em; border-radius: 4px; }
+pre code { background: none; padding: 0; }
+pre { background: var(--surface-2); padding: 1rem; border-radius: var(--radius); overflow-x: auto; }
+h1, h2, h3 { font-weight: 500; line-height: 1.3; }
+h1 { font-size: 28px; }
+h2 { font-size: 22px; margin-top: 2.2rem; }
+h3 { font-size: 18px; }
+button {
+  font: inherit; font-size: 14px; color: var(--text);
+  background: transparent; border: 1px solid var(--border);
+  padding: 6px 12px; border-radius: var(--radius); cursor: pointer;
+}
+button:hover { background: var(--surface-2); }
+button.active { border-color: var(--accent); color: var(--accent); }
+.shell { max-width: 780px; margin: 0 auto; padding: 0 16px 4rem; }
+.site-header { border-bottom: 1px solid var(--border); margin-bottom: 2rem; }
+.site-header .shell { display: flex; align-items: baseline; gap: 1.5rem; padding-bottom: 0; }
+.site-header a.brand { font-weight: 500; text-decoration: none; color: var(--text); padding: 1rem 0; }
+.callout { background: var(--surface-2); border-radius: var(--radius); padding: 0.75rem 1rem; margin: 1.5rem 0; }
+.callout > :first-child { margin-top: 0; }
+.callout > :last-child { margin-bottom: 0; }
+.quiz { border-left: 3px solid var(--accent); background: var(--accent-bg); padding: 0.75rem 1rem; margin: 1.5rem 0; }
+.quiz > :first-child { margin-top: 0; }
+.quiz > :last-child { margin-bottom: 0; }
+.badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-2); white-space: nowrap; }
+.badge.termine { background: var(--ok-soft); color: #04342c; border-color: transparent; }
+.badge.en-cours { background: var(--warn); color: #412402; border-color: transparent; }
+
+.shell.wide { max-width: 1100px; }
+.layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 2.5rem; align-items: start; }
+.layout > aside { position: sticky; top: 1rem; }
+.layout > article { max-width: 780px; min-width: 0; }
+@media (max-width: 1000px) { .layout { display: block; } .layout > aside { display: none; } }
+
+.katex-display { margin: 1.4rem 0; overflow-x: auto; overflow-y: hidden; }
+.katex { font-size: 1.08em; }
+.widget { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; margin: 1.5rem 0; }
+.widget .row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 10px; font-size: 14px; color: var(--text-2); }
+.widget .row b { color: var(--text); min-width: 20px; }
+.retain { border-left: 3px solid var(--ok); background: var(--surface-2); padding: 0.75rem 1rem; margin: 1.5rem 0; }
+.retain > :first-child { margin-top: 0; }
+.retain > :last-child { margin-bottom: 0; }
+
+.reveal { margin: 0.4rem 0 1rem; }
+.reveal summary { cursor: pointer; font-size: 14px; color: var(--accent); width: fit-content; }
+.reveal .ans { margin-top: 0.4rem; padding: 0.5rem 0.9rem; background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); }
+.reveal .ans > :first-child { margin-top: 0; }
+.reveal .ans > :last-child { margin-bottom: 0; }
+.widget .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-top: 8px; }
+.widget .kpis > div { background: var(--surface-2); border-radius: var(--radius); padding: 0.75rem 1rem; }
+.widget .kpis span { display: block; font-size: 13px; color: var(--text-2); }
+.widget .kpis b { font-size: 24px; font-weight: 500; }

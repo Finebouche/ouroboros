@@ -1,0 +1,242 @@
+---
+num: 0
+title: Bases
+summary: Modèle autoregressif, teacher forcing, attention causale, KV cache, fenêtre glissante.
+status: en-cours
+sidebar: transformer
+---
+import CausalAttention from '../../components/widgets/CausalAttention.astro';
+import QKVProjection from '../../components/widgets/QKVProjection.astro';
+import ArchMarker from '../../components/ArchMarker.astro';
+import KVCacheSteps from '../../components/widgets/KVCacheSteps.astro';
+import KVCacheMemory from '../../components/widgets/KVCacheMemory.astro';
+import Reveal from '../../components/Reveal.astro';
+
+<ArchMarker label="Vue d'ensemble : un transformer décodeur, un bloc répété N fois" />
+
+<ArchMarker parts="embed norm1 attn" label="Entrée de l'attention : le vecteur de chaque token est projeté en Q, K, V" />
+
+## 1. Rappel : d'où viennent Q, K et V ?
+
+Un token n'est d'abord qu'un numéro. Une table d'*embeddings* le remplace par un vecteur de $d_{\text{model}}$ nombres, noté $x_i$ : c'est tout ce que le modèle sait de ce token à l'entrée de l'attention (en pratique après un RMSNorm, et enrichi par les couches précédentes).
+
+Dans l'attention, on projette ce vecteur trois fois, avec trois matrices apprises $W_Q$, $W_K$ et $W_V$. Ce sont trois projections linéaires du même vecteur $x_i$, et ce que chacune finit par encoder est décidé par l'entraînement. Les trois résultats s'appellent la requête $q_i$ (*query*), la clé $k_i$ (*key*) et la valeur $v_i$ (*value*).
+
+$$
+Q = X\,W_Q, \qquad K = X\,W_K, \qquad V = X\,W_V
+$$
+
+<QKVProjection />
+
+<div class="retain">
+
+**À retenir**
+
+- Un token devient un vecteur $x_i$ (son embedding).
+- $q_i = x_i W_Q$, $k_i = x_i W_K$, $v_i = x_i W_V$ : trois projections linéaires du même vecteur ; ce que chacune encode est décidé par l'entraînement.
+- $q_i$, $k_i$, $v_i$ sont plus petits que $x_i$ : $d_k = d_v < d_x$.
+
+</div>
+
+<div class="quiz">
+
+**Questions de vérification**
+
+**Q1.** Si on modifie $W_K$ mais pas $W_Q$ ni $W_V$, qu'est-ce qui change dans l'attention : les scores, les valeurs $v_j$, ou les deux ?
+
+<Reveal>
+
+Les scores changent : $k_j$ change, donc $q_i \cdot k_j$ aussi, et donc les poids d'attention après softmax. Les vecteurs $v_j$ eux-mêmes ne changent pas, mais la sortie $\sum_j a_{ij}\, v_j$ change quand même, car leur pondération a changé.
+
+</Reveal>
+
+**Q2.** Pourquoi est-ce utile que les mêmes $W_Q$, $W_K$, $W_V$ servent pour tous les mots, quand on pense à l'entraînement parallèle ?
+
+<Reveal>
+
+Les mêmes matrices s'appliquent à chaque ligne de $X$, et la projection d'un token ne dépend pas des résultats des autres tokens. On calcule donc $Q = XW_Q$ (et $K$, $V$) en un seul gros produit matriciel pour toute la séquence, ce que le GPU fait très efficacement, au lieu de $s$ petites opérations l'une après l'autre.
+
+</Reveal>
+
+**Q3.** Pourquoi utilise-t-on deux matrices distinctes $W_Q$ et $W_K$ plutôt qu'une seule ? (Indice : que vaudrait le score $q_i \cdot k_j$ si $W_Q = W_K$ ?)
+
+<Reveal>
+
+Avec une seule matrice ($W_Q = W_K = W$), on aurait $q_i \cdot k_j = x_i\,W W^{\top} x_j^{\top}$, qui est égal à $q_j \cdot k_i$ : les scores seraient symétriques avant masquage, donc le score de $i$ vers $j$ serait égal à celui de $j$ vers $i$. Or « $i$ regarde $j$ » n'implique pas « $j$ regarde $i$ ». Avec deux matrices, $W_Q W_K^{\top}$ n'est pas symétrique en général, et l'attention peut être asymétrique.
+
+</Reveal>
+
+</div>
+
+<ArchMarker parts="head" label="Sortie du modèle : une distribution de probabilité sur le token suivant, à chaque position (softmax sur le vocabulaire, distinct du softmax de l'attention)" />
+
+## 2. Entraîner en parallèle, générer pas à pas
+
+Un modèle de langage *autoregressif* prédit le token suivant à partir de ceux qui le précèdent.
+
+- **Entraînement (teacher forcing)** : on connaît toute la phrase, donc on calcule les prédictions de toutes les positions en une seule passe.
+- **Génération** : le token suivant n'existe pas encore, donc on avance un pas à la fois.
+
+<div class="callout">
+
+**Autoregressif, par opposition à quoi ?** À un modèle *masqué bidirectionnel* comme BERT : on cache des tokens au milieu de la phrase et chaque position voit à la fois sa gauche et sa droite (matrice d'attention pleine, sans masque causal). C'est excellent pour comprendre un texte, mais ça ne génère pas naturellement. Un modèle autoregressif ne voit que sa gauche, et réinjecte ses propres sorties comme entrées, d'où la génération pas à pas.
+
+</div>
+
+<ArchMarker parts="attn" label="Attention causale : le masque triangulaire" />
+
+<CausalAttention />
+
+### L'intuition
+
+Chaque case (ligne *i*, colonne *j*) dit « combien le token *i* regarde le token *j* ». Le masque causal interdit de regarder à droite de la diagonale. Comme tout le triangle est connu à l'entraînement, on le remplit d'un coup avec un seul produit matriciel (*GEMM*, General Matrix Multiply).
+
+<ArchMarker parts="attn" label="Attention causale : Q, K, V et le masque M" />
+
+### La formule
+
+$$
+A \;=\; \mathrm{softmax}\!\left(\frac{Q\,K^{\top}}{\sqrt{d_k}} \;+\; M\right) V
+$$
+
+- $Q$, $K$, $V$ : les matrices de la section 1, une ligne par token.
+- $Q\,K^{\top}$ : la grille $s \times s$ de scores.
+- $M$ : le masque, $0$ dans le triangle, $-\infty$ au-dessus (donc poids exactement $0$ après le softmax).
+- $\sqrt{d_k}$ : normalisation, avec $d_k$ la dimension des clés ; elle évite que les scores grossissent avec $d_k$.
+
+<ArchMarker parts="attn kv" label="KV cache : K et V gardés en mémoire à la génération" />
+
+À la génération, les lignes déjà calculées ne changent plus : on garde donc $K$ et $V$ des tokens passés, c'est le *KV cache*, détaillé à la section 3.
+
+<div class="retain">
+
+**À retenir**
+
+- Autoregressif : on prédit le token suivant en ne voyant que sa gauche (à l'opposé de BERT, bidirectionnel).
+- Entraînement : toute la séquence en parallèle (teacher forcing), via un seul produit $Q K^{\top}$ avec un masque triangulaire. Génération : un token à la fois.
+- $A = \mathrm{softmax}\!\left(\frac{Q K^{\top}}{\sqrt{d_k}} + M\right) V$ ; chaque ligne de poids somme à 1.
+- KV cache : on garde $K$ et $V$ des tokens passés pour ne pas les recalculer ; il grandit d'un token par pas.
+
+</div>
+
+<div class="quiz">
+
+**Questions de vérification**
+
+**Q1.** Si on double $s$, que deviennent le nombre de cases calculées et le nombre d'étapes séquentielles, à l'entraînement et à la génération ?
+
+<Reveal>
+
+Cases calculées : $s(s+1)/2$ devient environ 4 fois plus grand (croissance quadratique ; par exemple 36 cases pour $s = 8$, 136 pour $s = 16$). Étapes séquentielles : 1 à l'entraînement, quelle que soit $s$ ; $s$ à la génération, donc 2 fois plus.
+
+</Reveal>
+
+**Q2.** Pourquoi peut-on tout calculer d'un coup à l'entraînement et pas à la génération ?
+
+<Reveal>
+
+À l'entraînement, tous les tokens de la phrase sont connus d'avance (teacher forcing) : les $Q$, $K$, $V$ de toutes les positions existent déjà, et le masque suffit à interdire de regarder le futur. À la génération, le token $t+1$ est la sortie du pas $t$ : il n'existe pas avant, il faut donc attendre.
+
+</Reveal>
+
+**Q3.** Si chaque token devait attendre le résultat complet du précédent (comme un LSTM), même à l'entraînement, que deviendrait le parallélisme ?
+
+<Reveal>
+
+Il serait perdu sur l'axe de la séquence : le calcul du token $i$ dépendrait de la sortie du token $i-1$, donc il faudrait $s$ étapes successives au lieu d'une (le GPU ne pourrait plus paralléliser que sur le batch et à l'intérieur d'un token). C'est le problème des RNN et des LSTM, et la question centrale pour le couplage des deux récurrences dans Ouroboros.
+
+</Reveal>
+
+</div>
+
+<ArchMarker parts="attn kv" label="KV cache : ce qu'on garde, ce qu'on recalcule" />
+
+## 3. Le KV cache en détail
+
+À la génération, le token $t$ compare sa requête $q_t$ aux clés et aux valeurs de tous les tokens précédents. Ces clés et valeurs ne changent plus une fois calculées : à chaque couche, la représentation du token $i$ ne dépend que des tokens $\le i$ (causalité), donc ajouter des tokens après lui ne la modifie pas. On les garde donc en mémoire plutôt que de les recalculer à chaque pas.
+
+<KVCacheSteps />
+
+### Ce que ça change
+
+Au pas $t$, on ne projette que le nouveau token, et on ajoute une ligne au cache :
+
+$$
+K_{\le t} = \begin{bmatrix} K_{<t} \\ x_t W_K \end{bmatrix}, \qquad
+V_{\le t} = \begin{bmatrix} V_{<t} \\ x_t W_V \end{bmatrix}, \qquad
+o_t = \mathrm{softmax}\!\left(\frac{q_t\, K_{\le t}^{\top}}{\sqrt{d_k}}\right) V_{\le t}
+$$
+
+- $q_t = x_t W_Q$ : la requête du nouveau token seulement.
+- $K_{<t}$, $V_{<t}$ : le cache, une ligne par token passé.
+- Pas besoin de masque : le cache ne contient que le passé.
+- Le cache économise le **recalcul**, pas la **lecture** : $q_t$ est comparé à $t$ clés dans les deux cas, donc le coût d'un pas croît avec $t$.
+- On met $K$ et $V$ en cache, pas $Q$ : la requête d'un token passé n'a servi qu'une fois, pour calculer sa propre ligne.
+
+### Ce que ça coûte en mémoire
+
+<ArchMarker parts="attn kv" label="KV cache : taille en mémoire" />
+
+$$
+M \;=\; 2 \times L \times h_{kv} \times d_k \times b \times s
+$$
+
+- $2$ : une clé et une valeur par token.
+- $L$ : nombre de couches (chacune a son propre cache).
+- $h_{kv}$ : nombre de têtes de clés et de valeurs. Avec l'attention multi-têtes classique, c'est le nombre de têtes ; avec la *grouped-query attention* (GQA), plusieurs têtes de requête partagent une tête de clés/valeurs, donc $h_{kv}$ est plus petit.
+- $d_k$ : dimension d'une tête.
+- $b$ : nombre d'octets par nombre (2 en bf16 ou fp16).
+- $s$ : nombre de tokens dans le cache. $M$ est pour une séquence ; il faut multiplier par le nombre de séquences traitées en parallèle.
+
+<KVCacheMemory />
+
+Le cache grandit linéairement et sans borne avec $s$. C'est ce que limite l'attention à fenêtre glissante (section suivante).
+
+<div class="retain">
+
+**À retenir**
+
+- Les $K$ et $V$ des tokens passés ne changent plus (causalité) : on les garde. À chaque pas, on ne projette que le nouveau token et on ajoute une ligne.
+- Sans cache, générer $s$ tokens traite $s(s+1)/2$ tokens au total ; avec cache, $s$.
+- Le cache économise le recalcul, pas la lecture : $q_t$ est comparé à $t$ clés à chaque pas.
+- On met en cache $K$ et $V$, pas $Q$.
+- Taille : $M = 2\,L\,h_{kv}\,d_k\,b\,s$ par séquence, linéaire en $s$ ; réduire $h_{kv}$ (GQA) réduit le cache d'autant.
+
+</div>
+
+<div class="quiz">
+
+**Questions de vérification**
+
+**Q1.** Pour générer $s = 1000$ tokens à partir de rien, combien de tokens traite-t-on au total sans cache, et avec cache ?
+
+<Reveal>
+
+Sans cache, au pas $t$ on retraite les $t$ tokens : $1 + 2 + \dots + 1000 = 1000 \times 1001 / 2 = 500\,500$ tokens. Avec cache : $1000$, un par pas. Environ 500 fois moins.
+
+</Reveal>
+
+**Q2.** Pourquoi met-on $K$ et $V$ en cache, mais pas $Q$ ?
+
+<Reveal>
+
+La requête $q_i$ d'un token ne sert qu'au pas $i$, pour calculer sa propre ligne d'attention. Aux pas suivants, le nouveau token a sa propre requête ; les anciennes ne sont jamais relues. En revanche, les clés et les valeurs des anciens tokens sont relues à chaque pas.
+
+</Reveal>
+
+**Q3.** Un modèle a $L = 32$ couches, $h_{kv} = 8$ têtes de clés/valeurs, $d_k = 128$, en bf16 (2 octets). Quelle est la taille du cache par token ? Pour $s = 32\,000$ tokens ? Et si $h_{kv} = 32$ ?
+
+<Reveal>
+
+Par token : $2 \times 32 \times 8 \times 128 \times 2 = 131\,072$ octets, soit environ 131 Ko. Pour $32\,000$ tokens : environ $4{,}2$ Go. Avec $h_{kv} = 32$, la taille est multipliée par 4 : environ $16{,}8$ Go. Doubler $s$ double toujours le cache (croissance linéaire).
+
+</Reveal>
+
+</div>
+
+<ArchMarker parts="norm1 attn add1 norm2 mlp add2" label="Le bloc complet : norme, attention, MLP, résidus (à venir)" />
+
+## À venir dans ce module
+
+- L'attention à fenêtre glissante (sliding window, W) : mémoire O(W) au lieu de O(s).
+- Le bloc de transformer complet : RMSNorm, attention, MLP, résidu.

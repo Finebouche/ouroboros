@@ -1,0 +1,69 @@
+---
+// Widget du module 0 : à chaque pas de génération, ce qu'on recalcule sans cache et avec cache.
+---
+<div class="widget kvsteps" data-widget="kv-steps">
+  <div class="row">
+    <label>Pas t <input type="range" data-ref="t" min="1" max="10" step="1" value="4" /></label>
+    <b data-ref="t-out">4</b>
+    <button data-ref="prev">&larr; pas</button>
+    <button data-ref="next">pas suivant &rarr;</button>
+  </div>
+  <div class="lane"><div class="lname">Sans cache</div><div class="toks" data-ref="no"></div></div>
+  <div class="lane"><div class="lname">Avec cache</div><div class="toks" data-ref="yes"></div></div>
+  <div class="legend">
+    <span><i class="sw new"></i>K, V projetés à ce pas</span>
+    <span><i class="sw cache"></i>K, V lus dans le cache</span>
+    <span><i class="sw future"></i>pas encore généré</span>
+  </div>
+  <div class="kpis">
+    <div><span>Tokens traités à ce pas</span><div data-ref="k1"></div></div>
+    <div><span>Cumul depuis le pas 1</span><div data-ref="k2"></div></div>
+    <div><span>Clés comparées à q<sub>t</sub></span><div data-ref="k3"></div></div>
+  </div>
+</div>
+
+<script>
+  import { WORDS } from './qkvData';
+
+  document.querySelectorAll<HTMLElement>('[data-widget="kv-steps"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const N = 10;
+    const slider = $('t') as HTMLInputElement;
+    let t = 4;
+
+    const lane = (kind: (i: number) => string) =>
+      WORDS.slice(0, N)
+        .map((w, i) => `<span class="tk ${kind(i)}">${w}</span>`)
+        .join('');
+
+    function draw() {
+      $('no').innerHTML = lane((i) => (i < t ? 'new' : 'future'));
+      $('yes').innerHTML = lane((i) => (i < t - 1 ? 'cache' : i === t - 1 ? 'new' : 'future'));
+      $('t-out').textContent = String(t);
+      slider.value = String(t);
+      const cum = (t * (t + 1)) / 2;
+      $('k1').innerHTML = `<b>${t}</b> sans · <b>1</b> avec`;
+      $('k2').innerHTML = `<b>${cum}</b> sans · <b>${t}</b> avec`;
+      $('k3').innerHTML = `<b>${t}</b> dans les deux cas`;
+    }
+
+    slider.addEventListener('input', () => { t = +slider.value; draw(); });
+    $('next').addEventListener('click', () => { if (t < N) t++; draw(); });
+    $('prev').addEventListener('click', () => { if (t > 1) t--; draw(); });
+    draw();
+  });
+</script>
+
+<style is:global>
+  .kvsteps .lane { display: flex; align-items: center; gap: 12px; margin: 8px 0; }
+  .kvsteps .lname { width: 84px; flex: none; font-size: 13px; color: var(--text-2); }
+  .kvsteps .toks { display: flex; flex-wrap: wrap; gap: 4px; }
+  .kvsteps .tk { min-width: 52px; text-align: center; font-size: 13px; padding: 6px 4px; border-radius: 6px; border: 1px solid var(--border); }
+  .kvsteps .tk.new, .kvsteps .sw.new { background: var(--hl-bg); border-color: var(--hl-stroke); color: var(--hl-text); }
+  .kvsteps .tk.cache, .kvsteps .sw.cache { background: var(--ok-soft); border-color: var(--ok); color: #04342c; }
+  .kvsteps .tk.future, .kvsteps .sw.future { border-style: dashed; color: var(--text-2); opacity: 0.5; background: transparent; }
+  .kvsteps .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--text-2); margin: 10px 0; }
+  .kvsteps .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid; margin-right: 6px; vertical-align: -1px; }
+  .kvsteps .kpis > div > div { font-size: 14px; color: var(--text-2); }
+  .kvsteps .kpis b { font-size: 22px; }
+</style>

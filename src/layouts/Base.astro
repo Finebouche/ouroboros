@@ -1,0 +1,24 @@
+---
+import '../styles/global.css';
+import 'katex/dist/katex.min.css';
+interface Props { title: string; wide?: boolean }
+const { title, wide = false } = Astro.props;
+---
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title} · Ouroboros, le cours</title>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class:list={["shell", { wide }]}>
+        <a class="brand" href="/">Ouroboros, le cours</a>
+      </div>
+    </header>
+    <main class:list={["shell", { wide }]}>
+      <slot />
+    </main>
+  </body>
+</html>
