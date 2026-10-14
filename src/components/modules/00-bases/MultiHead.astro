@@ -1,0 +1,134 @@
+---
+// Widget du module 0 : attention multi-têtes — h motifs d'attention, sorties mises bout à bout, puis W_O.
+---
+<div class="widget mhead" data-widget="mhead">
+  <div class="row">
+    <span>Nombre de têtes h :</span>
+    <span data-ref="hs"></span>
+  </div>
+  <div class="mt-sec">Le motif d'attention de chaque tête : softmax(S masqué)</div>
+  <div class="mrowx" data-ref="heads"></div>
+  <div class="mt-sec">Les sorties des têtes, mises bout à bout, puis × W<sub>O</sub></div>
+  <div class="mrowx" data-ref="flow"></div>
+  <p class="mcapx" data-ref="cap"></p>
+  <div class="kpis">
+    <div><span>Dimension par tête d<sub>k</sub></span><b data-ref="k-dk"></b></div>
+    <div><span>Paramètres W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub>, W<sub>O</sub></span><b data-ref="k-par"></b></div>
+    <div><span>Motifs d'attention</span><b data-ref="k-mot"></b></div>
+  </div>
+</div>
+
+<script>
+  import { WORDS, X, WQ, WK, WV, D_MODEL, mul } from './qkvData';
+
+  document.querySelectorAll<HTMLElement>('[data-widget="mhead"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    type M = number[][];
+    const N = 6;
+    const w = WORDS.slice(0, N);
+    const Xn = X.slice(0, N);
+    const HC = ['var(--c-h1)', 'var(--c-h2)', 'var(--c-h3)', 'var(--c-h4)'];
+
+    // tirages reproductibles : W ~ N(0, 1/d_model), arrondis à 1 décimale
+    const rng = (seed: number) => () => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let r = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+    const gauss = (r: () => number) => Math.sqrt(-2 * Math.log(1 - r())) * Math.cos(2 * Math.PI * r());
+    const randM = (r: () => number, rows: number, cols: number) =>
+      Array.from({ length: rows }, () => Array.from({ length: cols }, () => Math.round((gauss(r) / Math.sqrt(D_MODEL)) * 10) / 10));
+    const WO = randM(rng(7), D_MODEL, D_MODEL);
+
+    function heads(h: number) {
+      const dk = D_MODEL / h;
+      const r = rng(100 + h);
+      return Array.from({ length: h }, (_, m) => {
+        const base = h === 2 && m === 0; // la tête 1 à h = 2 est celle des widgets précédents
+        const [wq, wk, wv] = base ? [WQ, WK, WV] : [randM(r, D_MODEL, dk), randM(r, D_MODEL, dk), randM(r, D_MODEL, dk)];
+        const Q = Xn.map((x) => mul(x, wq)), K = Xn.map((x) => mul(x, wk)), Vv = Xn.map((x) => mul(x, wv));
+        const P = Q.map((q, i) => {
+          const ex = K.map((k, j) => (j <= i ? Math.exp(q.reduce((a, v, d) => a + v * k[d], 0) / Math.sqrt(dk)) : 0));
+          const z = ex.reduce((a, b) => a + b, 0);
+          return ex.map((e) => e / z);
+        });
+        const O = P.map((p) => Vv[0].map((_, c) => p.reduce((a, wt, j) => a + wt * Vv[j][c], 0)));
+        return { P, O, dk };
+      });
+    }
+
+    type Opt = { cell: number; rows?: string[]; color: string | ((c: number) => string); vmax?: number; mask?: boolean; shape: string };
+    function mat(title: string, m: M, o: Opt) {
+      const lw = o.rows ? 36 : 0, th = 4;
+      const nr = m.length, nc = m[0].length;
+      const vmax = o.vmax ?? Math.max(...m.flat().map(Math.abs));
+      const col = (c: number) => (typeof o.color === 'function' ? o.color(c) : o.color);
+      let g = '';
+      m.forEach((row, i) => {
+        const cy = th + i * o.cell + o.cell / 2;
+        if (o.rows) g += `<text x="${lw - 5}" y="${cy + 3.5}" text-anchor="end">${o.rows[i]}</text>`;
+        row.forEach((v, j) => {
+          const x0 = lw + j * o.cell, y0 = th + i * o.cell;
+          const masked = o.mask && j > i;
+          g += `<rect x="${x0 + 1}" y="${y0 + 1}" width="${o.cell - 2}" height="${o.cell - 2}" rx="3" fill="${masked ? 'var(--surface-2)' : 'none'}" stroke="var(--border)" stroke-width="0.5"/>`;
+          if (masked) return;
+          const r = Math.abs(v) < 1e-9 ? 1 : (o.cell / 2 - 2) * Math.sqrt(Math.abs(v) / vmax);
+          const st = v < 0 ? `fill="none" stroke="${col(j)}" stroke-width="1.5"` : `fill="${col(j)}"`;
+          g += `<circle cx="${x0 + o.cell / 2}" cy="${cy}" r="${r.toFixed(2)}" ${st}><title>${v.toFixed(2)}</title></circle>`;
+        });
+      });
+      const W = lw + nc * o.cell, H = th + nr * o.cell;
+      return `<div class="mblk"><div class="mt">${title}</div><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${o.shape}">${g}</svg><div class="ms">${o.shape}</div></div>`;
+    }
+    const op = (t: string) => `<div class="op">${t}</div>`;
+
+    let h = 2;
+    const hs = [1, 2, 4];
+    const btns = hs.map((n) => {
+      const b = document.createElement('button');
+      b.textContent = String(n);
+      b.addEventListener('click', () => { h = n; draw(); });
+      $('hs').appendChild(b);
+      return b;
+    });
+
+    function draw() {
+      btns.forEach((b, k) => b.classList.toggle('active', hs[k] === h));
+      const H = heads(h);
+      const dk = D_MODEL / h;
+      const cell = 18;
+      $('heads').innerHTML = H.map((hd, m) =>
+        mat(`tête ${m + 1}`, hd.P, { cell, rows: m === 0 ? w : undefined, color: HC[m], vmax: 1, mask: true, shape: `${N} × ${N}` }),
+      ).join('');
+      const concat = H[0].O.map((_, i) => H.flatMap((hd) => hd.O[i]));
+      const out = concat.map((row) => mul(row, WO));
+      $('flow').innerHTML =
+        H.map((hd, m) => mat(`tête ${m + 1}`, hd.O, { cell, rows: m === 0 ? w : undefined, color: HC[m], shape: `${N} × ${dk}` })).join('') +
+        op('bout à bout →') +
+        mat('concaténation', concat, { cell, color: (c) => HC[Math.floor(c / dk)], shape: `${N} × ${D_MODEL}` }) +
+        op('× W<sub>O</sub> =') +
+        mat('sortie', out, { cell, color: 'var(--text-2)', shape: `${N} × ${D_MODEL}` });
+      $('cap').innerHTML =
+        h === 1
+          ? `Une seule tête, avec d<sub>k</sub> = ${D_MODEL} : un seul motif d'attention.`
+          : `${h} têtes de d<sub>k</sub> = ${dk} : ${h} motifs d'attention différents, calculés en parallèle. Leurs sorties (${N} × ${dk} chacune) sont mises bout à bout en ${N} × ${D_MODEL}, puis W<sub>O</sub> les mélange.${h === 2 ? ' La tête 1 est celle des widgets précédents.' : ''}`;
+      $('k-dk').textContent = String(dk);
+      $('k-par').textContent = String(3 * D_MODEL * h * dk + D_MODEL * D_MODEL);
+      $('k-mot').textContent = String(h);
+    }
+    draw();
+  });
+</script>
+
+<style is:global>
+  .mhead .row button { font-size: 13px; padding: 2px 12px; margin-right: 4px; }
+  .mhead .mt-sec { font-size: 13px; font-weight: 500; margin: 12px 0 4px; }
+  .mhead .mrowx { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .mhead .mblk { display: flex; flex-direction: column; align-items: center; }
+  .mhead .mt { font-size: 12px; margin-bottom: 2px; white-space: nowrap; color: var(--text-2); }
+  .mhead .ms { font-size: 11px; color: var(--text-2); }
+  .mhead .op { font-size: 14px; color: var(--text-2); white-space: nowrap; }
+  .mhead svg text { font: 10px var(--font); fill: var(--text-2); }
+  .mhead .mcapx { font-size: 14px; line-height: 1.5; margin: 12px 0 6px; }
+</style>

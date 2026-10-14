@@ -8,7 +8,6 @@
     <label class="nums"><input type="checkbox" data-ref="nums" /> afficher les nombres</label>
   </div>
   <div data-ref="body"></div>
-  <p class="note">Aire du disque = valeur absolue. Disque plein = positif, cercle creux = négatif, point minuscule = zéro.</p>
 </div>
 
 <script>
@@ -17,7 +16,7 @@
   document.querySelectorAll<HTMLElement>('[data-widget="qkv"]').forEach((root) => {
     const NW = 4;
     const W = { Q: WQ, K: WK, V: WV } as const;
-    const COLORS = { Q: '#7f77dd', K: '#1d9e75', V: '#d85a30' } as const;
+    const COLORS = { Q: 'var(--c-q)', K: 'var(--c-k)', V: 'var(--c-v)' } as const;
     const kinds = ['Q', 'K', 'V'] as const;
     let sel = 3;
     const wordsEl = root.querySelector<HTMLElement>('[data-ref="words"]')!;
@@ -75,7 +74,7 @@
       const Xs = X.slice(0, NW);
       const x = Xs[sel];
       const w = words[sel];
-      let h = `<div class="blk"><div class="cap">Embeddings <b>X</b> : une ligne par mot, ${D_MODEL} nombres chacun</div>${table(Xs, sel, words, 'var(--text-2)', 1)}</div>`;
+      let h = `<div class="blk"><div class="cap">Embeddings <b>X</b> : une ligne par mot, ${D_MODEL} nombres chacun</div>${table(Xs, sel, words, 'var(--text-2)', 2)}</div>`;
       h += '<div class="cards">';
       for (const k of kinds) {
         const k_ = k.toLowerCase();

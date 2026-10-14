@@ -8,7 +8,7 @@ const modules = defineCollection({
     title: z.string(),
     summary: z.string(),
     status: z.enum(['a-venir', 'en-cours', 'termine']).default('a-venir'),
-    sidebar: z.enum(['transformer']).optional(),
+    sidebar: z.enum(['transformer', 'loop']).optional(),
   }),
 });
 

@@ -1,0 +1,21 @@
+---
+// Articles liés à une partie du cours : [titre, auteurs, année, identifiant arXiv].
+interface Props { items: [string, string, number, string][] }
+const { items } = Astro.props;
+---
+<p class="refs">
+  <span class="rl">Articles</span>
+  {items.map(([title, authors, year, id], i) => (
+    <>
+      {i > 0 && <span class="sep">·</span>}
+      <a href={`https://arxiv.org/abs/${id}`} target="_blank" rel="noopener">{title}</a> <span class="ra">({authors}, {year})</span>
+    </>
+  ))}
+</p>
+
+<style>
+  .refs { font-size: 13px; line-height: 1.6; color: var(--text-2); margin: -0.6rem 0 1.5rem; }
+  .rl { font-weight: 500; color: var(--text); margin-right: 6px; }
+  .sep { margin: 0 6px; }
+  .ra { color: var(--text-2); }
+</style>

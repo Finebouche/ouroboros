@@ -1,7 +1,7 @@
 ---
 import { getCollection, render } from 'astro:content';
 import Base from '../../layouts/Base.astro';
-import ArchSidebar from '../../components/ArchSidebar.astro';
+import ArchSidebar from '../../components/shared/ArchSidebar.astro';
 
 export async function getStaticPaths() {
   const modules = (await getCollection('modules')).sort((a, b) => a.data.num - b.data.num);
@@ -16,7 +16,7 @@ const { Content } = await render(entry);
 ---
 <Base title={`Module ${entry.data.num} · ${entry.data.title}`} wide={!!entry.data.sidebar}>
   <div class:list={[{ layout: !!entry.data.sidebar }]}>
-    {entry.data.sidebar === 'transformer' && <ArchSidebar />}
+    {entry.data.sidebar && <ArchSidebar variant={entry.data.sidebar} />}
     <article>
       <p><a href="/">&larr; Carte de progression</a></p>
       <h1>Module {entry.data.num} · {entry.data.title}</h1>

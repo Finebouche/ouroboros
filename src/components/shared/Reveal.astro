@@ -1,0 +1,23 @@
+---
+// Réponse floutée : un clic (ou Entrée / Espace) la rend nette, un second clic la refloute.
+---
+<div class="reveal" data-reveal role="button" tabindex="0" aria-pressed="false" aria-label="Afficher la réponse">
+  <div class="ans"><slot /></div>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-reveal]').forEach((el) => {
+    const toggle = () => {
+      const shown = el.classList.toggle('shown');
+      el.setAttribute('aria-pressed', String(shown));
+      el.setAttribute('aria-label', shown ? 'Masquer la réponse' : 'Afficher la réponse');
+    };
+    el.addEventListener('click', toggle);
+    el.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') {
+        ev.preventDefault();
+        toggle();
+      }
+    });
+  });
+</script>

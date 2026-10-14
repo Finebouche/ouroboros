@@ -1,0 +1,13 @@
+---
+// Repère invisible placé dans un module : dès qu'il passe au-dessus du milieu de l'écran,
+// la barre latérale (ArchSidebar) allume les parties listées dans `parts`.
+// `follow` (sélecteur d'un widget) : tant que ce repère est actif, le schéma suit l'étape affichée par ce widget
+// (lue dans ses attributs data-arch-parts / data-arch-label) ; `parts` et `label` servent alors de valeurs de repli.
+interface Props {
+  parts?: string;
+  label: string;
+  follow?: string;
+}
+const { parts = '', label, follow } = Astro.props;
+---
+<div data-arch-marker data-parts={parts} data-label={label} data-follow={follow}></div>

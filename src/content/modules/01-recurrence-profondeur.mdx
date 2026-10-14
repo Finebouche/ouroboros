@@ -1,0 +1,161 @@
+---
+num: 1
+title: "Récurrence en profondeur"
+summary: "Looped transformers : un bloc partagé bouclé T fois, input injection, coûts, champ réceptif T·W."
+status: en-cours
+sidebar: loop
+---
+import ArchMarker from '../../components/shared/ArchMarker.astro';
+import Reveal from '../../components/shared/Reveal.astro';
+import Quiz from '../../components/shared/Quiz.astro';
+import Refs from '../../components/shared/Refs.astro';
+import LoopStack from '../../components/modules/01-recurrence-profondeur/LoopStack.astro';
+import ReachCone from '../../components/shared/ReachCone.astro';
+
+<ArchMarker parts="block loop" label="Un bloc partagé, répété T fois sur chaque token" />
+
+Au lieu d'empiler $N$ couches différentes, on réutilise **le même bloc** (mêmes poids) plusieurs fois de suite. Exemples : Universal Transformer (2018), ALBERT (2019, poids partagés entre couches), et plus récemment Huginn (2025), Ouro (2025) et Parcae (2026).
+
+<Refs items={[["Universal Transformers", "Dehghani et al.", 2018, "1807.03819"], ["ALBERT", "Lan et al.", 2019, "1909.11942"], ["Scaling up Test-Time Compute with Latent Reasoning: A Recurrent Depth Approach (Huginn)", "Geiping et al.", 2025, "2502.05171"], ["Scaling Latent Reasoning via Looped Language Models (Ouro)", "Zhu et al.", 2025, "2510.25741"], ["Parcae: Scaling Laws For Stable Looped Language Models", "Prairie et al.", 2026, "2604.12946"]]} />
+
+<ArchMarker parts="embed inject block loop" label="Boucler un bloc, avec réinjection de l'embedding" />
+
+## 1. Boucler un bloc
+
+Même teinte = mêmes poids.
+
+<LoopStack />
+
+$$
+h^{(0)} = e, \qquad h^{(t+1)} = \mathrm{Bloc}_{\theta}\big(h^{(t)} + e\big), \qquad t = 0, \dots, T-1
+$$
+
+- $e$ : l'embedding du token ; $h^{(t)}$ : son vecteur après $t$ passes.
+- $\theta$ : les poids du bloc, **les mêmes à chaque passe**. Un bloc peut lui-même contenir $k$ couches différentes.
+- **Input injection** : on rajoute $e$ à l'entrée de chaque passe. Sans elle, une passe ne voit que $h^{(t)}$ et l'information du token d'origine peut se diluer quand $T$ grandit ; avec elle, chaque passe repart du token. Selon les modèles, l'état initial est $e$, zéro ou aléatoire, et l'injection est une addition ou une concaténation suivie d'une projection.
+
+### Ce que ça coûte
+
+- Un bloc a environ $12\,d^2$ paramètres ($4d^2$ d'attention, $8d^2$ de MLP ; module 0, section 7) et coûte environ 2 opérations par paramètre et par token. Les barres du widget le montrent : boucler divise les **paramètres** par $T$, mais le **calcul**, la **mémoire d'activations** et le **KV cache** restent ceux d'un modèle de $kT$ couches (chaque passe a ses propres $K$, $V$).
+- Certaines variantes partagent le KV cache entre passes, ou ne rétropropagent qu'à travers les dernières passes (à venir).
+
+<div class="retain">
+
+**À retenir**
+
+- Transformer bouclé : $k$ blocs différents répétés $T$ fois, soit $k \times T$ couches calculées avec seulement $k$ jeux de poids.
+- $h^{(t+1)} = \mathrm{Bloc}_\theta(h^{(t)} + e)$ : mêmes poids $\theta$ à chaque passe.
+- Input injection : $e$ est réinjecté à chaque passe, pour ne pas perdre le token d'origine.
+- Coût : paramètres $12d^2 \times k$ au lieu de $12d^2 \times kT$ ; calcul, mémoire d'activations et KV cache comme $kT$ couches.
+
+</div>
+
+<Refs items={[["Looped Transformers are Better at Learning Learning Algorithms", "Yang et al.", 2023, "2311.12424"], ["Scaling up Test-Time Compute with Latent Reasoning: A Recurrent Depth Approach (Huginn)", "Geiping et al.", 2025, "2502.05171"], ["ALBERT", "Lan et al.", 2019, "1909.11942"], ["Parcae: Scaling Laws For Stable Looped Language Models", "Prairie et al.", 2026, "2604.12946"]]} />
+
+<Quiz>
+
+**Q1.** Avec $k = 2$ blocs et $T = 6$ passes, combien de couches calcule-t-on par token, et combien de jeux de poids différents y a-t-il ?
+
+<Reveal>
+
+$2 \times 6 = 12$ couches calculées, avec seulement 2 jeux de poids.
+
+</Reveal>
+
+**Q2.** Si on double $T$ sans changer $k$, que deviennent le calcul par token et le nombre de paramètres ?
+
+<Reveal>
+
+Le calcul double (deux fois plus de couches calculées) ; le nombre de paramètres ne change pas.
+
+</Reveal>
+
+**Q3.** Dans la formule, qu'est-ce qui distingue une boucle avec input injection d'une boucle sans ?
+
+<Reveal>
+
+Avec : $h^{(t+1)} = \mathrm{Bloc}_\theta(h^{(t)} + e)$, le token d'origine $e$ entre à chaque passe. Sans : $h^{(t+1)} = \mathrm{Bloc}_\theta(h^{(t)})$, il n'entre qu'au départ.
+
+</Reveal>
+
+**Q4.** Avec $d_{\text{model}} = 2048$, combien de paramètres a un bloc ? Un modèle classique de 12 couches ? Un modèle bouclé de 2 blocs × 6 passes ?
+
+<Reveal>
+
+Un bloc : $12 \times 2048^2 \approx 50$ millions. Classique 12 couches : environ 604 millions. Bouclé 2 × 6 : environ 101 millions (hors embeddings). Le calcul par token, lui, est le même pour les deux.
+
+</Reveal>
+
+**Q5.** Pourquoi le KV cache d'un modèle bouclé grandit-il comme celui d'un modèle de $kT$ couches ?
+
+<Reveal>
+
+À chaque passe, les vecteurs des tokens sont différents, donc leurs $K$ et $V$ aussi. L'attention de la passe $t$ a besoin des $K$, $V$ de la passe $t$ pour tous les tokens précédents : il faut un cache par couche et par passe.
+
+</Reveal>
+
+</Quiz>
+
+<ArchMarker parts="block loop" label="Champ réceptif : chaque passe élargit la portée de W − 1 tokens" />
+
+## 2. Champ réceptif avec une fenêtre : T·W
+
+Avec une attention à fenêtre glissante $W$ (module 0, section 5), une passe permet à un token de voir $W - 1$ tokens en arrière. Chaque passe repart des vecteurs de la passe précédente, qui ont eux-mêmes déjà regardé $W - 1$ tokens plus loin : la portée s'élargit à chaque passe.
+
+<ReachCone />
+
+$$
+\text{portée}(T, W) = T\,(W - 1) + 1 \;\approx\; T \cdot W
+$$
+
+- Une passe : $W$ tokens. $T$ passes : environ $T \cdot W$.
+- Au-delà, l'information ne peut pas atteindre le token par l'attention, quel que soit le nombre de passes déjà fait. Pour Ouroboros, c'est là qu'un état transporté d'un token au suivant devient la seule route.
+
+<div class="retain">
+
+**À retenir**
+
+- Chaque passe élargit la portée de $W - 1$ tokens : $T(W-1)+1 \approx T \cdot W$ tokens après $T$ passes.
+- Doubler $T$ double la portée, mais aussi le calcul par token.
+- Au-delà de $T \cdot W$, rien ne passe par l'attention : il faut une autre mémoire.
+
+</div>
+
+<Refs items={[["Longformer", "Beltagy et al.", 2020, "2004.05150"]]} />
+
+<Quiz>
+
+**Q1.** Avec $W = 256$ et $T = 4$ passes, combien de tokens un token peut-il voir ?
+
+<Reveal>
+
+$4 \times 255 + 1 = 1021$ tokens.
+
+</Reveal>
+
+**Q2.** Pour doubler la portée, vaut-il mieux doubler $T$ ou doubler $W$ ? Que coûte chaque option ?
+
+<Reveal>
+
+Les deux doublent environ la portée. Doubler $T$ double tout le calcul par token (attention et MLP) et le nombre de KV caches. Doubler $W$ double la taille de chaque KV cache et le coût de l'attention, mais pas celui du MLP.
+
+</Reveal>
+
+**Q3.** Avec $W = 256$ et $T = 4$, une information placée 2 000 tokens plus tôt peut-elle influencer la prédiction ?
+
+<Reveal>
+
+Non par l'attention : la portée est de 1021 tokens. Il faudrait un état transporté d'un token au suivant, ce que propose Ouroboros.
+
+</Reveal>
+
+</Quiz>
+
+<ArchMarker parts="block loop inject" label="À venir dans ce module" />
+
+## À venir dans ce module
+
+- $T$ aléatoire à l'entraînement, $T$ variable au test (test-time compute), arrêt adaptatif (ACT, MoR) et le problème des tokens qui sortent tôt.
+- Instabilités : effondrement des états cachés, rétropropagation tronquée sur les dernières passes.
+
+<Refs items={[["Adaptive Computation Time for Recurrent Neural Networks", "Graves", 2016, "1603.08983"], ["Mixture-of-Recursions", "Bae et al.", 2025, "2507.10524"]]} />
