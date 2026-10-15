@@ -1,0 +1,175 @@
+---
+// Chapitre MFCC, section 3 : deux pièges classiques du banc de filtres Mel.
+// (1) une fréquence d'échantillonnage déclarée fausse décale tout le banc de filtres sur l'axe réel ;
+// (2) trop de filtres pour la FFT : des filtres ne contiennent aucune case.
+// Le signal est enregistré à 16 kHz ; le banc de filtres est construit avec la fréquence « déclarée ».
+---
+<div class="widget mpit pp" data-widget="melpit">
+  <div class="row"><span>Situation :</span><span class="seg" data-ref="preset"></span></div>
+  <div class="row"><span>Fréquence d'échantillonnage déclarée :</span><span class="seg" data-ref="sr"></span></div>
+  <div class="row"><span>Fenêtre d'analyse :</span><span class="seg" data-ref="win"></span></div>
+  <div class="row"><span>Nombre de filtres M :</span><span class="seg" data-ref="m"></span></div>
+  <p class="lg"><i class="sq ok"></i>filtre qui contient au moins une case de la FFT <i class="sq no"></i>filtre vide <i class="sq ref"></i>résultat avec les bons réglages</p>
+
+  <div class="ft">Les filtres, placés sur la vraie fréquence du signal (16 kHz)</div>
+  <p class="axn"><span class="lab">Axe du haut (brun) : fréquences étiquetées par le code, en kHz.</span> Axe du bas : fréquences réelles du signal.</p>
+  <svg data-ref="filters" width="100%" role="img" aria-label="Filtres Mel placés sur l'axe des fréquences réelles"></svg>
+
+  <div class="ft">Énergie par filtre pour une voyelle « a » (formants vers 0,7 et 1,2 kHz)</div>
+  <svg data-ref="bars" width="100%" role="img" aria-label="Énergie par filtre, comparée à celle obtenue avec les bons réglages"></svg>
+
+  <div class="kpis">
+    <div><span>Un filtre étiqueté « 1 000 Hz » mesure en réalité</span><b data-ref="k1"></b></div>
+    <div><span>Cases de la FFT</span><b data-ref="k2"></b></div>
+    <div><span>Filtres vides</span><b data-ref="k3"></b></div>
+  </div>
+  <p class="note" data-ref="note"></p>
+</div>
+
+<script>
+  import { SR as TRUE_SR, makeSignal } from './signal';
+  import { windowOf, powerSpectrum, nextPow2 } from './dsp';
+
+  document.querySelectorAll<HTMLElement>('[data-widget="melpit"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const x = makeSignal();
+    const hz2mel = (f: number) => 2595 * Math.log10(1 + f / 700);
+    const mel2hz = (m: number) => 700 * (Math.pow(10, m / 2595) - 1);
+    const T0 = Math.round(0.1 * TRUE_SR); // début de la trame : 100 ms, au milieu de la voyelle « a »
+
+    const SRS = [16000, 22050, 10000];
+    const WINS: [string, number, number][] = [['25 ms (400 valeurs)', 400, 512], ['100 valeurs (6,25 ms)', 100, 100]];
+    const MS = [40, 128];
+    let sr = 22050, wi = 1, M = 128;
+
+    function seg(key: string, items: [string, string][], onPick: (v: string) => void) {
+      items.forEach(([v, label]) => {
+        const b = document.createElement('button');
+        b.textContent = label;
+        b.dataset.v = v;
+        b.addEventListener('click', () => { onPick(v); draw(); });
+        $(key).appendChild(b);
+      });
+    }
+    seg('preset', [['bad', 'Réglages fautifs'], ['good', 'Bons réglages']], (v) => {
+      if (v === 'bad') { sr = 22050; wi = 1; M = 128; } else { sr = 16000; wi = 0; M = 40; }
+    });
+    seg('sr', SRS.map((v) => [String(v), `${(v / 1000).toLocaleString('fr-FR')} kHz${v === 16000 ? ' (vraie valeur)' : v === 22050 ? ' (défaut de librosa)' : ''}`]), (v) => (sr = +v));
+    seg('win', WINS.map((w, i) => [String(i), w[0]]), (v) => (wi = +v));
+    seg('m', MS.map((v) => [String(v), String(v)]), (v) => (M = +v));
+
+    // banc de filtres construit avec la fréquence déclarée srD ; renvoie aussi, par filtre, s'il contient une case
+    function bank(srD: number, nfft: number, M: number) {
+      const pts: number[] = [];
+      for (let i = 0; i < M + 2; i++) pts.push(mel2hz((i / (M + 1)) * hz2mel(srD / 2)));
+      const nb = Math.floor(nfft / 2) + 1, df = srD / nfft;
+      const H: Float64Array[] = [];
+      const nonEmpty: boolean[] = [];
+      for (let m = 1; m <= M; m++) {
+        const lo = pts[m - 1], c = pts[m], hi = pts[m + 1];
+        const h = new Float64Array(nb);
+        let any = false;
+        for (let k = 0; k < nb; k++) {
+          const f = k * df;
+          const v = Math.max(0, Math.min((f - lo) / (c - lo), (hi - f) / (hi - c)));
+          h[k] = v;
+          if (v > 0) any = true;
+        }
+        H.push(h); nonEmpty.push(any);
+      }
+      return { pts, H, nonEmpty };
+    }
+
+    function energies(srD: number, L: number, nfft: number, M: number) {
+      const w = windowOf('hamming', L);
+      const fr = new Float64Array(L);
+      for (let i = 0; i < L; i++) fr[i] = x[T0 + i] * w[i];
+      const P = powerSpectrum(fr, nfft);
+      const b = bank(srD, nfft, M);
+      return { ...b, P, E: b.H.map((h) => h.reduce((a, v, k) => a + v * P[k], 0)) };
+    }
+
+    function draw() {
+      const mark = (key: string, v: string) => $(key).querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.v === v));
+      mark('preset', sr === 22050 && wi === 1 && M === 128 ? 'bad' : sr === 16000 && wi === 0 && M === 40 ? 'good' : '');
+      mark('sr', String(sr)); mark('win', String(wi)); mark('m', String(M));
+      const [, L, nfft] = WINS[wi];
+      const s = TRUE_SR / sr; // un filtre prévu pour f (déclaré) agit en réalité à f × s
+      const cur = energies(sr, L, nfft, M);
+      const ref = energies(TRUE_SR, L, nfft, M);
+      const empty = cur.nonEmpty.filter((v) => !v).length;
+
+      const W = 640, ox = 24, wpx = W - ox - 8, FMAX = TRUE_SR / 2;
+      const FX = (f: number) => ox + (f / FMAX) * wpx;
+
+      // --- filtres sur l'axe réel ---
+      const fh = 130, fy0 = 22, fhh = fh - 40;
+      const FY = (v: number) => fy0 + (1 - v) * fhh;
+      const pmaxN = Math.max(...cur.P, 1e-12);
+      let a = `${FX(0)},${FY(0)} `;
+      for (let k = 0; k < cur.P.length; k++) a += `${FX((k * TRUE_SR) / nfft).toFixed(1)},${FY(cur.P[k] / pmaxN).toFixed(1)} `;
+      a += `${FX(FMAX)},${FY(0)}`;
+      let g = `<polygon points="${a}" fill="var(--p-wave)" opacity="0.18"/><line x1="${ox}" y1="${FY(0)}" x2="${W - 8}" y2="${FY(0)}" stroke="var(--border)"/>`;
+      for (let m = 1; m <= M; m++) {
+        const tri = `${FX(cur.pts[m - 1] * s)},${FY(0)} ${FX(cur.pts[m] * s)},${FY(1)} ${FX(cur.pts[m + 1] * s)},${FY(0)}`;
+        g += cur.nonEmpty[m - 1]
+          ? `<polygon points="${tri}" fill="none" stroke="var(--p-mel)" stroke-width="0.8"/>`
+          : `<polygon points="${tri}" fill="none" stroke="var(--text-2)" stroke-width="0.8" stroke-dasharray="2 2" opacity="0.7"/>`;
+      }
+      // axe réel (bas) et axe « étiqueté » (haut) : ce que le code croit mesurer
+      for (let kHz = 0; kHz <= 8; kHz++) g += `<text x="${FX(kHz * 1000)}" y="${fh - 2}" text-anchor="${kHz === 0 ? 'start' : kHz === 8 ? 'end' : 'middle'}" class="ax">${kHz === 8 ? '8 kHz' : kHz}</text>`;
+      for (let kHz = 0; kHz * 1000 <= sr / 2; kHz += 2) { const f = kHz * 1000 * s; g += `<text x="${FX(f)}" y="10" text-anchor="${kHz === 0 ? 'start' : 'middle'}" class="ax lab">${kHz}</text>`; }
+      const c1 = $('filters') as unknown as SVGSVGElement;
+      c1.setAttribute('viewBox', `0 0 ${W} ${fh + 4}`);
+      c1.innerHTML = g;
+
+      // --- énergies ---
+      const bh = 110, by0 = 6, bhh = bh - 20, bw = wpx / M;
+      const emax = Math.max(...cur.E, 1e-12), rmax = Math.max(...ref.E, 1e-12);
+      let b3 = `<line x1="${ox}" y1="${by0 + bhh}" x2="${W - 8}" y2="${by0 + bhh}" stroke="var(--border)"/>`;
+      const bwr = wpx / M;
+      ref.E.forEach((e, i) => {
+        const h = (e / rmax) * bhh;
+        b3 += `<rect x="${(ox + i * bwr + 0.5).toFixed(1)}" y="${(by0 + bhh - h).toFixed(1)}" width="${Math.max(1, bwr - 1).toFixed(1)}" height="${h.toFixed(1)}" fill="none" stroke="var(--text-2)" stroke-width="0.8" opacity="0.8"/>`;
+      });
+      cur.E.forEach((e, i) => {
+        const h = (e / emax) * bhh;
+        b3 += cur.nonEmpty[i]
+          ? `<rect x="${(ox + i * bw + 0.5).toFixed(1)}" y="${(by0 + bhh - h).toFixed(1)}" width="${Math.max(1, bw - 1).toFixed(1)}" height="${h.toFixed(1)}" fill="var(--p-mel)" opacity="0.85"/>`
+          : `<rect x="${(ox + i * bw + 0.5).toFixed(1)}" y="${by0 + bhh - 3}" width="${Math.max(1, bw - 1).toFixed(1)}" height="3" fill="var(--text-2)" opacity="0.6"/>`;
+      });
+      b3 += `<text x="${ox}" y="${bh + 2}" class="ax">filtre 1</text><text x="${W - 8}" y="${bh + 2}" text-anchor="end" class="ax">filtre ${M}</text>`;
+      const c3 = $('bars') as unknown as SVGSVGElement;
+      c3.setAttribute('viewBox', `0 0 ${W} ${bh + 8}`);
+      c3.innerHTML = b3;
+
+      $('k1').textContent = `${Math.round(1000 * s).toLocaleString('fr-FR')} Hz`;
+      $('k2').textContent = String(Math.floor(nfft / 2) + 1);
+      $('k3').innerHTML = `${empty} <small>sur ${M}</small>`;
+      const msgs: string[] = [];
+      if (sr !== TRUE_SR) msgs.push(`Fréquence déclarée ${(sr / 1000).toLocaleString('fr-FR')} kHz au lieu de ${TRUE_SR / 1000} kHz : tout l'axe est mis à l'échelle ${(sr / TRUE_SR).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} fois, les formants tombent dans de mauvais filtres (barres pleines contre contours).`);
+      if (empty > 0) msgs.push(`${empty} filtre${empty > 1 ? 's' : ''} sans aucune case de la FFT : énergie toujours nulle, ce ne sont pas de vraies caractéristiques.`);
+      if (!msgs.length) msgs.push('Réglages cohérents : les barres pleines recouvrent les contours.');
+      $('note').textContent = msgs.join(' ');
+    }
+    draw();
+  });
+</script>
+
+<style is:global>
+  .mpit .row { margin-bottom: 6px; }
+  .mpit .seg { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  .mpit .seg button { font-size: 13px; padding: 4px 12px; }
+  .mpit .lg { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: 12px; color: var(--text-2); margin: 4px 0 0; }
+  .mpit .sq { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+  .mpit .sq.ok { background: var(--p-mel); }
+  .mpit .sq.no { border: 1px dashed var(--text-2); }
+  .mpit .sq.ref { border: 1px solid var(--text-2); }
+  .mpit .axn { font-size: 12px; color: var(--text-2); margin: 0 0 2px; }
+  .mpit .axn .lab { color: var(--p-mel); }
+  .mpit .ft { font-size: 13px; font-weight: 500; margin: 12px 0 2px; }
+  .mpit svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .mpit svg text.ax.lab { fill: var(--p-mel); }
+  .mpit .kpis small { font-size: 13px; color: var(--text-2); font-weight: 400; }
+  .mpit .note { font-size: 14px; line-height: 1.5; margin: 10px 0 0; min-height: 3em; }
+</style>

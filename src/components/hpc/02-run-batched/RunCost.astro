@@ -1,0 +1,68 @@
+---
+// Chapitre HPC 2 : ce que coûte un lot de run_batched, poste par poste.
+---
+<div class="widget runc hp" data-widget="runc">
+  <div class="sl">
+    <label><span>Lignes du lot n_rows</span><input type="range" data-ref="r" min="8" max="512" step="8" value="256" /><b data-ref="r-out"></b></label>
+    <label><span>Pas n_steps</span><input type="range" data-ref="s" min="64" max="4096" step="64" value="1024" /><b data-ref="s-out"></b></label>
+    <label><span>Neurones N</span><input type="range" data-ref="n" min="100" max="4000" step="100" value="1000" /><b data-ref="n-out"></b></label>
+    <label><span>Entrée D</span><input type="range" data-ref="d" min="1" max="200" step="1" value="10" /><b data-ref="d-out"></b></label>
+  </div>
+  <div class="row"><span>Sortie :</span><span class="seg" data-ref="ra"></span></div>
+  <table class="res">
+    <thead><tr><th>Poste</th><th>Formule</th><th>Valeur</th></tr></thead>
+    <tbody>
+      <tr><td><i class="sq comp"></i>Compilations</td><td>une par (type de nœud, activation, return_all, n_rows, n_steps, N, D, dtype)</td><td data-ref="v0">≤ tailles de lot × paliers de longueur</td></tr>
+      <tr><td><i class="sq calc"></i>Calcul par lot</td><td>n_steps × 2 · n_rows · N · (N + D)</td><td data-ref="v1"></td></tr>
+      <tr><td><i class="sq py"></i>Pilotage Python</td><td>tri une fois ; par lot : rembourrage, remise en ordre, np.asarray</td><td>proportionnel à la longueur totale des données</td></tr>
+      <tr><td><i class="sq mem"></i>Mémoire de sortie</td><td data-ref="f3"></td><td data-ref="v3"></td></tr>
+    </tbody>
+  </table>
+  <p class="note">Le masque ajoute n_rows · N sélections par pas : négligeable. Hypothèse : W et Win denses (float64, 8 octets par valeur).</p>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="runc"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const inp = (r: string) => $(r) as HTMLInputElement;
+    const fr = (v: number, d = 1) => v.toLocaleString('fr-FR', { maximumFractionDigits: d });
+    let all = true;
+    [['return_all = True', 1], ['return_all = False', 0]].forEach(([l, v]) => {
+      const b = document.createElement('button');
+      b.textContent = String(l); b.dataset.v = String(v);
+      b.addEventListener('click', () => { all = v === 1; draw(); });
+      $('ra').appendChild(b);
+    });
+    const sci = (v: number) => { const e = Math.floor(Math.log10(v)); return `${fr(v / 10 ** e, 1)} · 10<sup>${e}</sup>`; };
+    function draw() {
+      $('ra').querySelectorAll('button').forEach((b) => b.classList.toggle('active', (+b.dataset.v! === 1) === all));
+      const r = +inp('r').value, s = +inp('s').value, n = +inp('n').value, d = +inp('d').value;
+      ['r', 's', 'n', 'd'].forEach((k) => ($(k + '-out').textContent = String(+inp(k).value)));
+      $('v1').innerHTML = `${sci(s * 2 * r * n * (n + d))} FLOPs`;
+      const mem = all ? r * s * n * 8 : r * n * 8;
+      $('f3').textContent = all ? 'n_rows × n_steps × N × 8 octets' : 'n_rows × N × 8 octets';
+      $('v3').textContent = mem >= 1e9 ? `${fr(mem / 1e9, 2)} Go` : `${fr(mem / 1e6, 1)} Mo`;
+    }
+    ['r', 's', 'n', 'd'].forEach((k) => inp(k).addEventListener('input', draw));
+    draw();
+  });
+</script>
+
+<style is:global>
+  .runc .sl { display: grid; gap: 4px; margin-bottom: 8px; }
+  .runc .sl label { display: grid; grid-template-columns: 170px 1fr 60px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); }
+  .runc .sl b { text-align: right; color: var(--text); font-weight: 500; }
+  .runc .row { margin-bottom: 4px; }
+  .runc .seg { display: inline-flex; gap: 6px; }
+  .runc .seg button { font-size: 13px; padding: 4px 12px; }
+  .runc table.res { width: 100%; border-collapse: collapse; font-size: 13px; margin: 8px 0; }
+  .runc table.res th { text-align: left; font-weight: 500; color: var(--text-2); padding: 4px 8px; border-bottom: 1px solid var(--border); }
+  .runc table.res td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .runc .sq { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .runc .sq.comp { background: var(--h-comp); }
+  .runc .sq.calc { background: var(--h-calc); }
+  .runc .sq.py { background: var(--h-py); }
+  .runc .sq.mem { background: var(--text-2); opacity: 0.5; }
+  .runc .note { font-size: 13px; color: var(--text-2); margin: 6px 0 0; }
+  @media (max-width: 600px) { .runc .sl label { grid-template-columns: 1fr; } }
+</style>

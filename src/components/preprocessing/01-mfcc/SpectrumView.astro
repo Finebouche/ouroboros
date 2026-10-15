@@ -1,0 +1,272 @@
+---
+// Chapitre MFCC, section 2 : une trame, sa fenêtre, son spectre de puissance, puis le spectrogramme (les spectres de toutes les trames).
+// La trame choisie est repérée sur le spectrogramme ; un clic sur le spectrogramme choisit la trame.
+---
+<div class="widget sview pp" data-widget="sview">
+  <div class="row"><span>Longueur de trame :</span><span class="seg" data-ref="len"></span><span class="sp">Échelle :</span><span class="seg" data-ref="scale"></span></div>
+  <div class="row"><span>Fenêtre :</span><span class="seg" data-ref="win"></span><label class="pre"><input type="checkbox" data-ref="pre" /> Pré-accentuation (0,97)</label></div>
+  <label class="posl"><span>Position de la trame</span><input type="range" data-ref="pos" min="0" max="500" step="5" value="100" /><b data-ref="pos-out"></b></label>
+  <p class="lg"><i class="sq raw"></i>trame brute <i class="sq win"></i>forme de la fenêtre <i class="sq out"></i>trame fenêtrée</p>
+  <svg data-ref="frame" width="100%" role="img" aria-label="Trame brute, fenêtre et trame fenêtrée"></svg>
+  <div class="ft">Son spectre de puissance</div>
+  <svg data-ref="spec" width="100%" role="img" aria-label="Spectre de puissance de la trame"></svg>
+  <div class="kpis">
+    <div><span>Points de FFT</span><b data-ref="k1"></b></div>
+    <div><span>Écart entre deux fréquences calculées</span><b data-ref="k2"></b></div>
+    <div><span>Séparation minimale ≈ f<sub>s</sub> / L</span><b data-ref="k3"></b></div>
+  </div>
+
+  <div class="ft sgt">Le spectrogramme : les spectres de toutes les trames, côte à côte</div>
+  <div class="row"><span>Fréquences affichées :</span><span class="seg" data-ref="fmax"></span></div>
+  <canvas data-ref="cv" role="img" aria-label="Spectrogramme du signal : fréquence en fonction du temps"></canvas>
+  <p class="lg"><span class="ramp"></span> énergie : faible → forte (échelle en dB, 60 dB affichés) <i class="sq cur"></i>trame choisie</p>
+  <p class="note" data-ref="note"></p>
+</div>
+
+<script>
+  import { SR, N, SEGMENTS, makeSignal } from './signal';
+  import { nextPow2, windowOf, preemphasis, powerSpectrum, WINDOW_LABELS, type WindowName } from './dsp';
+
+  document.querySelectorAll<HTMLElement>('[data-widget="sview"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const inp = (r: string) => $(r) as HTMLInputElement;
+    const cv = $('cv') as unknown as HTMLCanvasElement;
+    const raw = makeSignal();
+    const emph = preemphasis(raw);
+    const LENS = [10, 25, 50, 100];
+    const FMAX = [8, 4, 2]; // kHz
+    const HOP = 160; // 10 ms
+    const NOTES: Record<number, string> = {
+      10: '10 ms : les instants sont bien situés, mais les harmoniques de la voix (tous les 120 Hz environ) se fondent en larges bandes : on ne voit que la forme générale du spectre.',
+      25: '25 ms : les harmoniques commencent à apparaître (essaie 0 à 2 kHz) et les transitions restent nettes. C’est le compromis courant en parole.',
+      50: '50 ms : les harmoniques sont bien séparés (lignes fines), mais le passage entre deux sons devient flou.',
+      100: '100 ms : harmoniques très nets, mais chaque colonne mélange plusieurs sons : les frontières se brouillent.',
+    };
+    let lenMs = 25, win: WindowName = 'hamming', db = false, fmax = 4;
+    // longueur et position de la trame partagées avec le widget de la section 1 (Framing)
+    type FS = { lenMs: number; posMs: number };
+    const G = window as unknown as { __mfccFrame?: FS };
+    G.__mfccFrame ??= { lenMs: 25, posMs: 100 };
+    const publish = () => {
+      G.__mfccFrame = { lenMs, posMs: +inp('pos').value };
+      window.dispatchEvent(new CustomEvent('mfcc:frame', { detail: { ...G.__mfccFrame, src: root } }));
+    };
+
+    function seg(key: string, items: [string, string][], onPick: (v: string) => void) {
+      items.forEach(([v, label]) => {
+        const b = document.createElement('button');
+        b.textContent = label;
+        b.dataset.v = v;
+        b.addEventListener('click', () => { onPick(v); draw(); });
+        $(key).appendChild(b);
+      });
+    }
+    seg('len', LENS.map((v) => [String(v), `${v} ms`]), (v) => {
+      lenMs = +v;
+      inp('pos').max = String(600 - lenMs);
+      if (+inp('pos').value > 600 - lenMs) inp('pos').value = String(600 - lenMs);
+      publish();
+    });
+    seg('win', (Object.keys(WINDOW_LABELS) as WindowName[]).map((k) => [k, WINDOW_LABELS[k]]), (v) => (win = v as WindowName));
+    seg('scale', [['lin', 'Linéaire'], ['db', 'Décibels']], (v) => (db = v === 'db'));
+    seg('fmax', FMAX.map((v) => [String(v), `0 à ${v} kHz`]), (v) => (fmax = +v));
+
+    // --- spectrogramme : calculé une fois par réglage, puis la trame choisie est dessinée par-dessus ---
+    const W = 640, H = 266, ox = 40, oy = 22, pw = W - ox - 8, ph = 208;
+    let heat: HTMLCanvasElement | null = null;
+    let heatKey = '';
+
+    function buildHeat(x: Float32Array) {
+      const key = `${lenMs}|${win}|${inp('pre').checked}|${fmax}`;
+      if (key === heatKey && heat) return;
+      heatKey = key;
+      const cs = getComputedStyle(root);
+      const ink = cs.getPropertyValue('--p-wave').trim(), txt = cs.getPropertyValue('--text-2').trim(), line = cs.getPropertyValue('--border').trim();
+      const dpr = window.devicePixelRatio || 1;
+      heat = document.createElement('canvas');
+      heat.width = W * dpr; heat.height = H * dpr;
+      const ctx = heat.getContext('2d')!;
+      ctx.scale(dpr, dpr);
+      const L = Math.round((lenMs * SR) / 1000), nfft = nextPow2(L), w = windowOf(win, L);
+      const nFrames = 1 + Math.floor((N - L) / HOP);
+      const spec: Float64Array[] = [];
+      let pmax = 1e-12;
+      for (let j = 0; j < nFrames; j++) {
+        const fr = new Float64Array(L);
+        for (let i = 0; i < L; i++) fr[i] = x[j * HOP + i] * w[i];
+        const p = powerSpectrum(fr, nfft);
+        spec.push(p);
+        for (const v of p) if (v > pmax) pmax = v;
+      }
+      const kmax = Math.min(nfft / 2, Math.floor((fmax * 1000) / (SR / nfft)));
+      const xOf = (s: number) => ox + (s / N) * pw;
+      for (let j = 0; j < nFrames; j++) {
+        const c = j * HOP + L / 2;
+        const x0 = xOf(c - HOP / 2), x1 = xOf(c + HOP / 2);
+        const p = spec[j];
+        for (let r = 0; r < ph; r++) {
+          const k1 = Math.floor(((ph - r) / ph) * kmax), k0 = Math.max(0, Math.floor(((ph - r - 1) / ph) * kmax));
+          let m = 0;
+          for (let k = k0; k <= k1; k++) if (p[k] > m) m = p[k];
+          const a = Math.max(0, Math.min(1, 1 + (10 * Math.log10(m / pmax + 1e-12)) / 60));
+          if (a < 0.02) continue;
+          ctx.globalAlpha = a;
+          ctx.fillStyle = ink;
+          ctx.fillRect(x0, oy + r, Math.max(1, x1 - x0 + 0.5), 1);
+        }
+      }
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = txt; ctx.strokeStyle = line; ctx.font = '11px system-ui, sans-serif';
+      ctx.strokeRect(ox, oy, pw, ph);
+      ctx.textAlign = 'right';
+      for (let i = 0; i <= 4; i++) {
+        const kHz = (fmax * i) / 4;
+        ctx.fillText(i === 4 ? `${kHz} kHz` : String(kHz).replace('.', ','), ox - 5, oy + ph - (i / 4) * ph + 4);
+      }
+      ctx.textAlign = 'center';
+      for (const t of [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6]) ctx.fillText(`${Math.round(t * 1000)}`, xOf(t * SR), oy + ph + 14);
+      ctx.fillText('temps (ms)', ox + pw / 2, oy + ph + 28);
+      SEGMENTS.forEach((sg, i) => {
+        if (i > 0) { ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(xOf(sg.from * SR), oy); ctx.lineTo(xOf(sg.from * SR), oy + ph); ctx.stroke(); ctx.setLineDash([]); }
+        ctx.fillText(sg.label, xOf(((sg.from + sg.to) / 2) * SR), oy - 7);
+      });
+    }
+
+    function drawHeat(x: Float32Array, t0: number) {
+      buildHeat(x);
+      const dpr = window.devicePixelRatio || 1;
+      cv.width = W * dpr; cv.height = H * dpr;
+      cv.style.aspectRatio = `${W} / ${H}`;
+      const ctx = cv.getContext('2d')!;
+      ctx.drawImage(heat!, 0, 0);
+      ctx.scale(dpr, dpr);
+      const cs = getComputedStyle(root);
+      const xa = ox + ((t0 / 1000) * SR / N) * pw, xb = ox + (((t0 + lenMs) / 1000) * SR / N) * pw;
+      ctx.fillStyle = cs.getPropertyValue('--hl-stroke').trim();
+      ctx.globalAlpha = 0.16;
+      ctx.fillRect(xa, oy, xb - xa, ph);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = cs.getPropertyValue('--hl-stroke').trim();
+      ctx.lineWidth = 1.2;
+      ctx.strokeRect(xa, oy, Math.max(1.5, xb - xa), ph);
+    }
+
+    function draw() {
+      const mark = (key: string, v: string) => $(key).querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.v === v));
+      mark('len', String(lenMs)); mark('win', win); mark('scale', db ? 'db' : 'lin'); mark('fmax', String(fmax));
+      const x = inp('pre').checked ? emph : raw;
+      const L = Math.round((lenMs * SR) / 1000);
+      const t0 = +inp('pos').value;
+      const s0 = Math.round((t0 * SR) / 1000);
+      $('pos-out').textContent = `${t0} ms`;
+      $('note').textContent = NOTES[lenMs];
+
+      const frame = Array.from(x.slice(s0, s0 + L));
+      const w = windowOf(win, L);
+      const fw = frame.map((v, i) => v * w[i]);
+      const Wd = 640, ox2 = 8, wpx = Wd - 16;
+
+      // --- trame ---
+      const peak = Math.max(0.05, ...frame.map(Math.abs));
+      const fh = 96, cy = 48, amp = 40 / peak;
+      const X = (i: number) => ox2 + (i / (L - 1)) * wpx;
+      let g = `<line x1="${ox2}" y1="${cy}" x2="${Wd - ox2}" y2="${cy}" stroke="var(--border)"/>`;
+      if (win !== 'rect') {
+        let top = '', bot = '';
+        for (let i = 0; i < L; i++) top += `${X(i).toFixed(1)},${(cy - w[i] * 40).toFixed(1)} `;
+        for (let i = L - 1; i >= 0; i--) bot += `${X(i).toFixed(1)},${(cy + w[i] * 40).toFixed(1)} `;
+        g += `<polygon points="${top}${bot}" fill="var(--p-frame-b)" opacity="0.8"/>`;
+        let pr = '';
+        frame.forEach((v, i) => (pr += `${X(i).toFixed(1)},${(cy - v * amp).toFixed(1)} `));
+        g += `<polyline points="${pr}" fill="none" stroke="var(--p-frame-a)" stroke-width="1.2" stroke-linejoin="round"/>`;
+      }
+      let po = '';
+      fw.forEach((v, i) => (po += `${X(i).toFixed(1)},${(cy - v * amp).toFixed(1)} `));
+      g += `<polyline points="${po}" fill="none" stroke="var(--p-wave)" stroke-width="1.5" stroke-linejoin="round"/>`;
+      for (const f of [0, 0.5, 1]) g += `<text x="${ox2 + f * wpx}" y="${fh + 4}" text-anchor="${f === 0 ? 'start' : f === 1 ? 'end' : 'middle'}" class="ax">${(f * lenMs).toFixed(f === 0.5 && lenMs % 2 ? 1 : 0).replace('.', ',')} ms</text>`;
+      const fr = $('frame') as unknown as SVGSVGElement;
+      fr.setAttribute('viewBox', `0 0 ${Wd} ${fh + 10}`);
+      fr.innerHTML = g;
+
+      // --- spectre ---
+      const nfft = nextPow2(L);
+      const P = powerSpectrum(fw, nfft);
+      const pmax = Math.max(...P, 1e-12);
+      const DBMIN = -80;
+      const val = (p: number) => (db ? Math.max(0, 1 - Math.max(DBMIN, 10 * Math.log10(p / pmax + 1e-12)) / DBMIN) : p / pmax);
+      const sh = 130, sy0 = 8, sh0 = sh - 22;
+      const SX = (k: number) => ox2 + 28 + (k / (P.length - 1)) * (wpx - 28);
+      const SY = (v: number) => sy0 + (1 - v) * sh0;
+      let s = '';
+      const yTicks = db ? [0, -20, -40, -60, -80] : [0, 0.5, 1];
+      for (const t of yTicks) {
+        const v = db ? 1 - t / DBMIN : t;
+        s += `<line x1="${ox2 + 28}" y1="${SY(v)}" x2="${Wd - ox2}" y2="${SY(v)}" stroke="var(--border)" stroke-width="0.5"/><text x="${ox2 + 24}" y="${SY(v) + 3.5}" text-anchor="end" class="ax">${db ? `${t} dB` : t === 0 ? '0' : t === 1 ? 'max' : '½'}</text>`;
+      }
+      let area = `${SX(0)},${SY(0)} `;
+      for (let k = 0; k < P.length; k++) area += `${SX(k).toFixed(1)},${SY(val(P[k])).toFixed(1)} `;
+      area += `${SX(P.length - 1)},${SY(0)}`;
+      s += `<polygon points="${area}" fill="var(--p-wave)" opacity="0.22"/><polyline points="${area.split(' ').slice(1, -1).join(' ')}" fill="none" stroke="var(--p-wave)" stroke-width="1.3" stroke-linejoin="round"/>`;
+      for (let kHz = 0; kHz <= 8; kHz++) {
+        const k = (kHz * 1000) / (SR / nfft);
+        s += `<line x1="${SX(k)}" y1="${sy0 + sh0}" x2="${SX(k)}" y2="${sy0 + sh0 + 4}" stroke="var(--text-2)"/><text x="${SX(k)}" y="${sh + 4}" text-anchor="${kHz === 0 ? 'start' : kHz === 8 ? 'end' : 'middle'}" class="ax">${kHz === 8 ? '8 kHz' : kHz}</text>`;
+      }
+      const sp = $('spec') as unknown as SVGSVGElement;
+      sp.setAttribute('viewBox', `0 0 ${Wd} ${sh + 10}`);
+      sp.innerHTML = s;
+
+      $('k1').innerHTML = `${nfft} <small>→ ${nfft / 2 + 1} fréquences</small>`;
+      $('k2').textContent = `${(SR / nfft).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} Hz`;
+      $('k3').textContent = `${(SR / L).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} Hz`;
+
+      drawHeat(x, t0);
+    }
+
+    // un clic sur le spectrogramme choisit la trame centrée là
+    cv.addEventListener('click', (ev) => {
+      const r = cv.getBoundingClientRect();
+      const fx = ((ev.clientX - r.left) / r.width) * W;
+      const t = ((fx - ox) / pw) * (N / SR) * 1000 - lenMs / 2;
+      inp('pos').value = String(Math.max(0, Math.min(600 - lenMs, Math.round(t / 5) * 5)));
+      draw();
+      publish();
+    });
+    inp('pos').addEventListener('input', () => { draw(); publish(); });
+    window.addEventListener('mfcc:frame', (ev) => {
+      const d = (ev as CustomEvent<FS & { src: unknown }>).detail;
+      if (d.src === root) return;
+      lenMs = d.lenMs;
+      inp('pos').max = String(600 - lenMs);
+      inp('pos').value = String(Math.max(0, Math.min(600 - lenMs, Math.round(d.posMs / 5) * 5)));
+      draw();
+    });
+    inp('pre').addEventListener('change', draw);
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { heatKey = ''; draw(); });
+    draw();
+  });
+</script>
+
+<style is:global>
+  .sview .row { margin-bottom: 6px; }
+  .sview .seg { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  .sview .seg button { font-size: 13px; padding: 4px 12px; }
+  .sview .sp { margin-left: 16px; }
+  .sview .pre { margin-left: 16px; cursor: pointer; }
+  .sview .posl { display: grid; grid-template-columns: 160px 1fr 60px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); margin: 8px 0; }
+  .sview .posl b { text-align: right; color: var(--text); font-weight: 500; }
+  .sview .ft { font-size: 13px; font-weight: 500; margin: 10px 0 2px; }
+  .sview .ft span { font-weight: 400; color: var(--text-2); }
+  .sview .sgt { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .sview .lg { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: 12px; color: var(--text-2); margin: 0 0 4px; }
+  .sview .sq { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+  .sview .sq.raw { background: var(--p-frame-a); }
+  .sview .sq.win { background: var(--p-frame-b); border: 1px solid var(--border); }
+  .sview .sq.out { background: var(--p-wave); }
+  .sview .sq.cur { background: var(--hl-stroke); opacity: 0.5; margin-left: 10px; }
+  .sview svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .sview .kpis small { font-size: 13px; color: var(--text-2); font-weight: 400; }
+  .sview canvas { display: block; width: 100%; cursor: pointer; }
+  .sview .ramp { display: inline-block; width: 90px; height: 10px; border-radius: 3px; background: linear-gradient(to right, transparent, var(--p-wave)); border: 1px solid var(--border); }
+  .sview .note { font-size: 14px; line-height: 1.5; margin: 8px 0 0; min-height: 3em; }
+  @media (max-width: 600px) { .sview .posl { grid-template-columns: 1fr; } }
+</style>

@@ -1,0 +1,63 @@
+---
+// Chapitre HPC 2 : _run ligne par ligne. On clique sur un numéro, les lignes concernées sont surlignées.
+---
+<div class="widget cwalk hp" data-widget="cwalk">
+  <div class="row"><span>Étape :</span><span class="seg" data-ref="steps"></span></div>
+  <pre class="code" data-ref="code"></pre>
+  <p class="expl" data-ref="expl"></p>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="cwalk"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const CODE = [
+      '@partial(jax.jit,',
+      '         static_argnames=("node_type", "activation", "return_all"))',
+      'def _run(parameters, x, lengths, state0, node_type, activation, return_all):',
+      '    node = object.__new__(node_type)',
+      '    node.__dict__.update(parameters, activation=activation)',
+      '    step = jax.vmap(partial(node_type._step.__wrapped__, node))',
+      '    def scan_step(state, inputs):',
+      '        x_t, t = inputs',
+      '        new_state = step(state, x_t)',
+      '        active = (t < lengths)[:, None]',
+      '        state = jax.tree_util.tree_map(',
+      '            lambda new, old: jnp.where(active, new, old), new_state, state)',
+      '        return state, (state["out"] if return_all else None)',
+      '    state, outs = jax.lax.scan(scan_step, state0,',
+      '        (jnp.swapaxes(x, 0, 1), jnp.arange(x.shape[1])))',
+      '    return jnp.swapaxes(outs, 0, 1) if return_all else state["out"]',
+    ];
+    const ST: { name: string; lines: [number, number]; title: string; text: string }[] = [
+      { name: '① jit + statiques', lines: [0, 2], title: 'jit et 3 arguments statiques', text: 'node_type, activation et return_all changent le programme (quelle classe, quelle fonction, quelle forme de sortie) : ils sont statiques. Tout le reste est tracé.' },
+      { name: '② une instance vide', lines: [3, 4], title: 'Une instance sans __init__', text: 'object.__new__(node_type) crée un nœud sans appeler __init__ ; on y place seulement les paramètres tracés et l’activation : c’est tout ce que _step lit via self.' },
+      { name: '③ le pas vectorisé', lines: [5, 5], title: 'Le pas, vectorisé sur le lot', text: '_step est décoré par jax.jit dans reservoirpy.jax ; __wrapped__ redonne la fonction Python d’origine, tracée directement dans la boucle. partial fixe self = node ; vmap vectorise l’état et x_t sur l’axe 0 (le lot).' },
+      { name: '④ le masque', lines: [9, 12], title: 'Une séquence finie garde son dernier état', text: 'active = t < lengths, de forme (B, 1), choisit entre le nouvel et l’ancien état : jnp.where, pas de if. tree_map applique ce choix à chaque feuille de l’état (deux feuilles pour IPReservoir).' },
+      { name: '⑤ scan sur le temps', lines: [13, 14], title: 'scan parcourt l’axe 0', text: 'x passe de (B, T, D) à (T, B, D) ; on fournit aussi l’indice t de chaque pas, pour le masque.' },
+      { name: '⑥ sortie statique', lines: [15, 15], title: 'Une forme de sortie, un argument statique', text: 'La sortie est (B, T, N) avec return_all, ou (B, N) sinon : une forme différente, d’où return_all statique.' },
+    ];
+    let cur = 0;
+    ST.forEach((s, i) => {
+      const b = document.createElement('button');
+      b.textContent = s.name; b.dataset.v = String(i);
+      b.addEventListener('click', () => { cur = i; draw(); });
+      $('steps').appendChild(b);
+    });
+    function draw() {
+      $('steps').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.v! === cur));
+      const [a, z] = ST[cur].lines;
+      $('code').innerHTML = CODE.map((l, i) => `<span class="ln${i >= a && i <= z ? ' on' : ''}">${l.replace(/&/g, '&amp;').replace(/</g, '&lt;') || ' '}</span>`).join('');
+      $('expl').innerHTML = `<b>${ST[cur].title}.</b> ${ST[cur].text}`;
+    }
+    draw();
+  });
+</script>
+
+<style is:global>
+  .cwalk .seg { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  .cwalk .seg button { font-size: 13px; padding: 4px 10px; }
+  .cwalk pre.code { background: var(--surface-2); border-radius: 8px; padding: 10px 0; margin: 8px 0; overflow-x: auto; font-size: 12.5px; line-height: 1.55; }
+  .cwalk pre.code .ln { display: block; padding: 0 14px; white-space: pre; border-left: 3px solid transparent; }
+  .cwalk pre.code .ln.on { background: var(--hl-bg); color: var(--hl-text); border-left-color: var(--hl-stroke); }
+  .cwalk .expl { font-size: 14px; line-height: 1.5; margin: 6px 0 0; min-height: 4em; }
+</style>

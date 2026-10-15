@@ -37,7 +37,8 @@ function vowel(out: Float32Array, t0: number, t1: number, f0: number, formants: 
   }
 }
 
-export function makeSignal(): Float32Array {
+// floor : amplitude d'un bruit large bande ajouté partout après normalisation (comme dans un vrai enregistrement), 0 par défaut.
+export function makeSignal(opts: { floor?: number } = {}): Float32Array {
   const x = new Float32Array(N);
   const r = rng(7);
   vowel(x, 0, 0.2, 120, [[700, 110], [1200, 150]], 0.11);
@@ -56,5 +57,6 @@ export function makeSignal(): Float32Array {
   let m = 0;
   for (const v of x) m = Math.max(m, Math.abs(v));
   for (let i = 0; i < N; i++) x[i] = (x[i] / m) * 0.9;
+  if (opts.floor) { const q = rng(11); for (let i = 0; i < N; i++) x[i] += opts.floor * (q() * 2 - 1); }
   return x;
 }

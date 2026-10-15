@@ -1,0 +1,109 @@
+---
+// Chapitre HPC 1, section 5 : mesures locales (support de présentation) : trois implémentations d'un RNN, temps chaud, premier appel, et seuil d'amortissement.
+// Les temps sont ceux du support : CPU virtuel x86_64, B = 32, T = 200, D = H, float32, bibliothèques à 1 thread, médiane de 21 appels, NumPy 2.5.3, JAX 0.7.2.
+---
+<div class="widget bench hp" data-widget="bench">
+  <div class="row"><span>Taille de l'état H = D :</span><span class="seg" data-ref="hs"></span></div>
+  <div class="ft">Temps d'un appel, en ms <span>(échelle logarithmique)</span></div>
+  <svg data-ref="bars" width="100%" role="img" aria-label="Temps mesurés pour quatre cas"></svg>
+  <div class="ft">Amortir le premier appel JAX</div>
+  <label class="posl"><span>Nombre d'appels S</span><input type="range" data-ref="s" min="1" max="100" step="1" value="1" /><b data-ref="s-out"></b></label>
+  <svg data-ref="amort" width="100%" role="img" aria-label="Temps total en fonction du nombre d'appels, NumPy optimisé contre JAX"></svg>
+  <div class="kpis">
+    <div><span>Gain chaud vs NumPy naïf</span><b data-ref="k1"></b></div>
+    <div><span>Seuil S* (JAX devient plus rapide au total)</span><b data-ref="k2"></b></div>
+    <div><span>À S appels</span><b data-ref="k3"></b></div>
+  </div>
+  <p class="note">Mesures locales d'un CPU virtuel x86_64 (B = 32, T = 200, float32, 1 thread, médiane de 21 appels entrelacés) : elles ne se généralisent pas à un GPU ni à une autre machine. Le seuil est une <b>projection</b> à partir du premier appel et des médianes chaudes, pas la mesure de S appels. S<sup>*</sup> = (J₁ − J) / (N − J).</p>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="bench"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const inp = (r: string) => $(r) as HTMLInputElement;
+    const fr = (v: number, d = 2) => v.toLocaleString('fr-FR', { maximumFractionDigits: d });
+    const DATA: Record<number, { naive: number; opt: number; hot: number; cold: number }> = {
+      16: { naive: 0.99, opt: 0.59, hot: 0.39, cold: 138.66 },
+      64: { naive: 2.15, opt: 1.87, hot: 1.09, cold: 74.73 },
+      128: { naive: 5.73, opt: 5.7, hot: 3.81, cold: 89.63 },
+      256: { naive: 24.6, opt: 21.84, hot: 11.03, cold: 70.13 },
+    };
+    let H = 128;
+    Object.keys(DATA).forEach((h) => {
+      const b = document.createElement('button');
+      b.textContent = h; b.dataset.v = h;
+      b.addEventListener('click', () => { H = +h; inp('s').value = '1'; draw(true); });
+      $('hs').appendChild(b);
+    });
+
+    function draw(reset = false) {
+      $('hs').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.v! === H));
+      const d = DATA[H];
+      const N = d.opt, J = d.hot, J1 = d.cold;
+      const Sstar = N > J ? (J1 - J) / (N - J) : Infinity;
+      const smax = Math.max(10, Math.ceil(Number.isFinite(Sstar) ? 2 * Sstar : 100));
+      inp('s').max = String(smax);
+      if (reset) inp('s').value = String(Math.max(1, Math.round(Sstar)));
+      const S = Math.min(+inp('s').value, smax);
+      $('s-out').textContent = String(S);
+
+      // barres en échelle log (0,1 ms à 1000 ms)
+      const W = 640, ox = 150, wpx = W - ox - 60, rowH = 30;
+      const items: [string, number, string][] = [
+        ['NumPy naïf', d.naive, 'var(--text-2)'],
+        ['NumPy optimisé', d.opt, 'var(--text-2)'],
+        ['JAX optimisé, chaud', d.hot, 'var(--h-exec)'],
+        ['JAX, 1er appel (froid)', d.cold, 'var(--h-comp)'],
+      ];
+      const LX = (v: number) => ox + ((Math.log10(v) + 1) / 4) * wpx;
+      let g = '';
+      for (const t of [0.1, 1, 10, 100, 1000]) g += `<line x1="${LX(t)}" y1="0" x2="${LX(t)}" y2="${items.length * rowH}" stroke="var(--border)" stroke-width="0.5"/><text x="${LX(t)}" y="${items.length * rowH + 14}" text-anchor="middle" class="ax">${t}</text>`;
+      items.forEach(([l, v, c], i) => {
+        const y = i * rowH + 4;
+        g += `<text x="${ox - 8}" y="${y + 15}" text-anchor="end" class="ax">${l}</text><rect x="${ox}" y="${y}" width="${LX(v) - ox}" height="20" rx="3" fill="${c}" opacity="0.9"/><text x="${LX(v) + 6}" y="${y + 15}" class="ax v">${fr(v)}</text>`;
+      });
+      const A = $('bars') as unknown as SVGSVGElement;
+      A.setAttribute('viewBox', `0 0 ${W} ${items.length * rowH + 22}`);
+      A.innerHTML = g;
+
+      // temps total : NumPy optimisé (S·N) contre JAX (J1 + (S−1)·J)
+      const cw = 640, cox = 56, cwp = cw - cox - 10, ch = 150, cy0 = 8, chh = ch - 30;
+      const tmax = Math.max(smax * N, J1 + (smax - 1) * J);
+      const X = (s: number) => cox + (s / smax) * cwp, Y = (t: number) => cy0 + (1 - t / tmax) * chh;
+      let c = `<line x1="${cox}" y1="${Y(0)}" x2="${cw - 10}" y2="${Y(0)}" stroke="var(--border)"/>`;
+      c += `<polyline points="${X(0)},${Y(0)} ${X(smax)},${Y(smax * N)}" fill="none" stroke="var(--text-2)" stroke-width="2"/>`;
+      c += `<polyline points="${X(1)},${Y(J1)} ${X(smax)},${Y(J1 + (smax - 1) * J)}" fill="none" stroke="var(--h-exec)" stroke-width="2"/>`;
+      c += `<rect x="${X(0)}" y="${Y(J1)}" width="3" height="${Y(0) - Y(J1)}" fill="var(--h-comp)"/>`;
+      if (Number.isFinite(Sstar) && Sstar <= smax) c += `<line x1="${X(Sstar)}" y1="${cy0}" x2="${X(Sstar)}" y2="${Y(0)}" stroke="var(--hl-stroke)" stroke-dasharray="4 3"/><text x="${X(Sstar) + 4}" y="${cy0 + 10}" class="ax hl">S* ≈ ${fr(Sstar, 1)}</text>`;
+      c += `<circle cx="${X(S)}" cy="${Y(S * N)}" r="4" fill="var(--text-2)"/><circle cx="${X(S)}" cy="${Y(J1 + (S - 1) * J)}" r="4" fill="var(--h-exec)"/>`;
+      c += `<text x="${cox}" y="${ch - 4}" class="ax">0</text><text x="${cw - 10}" y="${ch - 4}" text-anchor="end" class="ax">${smax} appels</text><text x="${cox - 6}" y="${cy0 + 8}" text-anchor="end" class="ax">${fr(tmax, 0)} ms</text>`;
+      const q = 0.8;
+      c += `<text x="${X(q * smax)}" y="${Y(q * smax * N) - 10}" text-anchor="middle" class="ax">NumPy optimisé</text><text x="${X(q * smax)}" y="${Y(J1 + (q * smax - 1) * J) + 18}" text-anchor="middle" class="ax" style="fill:var(--h-exec)">JAX (1er appel compris)</text>`;
+      const B = $('amort') as unknown as SVGSVGElement;
+      B.setAttribute('viewBox', `0 0 ${cw} ${ch}`);
+      B.innerHTML = c;
+
+      $('k1').textContent = `${fr(d.naive / d.hot)} ×`;
+      $('k2').textContent = Number.isFinite(Sstar) ? `≈ ${fr(Math.ceil(Sstar), 0)} appels` : 'jamais';
+      const tn = S * N, tj = J1 + (S - 1) * J;
+      $('k3').innerHTML = `NumPy ${fr(tn, 0)} ms · JAX ${fr(tj, 0)} ms`;
+    }
+    inp('s').addEventListener('input', () => draw(false));
+    draw(true);
+  });
+</script>
+
+<style is:global>
+  .bench .row { margin-bottom: 4px; }
+  .bench .seg { display: inline-flex; gap: 6px; }
+  .bench .seg button { font-size: 13px; padding: 4px 12px; }
+  .bench .ft { font-size: 13px; font-weight: 500; margin: 12px 0 2px; }
+  .bench .ft span { font-weight: 400; color: var(--text-2); }
+  .bench .posl { display: grid; grid-template-columns: 160px 1fr 50px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); margin: 4px 0; }
+  .bench .posl b { text-align: right; color: var(--text); font-weight: 500; }
+  .bench svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .bench svg text.ax.v { fill: var(--text); }
+  .bench svg text.ax.hl { fill: var(--hl-text); font-weight: 600; }
+  .bench .note { font-size: 13px; line-height: 1.5; color: var(--text-2); margin: 10px 0 0; }
+  @media (max-width: 600px) { .bench .posl { grid-template-columns: 1fr; } }
+</style>

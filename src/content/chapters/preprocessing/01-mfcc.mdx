@@ -10,53 +10,61 @@ import Reveal from '@/components/shared/Reveal.astro';
 import Quiz from '@/components/shared/Quiz.astro';
 import Refs from '@/components/shared/Refs.astro';
 import Framing from '@/components/preprocessing/01-mfcc/Framing.astro';
-import FrameSpectrum from '@/components/preprocessing/01-mfcc/FrameSpectrum.astro';
-import Spectrogram from '@/components/preprocessing/01-mfcc/Spectrogram.astro';
+import SpectrumView from '@/components/preprocessing/01-mfcc/SpectrumView.astro';
+import DftDetails from '@/components/preprocessing/01-mfcc/DftDetails.astro';
+import MelBank from '@/components/preprocessing/01-mfcc/MelBank.astro';
+import MelPitfall from '@/components/preprocessing/01-mfcc/MelPitfall.astro';
+import LogCompress from '@/components/preprocessing/01-mfcc/LogCompress.astro';
+import DctTruncate from '@/components/preprocessing/01-mfcc/DctTruncate.astro';
+import Deltas from '@/components/preprocessing/01-mfcc/Deltas.astro';
+import Cmvn from '@/components/preprocessing/01-mfcc/Cmvn.astro';
 
 <ArchMarker label="Vue d'ensemble : du signal audio aux MFCC" />
 
 Les **MFCC** (*Mel-Frequency Cepstral Coefficients*) résument la forme du spectre d'un court extrait de son en une dizaine de nombres. On les calcule sur chaque **trame** du signal : on obtient une suite de petits vecteurs, qu'on donne à un classifieur ou à un modèle.
 
-Le schéma de gauche montre les étapes ; le chapitre les prend dans l'ordre :
+Le schéma de gauche montre ces 5 étapes ; dans le détail d'une étape, il la déplie en ses sous-étapes. Le chapitre les prend dans l'ordre :
 
-1. **Trames** : découper le signal en petits morceaux qui se chevauchent.
+1. **Trames** : (en option, relever les aigus par la pré-accentuation, puis) découper le signal en petits morceaux qui se chevauchent.
 2. **Fenêtre et spectre** : pour chaque trame, adoucir les bords puis calculer les fréquences présentes.
-3. **Échelle de Mel** : regrouper les fréquences comme l'oreille le fait. *(à venir)*
-4. **Log et DCT** : compresser, puis ne garder que la forme générale du spectre. *(à venir)*
-5. **Deltas et normalisation** : ajouter la variation dans le temps, retirer l'effet du micro. *(à venir)*
+3. **Échelle de Mel** : regrouper les fréquences comme l'oreille le fait.
+4. **Log et DCT** : compresser, puis ne garder que la forme générale du spectre.
+5. **Deltas et normalisation** : ajouter la variation dans le temps, retirer l'effet du micro.
 
 <Refs items={[["Comparison of parametric representations for monosyllabic word recognition in continuously spoken sentences", "Davis & Mermelstein", 1980, "10.1109/TASSP.1980.1163420"]]} />
 
-<ArchMarker parts="signal frames" label="Découper le signal en trames de L valeurs, tous les H" />
+<ArchMarker parts="signal preemph" label="Le signal, avec une pré-accentuation optionnelle" />
 
 ## 1. Du signal aux trames
 
-Un signal audio numérique est une suite de valeurs $x[n]$, mesurées $f_s$ fois par seconde (16 kHz pour la parole). Son contenu change au fil du temps : voyelle, bruit, silence. On ne calcule donc pas un spectre pour tout le signal, mais un spectre **par trame** : un morceau de $L$ valeurs, et la trame suivante démarre $H$ valeurs plus loin (le **pas**).
+Un signal audio numérique est une suite de valeurs $x[n]$, mesurées $f_s$ fois par seconde.
+
+### Pré-accentuation (optionnelle)
+
+Avant tout, on peut filtrer le signal pour relever les aigus :
+
+$$
+y[n] = x[n] - \alpha\, x[n-1], \qquad \alpha = 0{,}97
+$$
+
+Le spectre de la voix décroît avec la fréquence ; ce filtre relève les aigus par rapport aux graves.`librosa.feature.mfcc`, lui, ne l'applique pas.
+
+<ArchMarker parts="frames" label="Découper le signal en trames de L valeurs, tous les H" />
+
+### Découpage en trames
+
+On ne calcule pas un spectre pour tout le signal, mais un spectre **par trame** : un morceau de $L$ valeurs, et la trame suivante démarre $H$ valeurs plus loin (le **pas**).
 
 <Framing />
 
-$$
-x_j[m] = x[\,jH + m\,], \quad m = 0, \dots, L-1 \qquad\qquad N_{\text{trames}} = 1 + \Big\lfloor \frac{N - L}{H} \Big\rfloor
-$$
 
-- **Parole** : $L = 25$ ms (400 valeurs à 16 kHz) et $H = 10$ ms (160 valeurs) sont des valeurs usuelles. Un signal de 1 s donne alors 98 trames.
-- **Pourquoi 25 ms** : assez court pour que le signal soit à peu près stable (une voyelle y est presque périodique), assez long pour contenir plusieurs périodes de la voix (à 120 Hz, une période dure 8 ms, donc environ 3 périodes par trame).
+- **Pourquoi 25 ms pour la parole** : assez court pour que le signal soit à peu près stable (une voyelle y est presque périodique), assez long pour contenir plusieurs périodes de la voix (à 120 Hz, une période dure 8 ms, donc environ 3 périodes par trame).
 - **Chevauchement** ($H < L$) : la fenêtre de l'étape suivante atténue les bords de chaque trame ; le chevauchement évite de perdre ce qui s'y trouve.
 - **Sons non vocaux** : les bibliothèques généralistes prennent des trames plus longues. librosa utilise 2048 valeurs avec un pas de 512 (soit 93 ms et 23 ms à 22,05 kHz).
-- Selon la bibliothèque, le signal est complété aux bords : le nombre exact de trames peut différer d'une ou deux unités de la formule.
 
-<div class="retain">
 
-**À retenir**
 
-- On découpe le signal en trames de $L$ valeurs, espacées d'un pas $H$ : $x_j[m] = x[jH + m]$.
-- Parole : 25 ms de trame, 10 ms de pas. Sons généraux : trames plus longues (librosa : 2048 valeurs, pas 512).
-- Une trame est assez courte pour être presque stationnaire, mais plus elle est courte, moins elle contient de périodes (section 2 : lien avec la résolution en fréquence).
-- Le pas plus petit que la trame crée un chevauchement : chaque instant apparaît dans plusieurs trames.
-
-</div>
-
-<Refs items={[["librosa.feature.melspectrogram (valeurs par défaut : n_fft = 2048, hop_length = 512)", "documentation librosa", 2024, "https://librosa.org/doc/0.10.2/generated/librosa.feature.melspectrogram.html"], ["torchaudio.compliance.kaldi.mfcc (valeurs par défaut de Kaldi : trame 25 ms, pas 10 ms)", "documentation torchaudio", 2024, "https://pytorch.org/audio/main/generated/torchaudio.compliance.kaldi.mfcc.html"]]} />
+<Refs items={[["librosa.feature.melspectrogram (valeurs par défaut : n_fft = 2048, hop_length = 512)", "documentation librosa", 2024, "https://librosa.org/doc/0.10.2/generated/librosa.feature.melspectrogram.html"], ["torchaudio.compliance.kaldi.mfcc (valeurs par défaut de Kaldi : trame 25 ms, pas 10 ms)", "documentation torchaudio", 2024, "https://pytorch.org/audio/main/generated/torchaudio.compliance.kaldi.mfcc.html"], ["librosa.effects.preemphasis (coef = 0,97)", "documentation librosa", 2024, "https://librosa.org/doc/0.10.2/generated/librosa.effects.preemphasis.html"]]} />
 
 <Quiz>
 
@@ -92,6 +100,14 @@ Un mélange des deux : le spectre de cette trame ne décrit plus ni l'un ni l'au
 
 </Reveal>
 
+**Q5.** Que fait la pré-accentuation aux basses et aux hautes fréquences ?
+
+<Reveal>
+
+Le gain du filtre $1 - \alpha e^{-i\omega}$ est faible pour les basses fréquences et proche de $1 + \alpha$ pour les plus hautes : elle atténue les graves et relève les aigus.
+
+</Reveal>
+
 </Quiz>
 
 <ArchMarker parts="window dft" label="Fenêtre, puis spectre de puissance de chaque trame" />
@@ -100,7 +116,7 @@ Un mélange des deux : le spectre de cette trame ne décrit plus ni l'un ni l'au
 
 Pour chaque trame, deux opérations : la multiplier par une **fenêtre**, puis calculer sa **transformée de Fourier discrète** (DFT), qui dit quelles fréquences la trame contient.
 
-<FrameSpectrum />
+<SpectrumView />
 
 $$
 X[k] = \sum_{m=0}^{L-1} w[m]\, x_j[m]\, e^{-2\pi i\, km / n_{\text{fft}}}, \qquad P[k] = |X[k]|^2, \qquad k = 0, \dots, \tfrac{n_{\text{fft}}}{2}
@@ -111,30 +127,21 @@ w[m] = 0{,}54 - 0{,}46\cos\!\Big(\frac{2\pi m}{L-1}\Big) \quad \text{(fenêtre d
 $$
 
 - **La DFT** : la trame est complétée de zéros jusqu'à $n_{\text{fft}}$ valeurs (une puissance de 2). $X[k]$ mesure combien la trame ressemble à une sinusoïde de fréquence $f_k = k\, f_s / n_{\text{fft}}$. On garde la **puissance** $|X[k]|^2$ : on perd la phase, pas l'énergie.
-- **Moitié des fréquences** : le signal est réel, donc les fréquences au-dessus de $f_s/2$ répètent celles en dessous. On garde $n_{\text{fft}}/2 + 1$ valeurs : 257 pour $n_{\text{fft}} = 512$.
-- **Pourquoi une fenêtre** : la DFT suppose que la trame se répète à l'infini. Une trame coupée net crée un saut entre sa fin et son début, dont l'énergie se répand sur toutes les fréquences (*fuite spectrale*). Une fenêtre ramène les bords vers 0. Passe le widget en décibels et compare « Rectangulaire » et « Hamming ».
-- **Séparer deux fréquences** : il faut qu'elles soient espacées d'au moins environ $f_s / L$ (un peu plus avec une fenêtre). Compléter par des zéros rend la courbe plus lisse, pas plus détaillée.
 
-### Le spectrogramme et le compromis temps / fréquence
 
-Mis côte à côte, les spectres des trames successives forment un **spectrogramme** : le temps en abscisse, la fréquence en ordonnée, l'énergie en intensité.
 
-<Spectrogram />
+### Le spectrogramme
 
 - **Trame courte** : on situe bien les changements dans le temps, mais les fréquences sont floues. **Trame longue** : l'inverse.
 - **Deux choses dans un spectre de voyelle** : les **harmoniques** (lignes fines, espacées de la fréquence fondamentale $f_0$, la hauteur de la voix) et l'**enveloppe** (la forme générale, qui porte le timbre). Les MFCC garderont surtout l'enveloppe (section 4).
 
-<ArchMarker parts="preemph" label="Pré-accentuation : relever les hautes fréquences (optionnelle)" />
+### Quelques subtilités
 
-### Pré-accentuation (optionnelle)
+- **Seulement la moitié des cases** : la DFT de $n_{\text{fft}}$ points donne $n_{\text{fft}}$ cases, de 0 à $f_s$. Mais pour un signal réel, la case $n_{\text{fft}} - k$ est le miroir de la case $k$ : $|X[n_{\text{fft}} - k]|^2 = |X[k]|^2$. C'est la limite de Nyquist : un son à $f$ et un son à $f_s - f$ donnent les mêmes échantillons (au signe près), donc la DFT ne peut pas les distinguer. La seconde moitié n'apporte rien de nouveau : on garde les cases $0$ à $n_{\text{fft}}/2$, soit $n_{\text{fft}}/2 + 1$ valeurs couvrant 0 à $f_s/2$ (257 pour $n_{\text{fft}} = 512$). Voir le premier onglet du widget ci-dessous.
+- **Pourquoi une fenêtre** : la DFT suppose que la trame se répète à l'infini. Une trame coupée net crée un saut entre sa fin et son début, dont l'énergie se répand sur toutes les fréquences (*fuite spectrale*). Une fenêtre ramène les bords vers 0. Passe le widget en décibels et compare « Rectangulaire » et « Hamming ».
+- **Séparer deux fréquences** : il faut qu'elles soient espacées d'au moins environ $f_s / L$ (un peu plus avec une fenêtre). Compléter par des zéros rend la courbe plus lisse, pas plus détaillée.
 
-Avant le découpage, on peut filtrer le signal :
-
-$$
-y[n] = x[n] - \alpha\, x[n-1], \qquad \alpha = 0{,}97
-$$
-
-Le spectre de la voix décroît avec la fréquence ; ce filtre relève les aigus par rapport aux graves. Coche la case du premier widget pour voir la différence. 0,97 est la valeur par défaut de `librosa.effects.preemphasis` (qui dit reprendre celle de HTK) et de Kaldi ; `librosa.feature.mfcc`, lui, ne l'applique pas.
+<DftDetails />
 
 <div class="retain">
 
@@ -145,11 +152,11 @@ Le spectre de la voix décroît avec la fréquence ; ce filtre relève les aigus
 - La case $k$ correspond à $k\, f_s / n_{\text{fft}}$ ; la séparation minimale est d'environ $f_s / L$, et les zéros ajoutés ne l'améliorent pas.
 - Compromis : trame courte = temps précis, fréquences floues ; trame longue = l'inverse.
 - Un spectre de voyelle = harmoniques (hauteur) + enveloppe (timbre) ; les MFCC visent l'enveloppe.
-- La pré-accentuation $y[n] = x[n] - 0{,}97\,x[n-1]$ est optionnelle.
+- La case « Pré-accentuation » du widget (celle de la section 1) fait remonter les aigus du spectre.
 
 </div>
 
-<Refs items={[["On the use of windows for harmonic analysis with the discrete Fourier transform", "Harris", 1978, "10.1109/PROC.1978.10837"], ["librosa.effects.preemphasis", "documentation librosa", 2024, "https://librosa.org/doc/0.10.2/generated/librosa.effects.preemphasis.html"]]} />
+<Refs items={[["On the use of windows for harmonic analysis with the discrete Fourier transform", "Harris", 1978, "10.1109/PROC.1978.10837"]]} />
 
 <Quiz>
 
@@ -182,6 +189,285 @@ Non. On ajoute des points de calcul, donc la courbe est plus lisse, mais on n'aj
 <Reveal>
 
 À 10 ms, la séparation minimale est d'environ 100 Hz, du même ordre que l'écart entre harmoniques (120 Hz) : ils se fondent. À 50 ms, elle est d'environ 20 Hz : ils sont nettement séparés. Voir le spectrogramme.
+
+</Reveal>
+
+</Quiz>
+
+<ArchMarker parts="mel" label="Filtres Mel : 257 fréquences → M énergies" />
+
+## 3. L'échelle de Mel et le banc de filtres
+
+Le spectre d'une trame a 257 valeurs, espacées régulièrement en fréquence. L'oreille ne s'y prend pas ainsi : elle sépare finement les graves (100 Hz et 200 Hz sont très différents) et grossièrement les aigus (6 000 Hz et 6 100 Hz sont presque confondus). L'**échelle de Mel** est une échelle de hauteur perçue : des écarts égaux en mel sont perçus comme des écarts de hauteur égaux. On regroupe donc les 257 valeurs en $M$ **énergies**, avec des groupes étroits dans les graves et larges dans les aigus.
+
+<MelBank />
+
+$$
+m = 2595 \log_{10}\!\Big(1 + \frac{f}{700}\Big), \qquad f = 700\,\big(10^{\,m/2595} - 1\big)
+$$
+
+$$
+E_m = \sum_{k} H_m[k]\; P[k], \qquad m = 1, \dots, M
+$$
+
+- **La construction** : on choisit $M + 2$ points régulièrement espacés **en mel** entre 0 et $f_s/2$, puis on les reconvertit en Hz. Le filtre $m$ est un triangle : il monte du point $m-1$ au point $m$ (son centre), puis redescend jusqu'au point $m+1$. Les filtres se chevauchent.
+- **L'application** : $E_m$ est la somme des énergies $P[k]$ pondérées par le triangle. Pour toute la matrice des trames, c'est un produit par une matrice $H$ de $M \times 257$ : on passe de $98 \times 257$ à $98 \times M$ (ici $M = 40$).
+- **Ce que ça change** : pour $M = 40$, un filtre fait environ 100 Hz de large près de 100 Hz, environ 200 Hz près de 1 kHz, et plus de 500 Hz au-dessus de 4 kHz : dans les aigus, chacun couvre plusieurs harmoniques et en moyenne l'énergie. L'échelle est à peu près linéaire sous 1 kHz et logarithmique au-dessus ; 1 000 Hz valent environ 1 000 mel.
+- **Trop de filtres** : avec $M = 128$ (valeur par défaut de `librosa`) et une FFT à 512 points, le premier filtre ne contient aucune case de la FFT (énergie nulle) et 26 filtres au total n'en voient qu'une seule ou aucune : le nombre de filtres utiles est limité par la résolution de la trame.
+- **Variantes** : `librosa` utilise par défaut la variante de Slaney (linéaire sous 1 kHz, logarithmique au-dessus) et divise chaque filtre par sa largeur pour que tous aient la même aire ; la formule ci-dessus est celle de HTK (`htk=True`). Valeurs par défaut du nombre de filtres : 128 pour `librosa`, 23 pour Kaldi.
+
+### Deux pièges classiques
+
+<ArchMarker parts="mel" label="Pièges : fréquence d'échantillonnage fausse, trop de filtres" />
+
+Deux erreurs silencieuses donnent des coefficients qui ressemblent à des MFCC sans en être :
+
+<MelPitfall />
+
+- **Fréquence d'échantillonnage oubliée ou fausse** : si on ne la donne pas, `librosa.feature.mfcc` suppose 22 050 Hz (valeur par défaut de `sr`). Le banc de filtres est alors construit pour 0 à 11 025 Hz alors que le signal va de 0 à $f_s/2$ : toutes les fréquences sont décalées d'un facteur $22\,050 / f_s$. Un filtre étiqueté « 1 kHz » mesure en réalité $1000 \times f_s / 22\,050$ Hz, soit 726 Hz pour $f_s = 16$ kHz. Une valeur déclarée fausse (10 kHz au lieu de 16 kHz) fait la même chose dans l'autre sens : le même filtre mesure 1 600 Hz.
+- **Trop de filtres pour la FFT** : avec 128 filtres (défaut de `librosa`) et une fenêtre de 100 valeurs, la FFT n'a que 51 cases, espacées de 160 Hz à 16 kHz : la plupart des filtres ne contiennent aucune case et restent à zéro.
+- **Réglages standard pour la parole** : trames de 25 ms toutes les 10 ms, 40 bandes de Mel, 20 coefficients, calculés **à la vraie fréquence d'échantillonnage** de chaque enregistrement (à vérifier jeu de données par jeu de données).
+
+<div class="retain">
+
+**À retenir**
+
+- Mel : échelle de hauteur perçue, $m = 2595\log_{10}(1 + f/700)$, à peu près linéaire sous 1 kHz et logarithmique au-dessus.
+- Banc de filtres : $M$ triangles dont les centres sont régulièrement espacés en mel, donc étroits dans les graves et larges dans les aigus.
+- $E_m = \sum_k H_m[k]\,P[k]$ : 257 valeurs deviennent $M$ valeurs (souvent 40), dont chacune moyenne une bande de fréquences.
+- Trop de filtres pour la résolution de la FFT donne des filtres vides ou redondants.
+- Les variantes (HTK, Slaney) et la normalisation des filtres changent légèrement les nombres : à fixer une fois pour toutes dans un projet.
+- Toujours donner la vraie fréquence d'échantillonnage (sinon librosa suppose 22 050 Hz), et vérifier que $M$ reste raisonnable par rapport au nombre de cases de la FFT.
+
+</div>
+
+<Refs items={[["A scale for the measurement of the psychological magnitude of pitch", "Stevens, Volkmann & Newman", 1937, "10.1121/1.1915893"], ["librosa.filters.mel (htk, norm, n_mels)", "documentation librosa", 2024, "https://librosa.org/doc/0.10.2/generated/librosa.filters.mel.html"], ["librosa.feature.mfcc (sr = 22050 par défaut dans la version 0.8.1)", "documentation librosa", 2020, "https://librosa.org/doc/0.8.1/generated/librosa.feature.mfcc.html"]]} />
+
+<Quiz>
+
+**Q1.** Que valent environ 1 000 Hz et 2 000 Hz en mel (formule de HTK) ?
+
+<Reveal>
+
+$m(1000) = 2595\log_{10}(1 + 1000/700) \approx 1000$ mel, et $m(2000) = 2595\log_{10}(1 + 2000/700) \approx 1521$ mel. Doubler la fréquence ajoute 521 mel et non 1 000 : l'échelle s'aplatit dans les aigus.
+
+</Reveal>
+
+**Q2.** Avec $M = 40$ filtres entre 0 et 8 kHz, combien de points faut-il placer, et quel écart entre deux points consécutifs en mel ?
+
+<Reveal>
+
+$M + 2 = 42$ points. $m(8000) \approx 2840$ mel, divisé en 41 intervalles : environ 69 mel d'écart.
+
+</Reveal>
+
+**Q3.** Avec 40 filtres, combien ont leur centre sous 1 kHz en échelle de Mel ? Et si les filtres sont espacés régulièrement en Hz ?
+
+<Reveal>
+
+En mel : 14 (les centres sont à $i \times 69$ mel ; $14 \times 69 \approx 970$ mel, soit environ 955 Hz). En Hz : l'écart est $8000/41 \approx 195$ Hz, donc 5 centres sous 1 kHz. Vérifie les deux dans le widget avec le filtre mis en évidence.
+
+</Reveal>
+
+**Q4.** Pourquoi passer de 257 valeurs à 40 est-il utile avant de continuer ?
+
+<Reveal>
+
+Une représentation plus petite, et moins sensible aux détails fins des aigus : un filtre large moyenne plusieurs harmoniques au lieu de les suivre un par un. C'est un premier pas vers l'enveloppe du spectre.
+
+</Reveal>
+
+**Q5.** Un enregistrement à 16 kHz est traité sans donner `sr` à librosa. Quelle fréquence réelle mesure le filtre étiqueté 2 kHz ?
+
+<Reveal>
+
+$2000 \times 16\,000 / 22\,050 \approx 1451$ Hz. Tous les filtres sont décalés du même facteur : les formants se retrouvent dans de mauvais filtres, et les coefficients ne décrivent plus le spectre réel.
+
+</Reveal>
+
+**Q6.** Avec une fenêtre de 100 valeurs à 16 kHz et 128 filtres, pourquoi certains filtres sont-ils vides ?
+
+<Reveal>
+
+La FFT n'a que $100/2 + 1 = 51$ cases, espacées de $16\,000/100 = 160$ Hz. Dans les graves, les filtres de Mel sont bien plus étroits que 160 Hz : beaucoup tombent entre deux cases et ne contiennent aucune fréquence.
+
+</Reveal>
+
+</Quiz>
+
+<ArchMarker parts="log" label="Logarithme des énergies de Mel : compresser l'échelle" />
+
+## 4. Logarithme et DCT
+
+### Le logarithme
+
+Les 40 énergies de Mel d'une trame varient sur plusieurs ordres de grandeur : un formant fort écrase tout le reste. On en prend le logarithme :
+
+$$
+\tilde E_m = \ln E_m
+$$
+
+<LogCompress />
+
+- **Il compresse l'échelle** : les énergies faibles redeviennent visibles à côté des fortes. L'oreille juge d'ailleurs l'intensité de façon à peu près logarithmique (échelle des décibels).
+- **Un changement de volume devient un décalage** : multiplier le signal par $g$ multiplie chaque $E_m$ par $g^2$, donc ajoute la même constante $2\ln g$ à tous les $\ln E_m$. La forme de la courbe ne change pas.
+- **Il transforme un produit en somme** : dans le modèle source-filtre de la voix, le spectre est le produit de l'excitation (cordes vocales) et de la forme du conduit vocal. Le logarithme en fait une somme, ce qui permet de les séparer ensuite.
+- **Le zéro est interdit** : $\ln 0 = -\infty$, on ajoute un petit plancher aux énergies. `librosa` travaille en décibels ($10\log_{10}$) ; changer de base ne fait que changer l'échelle des coefficients.
+
+<ArchMarker parts="dct" label="DCT : décomposer la courbe, ne garder que la forme générale" />
+
+### La DCT : garder la forme générale
+
+Les 40 log-énergies forment une courbe selon l'indice du filtre. La **DCT** (transformée en cosinus discrète) la décompose en ondes cosinus de plus en plus rapides :
+
+$$
+c_n = s_n \sum_{m=1}^{M} \ln E_m \, \cos\!\Big(\frac{\pi\, n\,(m - \tfrac12)}{M}\Big), \qquad n = 0, \dots, M-1
+$$
+
+avec $s_0 = \sqrt{1/M}$ et $s_n = \sqrt{2/M}$ (DCT-II orthonormée, celle de `librosa`).
+
+<DctTruncate />
+
+- **Ce que mesure chaque coefficient** : $c_0$ est le niveau moyen de la courbe ; $c_1$ sa pente des graves vers les aigus (une demi-onde) ; les suivants, des ondulations de plus en plus fines.
+- **Garder les $K$ premiers** (13 pour Kaldi, 20 par défaut dans `librosa`) revient à lisser la courbe : on garde la forme générale, l'**enveloppe spectrale**, et on perd les détails fins (restes des harmoniques, bruit). Réduis $K$ dans le widget pour voir la courbe se lisser.
+- **Pourquoi une DCT** : les log-énergies de filtres voisins sont très corrélées (les filtres se chevauchent). La DCT les décorrèle à peu près et concentre l'information dans les premiers coefficients. Avec des réseaux de neurones, on utilise souvent directement les log-énergies de Mel, sans DCT.
+- **Cepstre** : c'est le « spectre du logarithme du spectre » (le mot est formé en retournant le début de « spectre »). Les MFCC en sont une version sur l'échelle de Mel.
+
+<ArchMarker parts="mfcc" label="Les MFCC : un vecteur de K coefficients par trame" />
+
+### Les MFCC
+
+Pour chaque trame, les $K$ premiers coefficients forment le **vecteur MFCC**. Pour 1 s de parole : $98 \times 13$ nombres, au lieu de $98 \times 40$ log-énergies et de $98 \times 400$ valeurs du signal.
+
+<div class="retain">
+
+**À retenir**
+
+- Le logarithme compresse les énergies de Mel et transforme un changement de volume en simple décalage ; $\ln 0$ impose un petit plancher.
+- La DCT-II décompose la courbe des log-énergies : $c_0$ = niveau, $c_1$ = pente, puis des ondulations de plus en plus fines.
+- Garder les $K$ premiers coefficients (13 ou 20) garde l'enveloppe et jette le détail fin ; la DCT décorrèle à peu près les log-énergies.
+- MFCC = $\text{DCT}(\ln(\text{énergies de Mel}))$, tronquée à $K$ coefficients, un vecteur par trame.
+
+</div>
+
+<Refs items={[["librosa.feature.mfcc (log-spectrogramme de Mel, DCT de type 2, normalisation « ortho »)", "documentation librosa", 2025, "https://librosa.org/doc/0.11.0/generated/librosa.feature.mfcc.html"], ["Comparison of parametric representations for monosyllabic word recognition in continuously spoken sentences", "Davis & Mermelstein", 1980, "10.1109/TASSP.1980.1163420"]]} />
+
+<Quiz>
+
+**Q1.** Le signal est multiplié par 10 en amplitude. Que devient $\ln E_m$ pour chaque filtre ? Et les coefficients $c_n$ ?
+
+<Reveal>
+
+$E_m$ est multiplié par $10^2 = 100$, donc $\ln E_m$ augmente de $2\ln 10 \approx 4{,}6$ pour tous les filtres. Une constante ne change que $c_0$ : les $c_n$ pour $n \geq 1$ restent identiques (les cosinus de la DCT sont de moyenne nulle).
+
+</Reveal>
+
+**Q2.** Que se passe-t-il si une énergie de Mel vaut exactement 0 ? Que faire ?
+
+<Reveal>
+
+$\ln 0 = -\infty$ : les coefficients deviennent infinis ou NaN. On ajoute un petit plancher aux énergies avant le logarithme.
+
+</Reveal>
+
+**Q3.** Que signifie un $c_1$ positif ?
+
+<Reveal>
+
+Le cosinus de $c_1$ est positif sur la moitié des filtres graves et négatif sur la moitié aiguë : $c_1 > 0$ veut dire que les log-énergies sont plus fortes dans les graves que dans les aigus (pente descendante).
+
+</Reveal>
+
+**Q4.** Pour 1 s de parole (98 trames), combien de nombres avec 40 log-énergies ? Avec 13 MFCC ?
+
+<Reveal>
+
+$98 \times 40 = 3920$ et $98 \times 13 = 1274$ : environ trois fois moins, et surtout une représentation qui garde l'enveloppe du spectre.
+
+</Reveal>
+
+</Quiz>
+
+<ArchMarker parts="post" label="Deltas : la variation des coefficients d'une trame à l'autre" />
+
+## 5. Deltas et normalisation
+
+Les MFCC d'une trame décrivent une photo du spectre. Ni la dynamique (comment le son change) ni l'effet du micro n'y sont traités. Deux étapes optionnelles s'en occupent.
+
+### Les deltas
+
+Un **delta** mesure la variation d'un coefficient d'une trame à l'autre : sa pente dans le temps. On l'obtient par régression sur $2N+1$ trames autour de $t$ :
+
+$$
+\Delta c_t = \frac{\sum_{n=1}^{N} n\,\big(c_{t+n} - c_{t-n}\big)}{2\sum_{n=1}^{N} n^2}
+$$
+
+<Deltas />
+
+- **ΔΔ** (delta-delta) : le delta du delta, c'est la courbure. Empiler MFCC, Δ et ΔΔ donne $13 \times 3 = 39$ nombres par trame, convention courante en reconnaissance de la parole.
+- **Bords** : on répète la première et la dernière trame (c'est le choix par défaut de `torchaudio.functional.compute_deltas`, avec $N = 2$ pour sa fenêtre de 5 trames).
+- **Variante** : `librosa.feature.delta` utilise un filtre de Savitzky-Golay, par défaut sur 9 trames. Les valeurs diffèrent donc de la formule ci-dessus.
+
+<ArchMarker parts="post" label="Normalisation : retirer l'effet constant du micro et de la pièce" />
+
+### Normaliser la moyenne (et la variance)
+
+Un micro ou une pièce agit comme un filtre fixe. Il **multiplie** le spectre, donc **ajoute** une constante au logarithme du spectre, donc ajoute un vecteur à peu près constant dans le temps aux coefficients. On le retire en soustrayant la moyenne de chaque coefficient sur l'enregistrement (CMN, *cepstral mean normalization*), et on peut aussi diviser par l'écart type (CMVN) :
+
+$$
+\hat c_t = \frac{c_t - \bar c}{\sigma_c}
+$$
+
+<Cmvn />
+
+- **Ce qui disparaît** : un décalage constant venant du canal. Mais aussi la moyenne du locuteur et du son lui-même : la normalisation a besoin de tout l'enregistrement, ou d'une fenêtre glissante, ce qui complique le temps réel.
+- **Limites** : elle suppose un canal fixe pendant l'enregistrement. Avec du bruit fort, la relation entre les coefficients des deux canaux n'est plus linéaire et la normalisation corrige moins bien. Le signal du widget contient un léger bruit de fond, comme tout vrai enregistrement : sans lui, les bandes de Mel vides ne reçoivent que les fuites de la fenêtre, qui ne suivent pas la même loi, et la correction est moins bonne.
+- **Ordre** : à appliquer de la même façon à l'entraînement et au test.
+
+<div class="retain">
+
+**À retenir**
+
+- Delta : $\Delta c_t = \sum_n n\,(c_{t+n} - c_{t-n}) / (2\sum_n n^2)$, la pente du coefficient dans le temps ; ΔΔ en est la courbure. 13 + 13 + 13 = 39 nombres par trame.
+- Un canal fixe multiplie le spectre, donc ajoute un vecteur quasi constant aux MFCC : la soustraction de la moyenne (CMN), éventuellement avec division par l'écart type (CMVN), le retire.
+- La normalisation retire aussi la moyenne du locuteur, et demande tout l'enregistrement ou une fenêtre glissante.
+- **Chaîne complète** : signal → (pré-accentuation) → trames → fenêtre → $|\mathrm{DFT}|^2$ → filtres de Mel → $\ln$ → DCT → $K$ premiers coefficients → (Δ, ΔΔ) → (CMVN).
+
+</div>
+
+<Refs items={[["torchaudio.functional.compute_deltas (formule, bords « replicate »)", "documentation torchaudio", 2025, "https://pytorch.org/audio/main/generated/torchaudio.functional.compute_deltas.html"], ["librosa.feature.delta (filtre de Savitzky-Golay, width = 9)", "documentation librosa", 2024, "https://librosa.org/doc/0.10.2/generated/librosa.feature.delta.html"], ["The Use of Cepstral Means in Conversational Speech Recognition", "Westphal", 1997, "https://publikationen.bibliothek.kit.edu/308197/2424"]]} />
+
+<Quiz>
+
+**Q1.** Avec $N = 2$, écris le delta en $t$.
+
+<Reveal>
+
+$\Delta c_t = \dfrac{1\,(c_{t+1} - c_{t-1}) + 2\,(c_{t+2} - c_{t-2})}{2\,(1^2 + 2^2)} = \dfrac{(c_{t+1} - c_{t-1}) + 2\,(c_{t+2} - c_{t-2})}{10}$.
+
+</Reveal>
+
+**Q2.** Combien de nombres par trame avec 13 MFCC, leurs Δ et leurs ΔΔ ? Et pour 1 s de parole ?
+
+<Reveal>
+
+$13 \times 3 = 39$ par trame, soit $98 \times 39 = 3822$ pour 1 s (98 trames).
+
+</Reveal>
+
+**Q3.** Pourquoi un changement de micro devient-il à peu près une constante dans les MFCC ?
+
+<Reveal>
+
+Le micro filtre le signal, donc multiplie son spectre. Le logarithme transforme cette multiplication en addition, et la DCT est linéaire : l'effet du micro s'ajoute aux coefficients, avec la même valeur à chaque trame tant que le micro ne change pas.
+
+</Reveal>
+
+**Q4.** Quels sont les inconvénients de la soustraction de la moyenne ?
+
+<Reveal>
+
+Elle retire aussi la moyenne du locuteur et du son lui-même, elle a besoin de tout l'enregistrement (ou d'une fenêtre glissante : peu adaptée au temps réel), et elle suppose un canal fixe.
 
 </Reveal>
 

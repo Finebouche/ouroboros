@@ -1,0 +1,108 @@
+---
+// Chapitre MFCC, section 5 : normalisation de la moyenne (et de la variance) des coefficients, pour effacer l'effet d'un canal fixe (micro, pièce).
+---
+<div class="widget cmvn pp" data-widget="cmvn">
+  <div class="row"><span>Canal (micro, pièce) :</span><span class="seg" data-ref="ch"></span></div>
+  <div class="row"><span>Normalisation :</span><span class="seg" data-ref="nm"></span></div>
+  <label class="posl"><span>Coefficient c<sub>k</sub>, k =</span><input type="range" data-ref="k" min="0" max="12" step="1" value="1" /><b data-ref="k-out"></b></label>
+  <p class="lg"><i class="sq a"></i>son d'origine <i class="sq b"></i>même son, enregistré à travers le canal</p>
+  <svg data-ref="svg" width="100%" role="img" aria-label="Un coefficient MFCC au fil des trames, avec et sans canal"></svg>
+  <div class="kpis">
+    <div><span>Écart moyen entre les deux courbes</span><b data-ref="k1"></b></div>
+    <div><span>Moyenne de la courbe d'origine</span><b data-ref="k2"></b></div>
+    <div><span>Moyenne de la courbe avec canal</span><b data-ref="k3"></b></div>
+  </div>
+  <p class="note" data-ref="note"></p>
+</div>
+
+<script>
+  import { makeSignal } from './signal';
+  import { mfccFrames } from './mel';
+
+  document.querySelectorAll<HTMLElement>('[data-widget="cmvn"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const inp = (r: string) => $(r) as HTMLInputElement;
+    const x = makeSignal({ floor: 0.01 }); // avec un léger bruit de fond, comme tout vrai enregistrement
+    const fr = (v: number, d = 2) => (Math.abs(v) < 0.5 * 10 ** -d ? 0 : v).toLocaleString('fr-FR', { maximumFractionDigits: d });
+
+    // deux canaux fixes (filtres du premier ordre) appliqués au signal
+    const lowpass = Float32Array.from(x); for (let n = 1; n < x.length; n++) lowpass[n] = 0.25 * x[n] + 0.75 * lowpass[n - 1];
+    const highpass = Float32Array.from(x); for (let n = 1; n < x.length; n++) highpass[n] = x[n] - 0.9 * x[n - 1];
+    const CHANNELS: Record<string, Float32Array> = { none: x, low: lowpass, high: highpass };
+    const MF: Record<string, number[][]> = { none: mfccFrames(x), low: mfccFrames(lowpass), high: mfccFrames(highpass) };
+    let ch = 'low', nm = 'none';
+
+    function seg(key: string, items: [string, string][], onPick: (v: string) => void) {
+      items.forEach(([v, label]) => {
+        const b = document.createElement('button');
+        b.textContent = label;
+        b.dataset.v = v;
+        b.addEventListener('click', () => { onPick(v); draw(); });
+        $(key).appendChild(b);
+      });
+    }
+    seg('ch', [['none', 'Aucun'], ['low', 'Micro étouffé (aigus coupés)'], ['high', 'Micro nasillard (graves coupés)']], (v) => (ch = v));
+    seg('nm', [['none', 'Aucune'], ['cmn', 'Moyenne (CMN)'], ['cmvn', 'Moyenne et variance (CMVN)']], (v) => (nm = v));
+    const mark = (key: string, v: string) => $(key).querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.v === v));
+
+    function track(key: string, k: number) {
+      let v = MF[key].map((row) => row[k]);
+      const mean = v.reduce((a, b) => a + b, 0) / v.length;
+      const sd = Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / v.length) || 1;
+      if (nm !== 'none') v = v.map((q) => q - mean);
+      if (nm === 'cmvn') v = v.map((q) => q / sd);
+      return v;
+    }
+
+    function draw() {
+      mark('ch', ch); mark('nm', nm);
+      const k = +inp('k').value;
+      $('k-out').textContent = `c${k}`;
+      const a = track('none', k), b = track(ch, k);
+      const T = a.length;
+      const W = 640, ox = 44, wpx = W - ox - 8, H = 170, y0 = 8, hh = H - 28;
+      const lo = Math.min(...a, ...b), hi = Math.max(...a, ...b), pad = (hi - lo || 1) * 0.08;
+      const Y = (v: number) => y0 + (1 - (v - (lo - pad)) / (hi - lo + 2 * pad)) * hh;
+      const X = (i: number) => ox + (i / (T - 1)) * wpx;
+      let g = '';
+      if (lo < 0 && hi > 0) g += `<line x1="${ox}" y1="${Y(0)}" x2="${W - 8}" y2="${Y(0)}" stroke="var(--border)"/>`;
+      const line = (v: number[], stroke: string, wd: number) => `<polyline points="${v.map((q, i) => `${X(i).toFixed(1)},${Y(q).toFixed(1)}`).join(' ')}" fill="none" stroke="${stroke}" stroke-width="${wd}" stroke-linejoin="round"/>`;
+      g += line(a, 'var(--p-wave)', 1.8);
+      if (ch !== 'none') g += line(b, 'var(--p-mel)', 1.8);
+      for (const ms of [0, 100, 200, 300, 400, 500]) g += `<text x="${X(ms / 10)}" y="${H - 6}" text-anchor="middle" class="ax">${ms}</text>`;
+      g += `<text x="${W - 8}" y="${H - 6}" text-anchor="end" class="ax">ms</text>`;
+      g += `<text x="${ox - 4}" y="${Y(hi) + 3.5}" text-anchor="end" class="ax">${fr(hi, 1)}</text><text x="${ox - 4}" y="${Y(lo) + 3.5}" text-anchor="end" class="ax">${fr(lo, 1)}</text>`;
+      const s = $('svg') as unknown as SVGSVGElement;
+      s.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      s.innerHTML = g;
+
+      const gap = a.reduce((acc, q, i) => acc + Math.abs(q - b[i]), 0) / T;
+      const mean = (v: number[]) => v.reduce((p, q) => p + q, 0) / v.length;
+      $('k1').textContent = fr(gap);
+      $('k2').textContent = fr(mean(a));
+      $('k3').textContent = fr(mean(b));
+      $('note').textContent = ch === 'none'
+        ? 'Choisis un canal : le même son passe par un micro différent.'
+        : nm === 'none'
+          ? 'Le canal décale la courbe d’une quantité à peu près constante dans le temps : les coefficients ne décrivent plus seulement le son.'
+          : 'Après soustraction de la moyenne, les deux courbes se superposent presque : le décalage constant du canal a disparu.';
+    }
+    inp('k').addEventListener('input', draw);
+    draw();
+  });
+</script>
+
+<style is:global>
+  .cmvn .row { margin-bottom: 6px; }
+  .cmvn .seg { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  .cmvn .seg button { font-size: 13px; padding: 4px 12px; }
+  .cmvn .posl { display: grid; grid-template-columns: 200px 1fr 70px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); margin: 6px 0; }
+  .cmvn .posl b { text-align: right; color: var(--text); font-weight: 500; }
+  .cmvn .lg { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: 12px; color: var(--text-2); margin: 0 0 2px; }
+  .cmvn .sq { display: inline-block; width: 14px; height: 3px; margin-right: 4px; vertical-align: 3px; }
+  .cmvn .sq.a { background: var(--p-wave); }
+  .cmvn .sq.b { background: var(--p-mel); }
+  .cmvn svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .cmvn .note { font-size: 14px; line-height: 1.5; margin: 8px 0 0; min-height: 3em; }
+  @media (max-width: 600px) { .cmvn .posl { grid-template-columns: 1fr; } }
+</style>

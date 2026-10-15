@@ -52,10 +52,26 @@ export function preemphasis(x: ArrayLike<number>, a = 0.97): Float32Array {
 
 // Spectre de puissance |X[k]|², k = 0 … nfft/2, d'une trame déjà fenêtrée (complétée par des zéros jusqu'à nfft).
 export function powerSpectrum(frame: ArrayLike<number>, nfft: number): Float64Array {
+  if ((nfft & (nfft - 1)) !== 0) return naivePower(frame, nfft); // longueur qui n'est pas une puissance de 2 (ex. 100)
   const re = new Float64Array(nfft), im = new Float64Array(nfft);
   for (let i = 0; i < frame.length && i < nfft; i++) re[i] = frame[i];
   fft(re, im);
   const p = new Float64Array(nfft / 2 + 1);
   for (let k = 0; k < p.length; k++) p[k] = re[k] * re[k] + im[k] * im[k];
+  return p;
+}
+
+// DFT directe pour une longueur quelconque (O(n²), réservée aux petites longueurs).
+function naivePower(frame: ArrayLike<number>, nfft: number): Float64Array {
+  const p = new Float64Array(Math.floor(nfft / 2) + 1);
+  for (let k = 0; k < p.length; k++) {
+    let re = 0, im = 0;
+    for (let m = 0; m < frame.length && m < nfft; m++) {
+      const a = (-2 * Math.PI * k * m) / nfft;
+      re += frame[m] * Math.cos(a);
+      im += frame[m] * Math.sin(a);
+    }
+    p[k] = re * re + im * im;
+  }
   return p;
 }

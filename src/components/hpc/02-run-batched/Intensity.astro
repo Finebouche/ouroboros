@@ -1,0 +1,76 @@
+---
+// Chapitre HPC 2 : vmap transforme W @ s (GEMV, limité par la mémoire) en GEMM. Intensité arithmétique = FLOPs par octet lu en mémoire.
+// Hypothèse : W dense. Par défaut reservoirpy.jax stocke W et Win en creux (BCOO, connectivité 0,1) : à mesurer.
+---
+<div class="widget inten hp" data-widget="inten">
+  <label class="posl"><span>Séries traitées d'un coup B</span><input type="range" data-ref="b" min="1" max="512" step="1" value="32" /><b data-ref="b-out"></b></label>
+  <label class="posl"><span>Neurones N</span><input type="range" data-ref="n" min="100" max="4000" step="100" value="1000" /><b data-ref="n-out"></b></label>
+  <div class="row"><span>Précision :</span><span class="seg" data-ref="dt"></span><span class="sp">Point d'équilibre :</span><span class="seg" data-ref="bal"></span></div>
+  <svg data-ref="svg" width="100%" role="img" aria-label="Intensité arithmétique d'une série contre B séries, comparée au point d'équilibre du processeur"></svg>
+  <div class="kpis">
+    <div><span>FLOPs par pas</span><b data-ref="k1"></b></div>
+    <div><span>Octets lus (W)</span><b data-ref="k2"></b></div>
+    <div><span>Intensité</span><b data-ref="k3"></b></div>
+    <div><span>Pas limité par</span><b data-ref="k4"></b></div>
+  </div>
+  <p class="note">Une série : <code>W @ s</code>, 2N² FLOPs, lit tout W. B séries d'un coup : <code>états (B × N) @ Wᵀ</code>, 2BN² FLOPs pour les mêmes octets de W : l'intensité est multipliée par B. Simplifications : on néglige la lecture des états et le terme Win @ x, et le fait qu'une petite matrice W peut tenir en cache.</p>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="inten"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const inp = (r: string) => $(r) as HTMLInputElement;
+    const fr = (v: number, d = 1) => v.toLocaleString('fr-FR', { maximumFractionDigits: d });
+    let bytes = 8, bal = 10;
+    const mk = (key: string, items: [string, number][], set: (v: number) => void) => items.forEach(([l, v]) => {
+      const b = document.createElement('button');
+      b.textContent = l; b.dataset.v = String(v);
+      b.addEventListener('click', () => { set(v); draw(); });
+      $(key).appendChild(b);
+    });
+    mk('dt', [['float64', 8], ['float32', 4]], (v) => (bytes = v));
+    mk('bal', [['≈ 10 FLOP/octet (CPU récent)', 10], ['≈ 50 (GPU)', 50]], (v) => (bal = v));
+
+    function draw() {
+      ['dt', 'bal'].forEach((k) => $(k).querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.v! === (k === 'dt' ? bytes : bal))));
+      const B = +inp('b').value, N = +inp('n').value;
+      $('b-out').textContent = String(B); $('n-out').textContent = String(N);
+      const flops = 2 * B * N * N, byt = bytes * N * N;
+      const one = 2 / bytes, many = flops / byt; // FLOP/octet
+      const W = 640, ox = 130, wpx = W - ox - 20, rowH = 30, max = Math.max(many, bal * 1.2, 1);
+      const X = (v: number) => ox + (v / max) * wpx;
+      let g = '';
+      const rows: [string, number, string][] = [['1 série (GEMV)', one, 'var(--h-py)'], [`${B} séries (GEMM)`, many, 'var(--h-calc)']];
+      rows.forEach(([l, v, c], i) => {
+        const y = 6 + i * rowH;
+        g += `<text x="${ox - 8}" y="${y + 16}" text-anchor="end" class="ax">${l}</text><rect x="${ox}" y="${y}" width="${Math.max(2, X(v) - ox)}" height="20" rx="3" fill="${c}" opacity="0.85"/><text x="${X(v) + 6}" y="${y + 15}" class="ax v">${fr(v, 2)}</text>`;
+      });
+      g += `<line x1="${X(bal)}" y1="0" x2="${X(bal)}" y2="${rows.length * rowH + 4}" stroke="var(--hl-stroke)" stroke-dasharray="4 3"/><text x="${X(bal)}" y="${rows.length * rowH + 18}" text-anchor="middle" class="ax hl">équilibre ≈ ${bal}</text>`;
+      g += `<text x="${ox}" y="${rows.length * rowH + 18}" class="ax">FLOP / octet →</text>`;
+      const s = $('svg') as unknown as SVGSVGElement;
+      s.setAttribute('viewBox', `0 0 ${W} ${rows.length * rowH + 24}`);
+      s.innerHTML = g;
+      const sci = (v: number) => v >= 1e9 ? `${fr(v / 1e9, 2)} G` : `${fr(v / 1e6, 1)} M`;
+      $('k1').textContent = `${sci(flops)}FLOP`;
+      $('k2').textContent = `${sci(byt)}o`;
+      $('k3').textContent = `${fr(many, 2)} FLOP/octet`;
+      $('k4').textContent = many < bal ? 'la mémoire' : 'le calcul';
+    }
+    ['b', 'n'].forEach((r) => inp(r).addEventListener('input', draw));
+    draw();
+  });
+</script>
+
+<style is:global>
+  .inten .posl { display: grid; grid-template-columns: 200px 1fr 50px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); margin: 4px 0; }
+  .inten .posl b { text-align: right; color: var(--text); font-weight: 500; }
+  .inten .row { margin: 6px 0; }
+  .inten .seg { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  .inten .seg button { font-size: 13px; padding: 4px 12px; }
+  .inten .sp { margin-left: 16px; }
+  .inten svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .inten svg text.ax.v { fill: var(--text); }
+  .inten svg text.ax.hl { fill: var(--hl-text); font-weight: 600; }
+  .inten .note { font-size: 13px; line-height: 1.5; color: var(--text-2); margin: 10px 0 0; }
+  @media (max-width: 600px) { .inten .posl { grid-template-columns: 1fr; } }
+</style>

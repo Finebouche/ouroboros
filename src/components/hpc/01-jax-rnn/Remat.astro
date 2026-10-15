@@ -1,0 +1,64 @@
+---
+// Chapitre HPC 1, section 6 : le checkpointing (rematérialisation) échange mémoire contre recalcul.
+---
+<div class="widget remat hp" data-widget="remat">
+  <label class="posl"><span>Nombre de pas T</span><input type="range" data-ref="t" min="16" max="1024" step="16" value="256" /><b data-ref="t-out"></b></label>
+  <label class="posl"><span>Longueur d'un segment k</span><input type="range" data-ref="k" min="1" max="256" step="1" value="16" /><b data-ref="k-out"></b></label>
+  <p class="hlegend"><span><i class="sq st"></i>état conservé en mémoire</span><span><i class="sq calc"></i>état recalculé pendant la passe arrière</span></p>
+  <div class="ft">Sans remat : tous les états sont conservés</div>
+  <svg data-ref="a" width="100%" role="img" aria-label="Tous les états conservés"></svg>
+  <div class="ft">Avec remat : seules les frontières de segments sont conservées</div>
+  <svg data-ref="b" width="100%" role="img" aria-label="Seules les frontières conservées, les autres états recalculés"></svg>
+  <div class="kpis">
+    <div><span>États conservés sans remat</span><b data-ref="k1"></b></div>
+    <div><span>Avec remat (T / k + k)</span><b data-ref="k2"></b></div>
+    <div><span>Optimum k ≈ √T</span><b data-ref="k3"></b></div>
+    <div><span>Calcul en plus</span><b>≈ une passe avant</b></div>
+  </div>
+  <p class="note">Borne simple : elle suppose que la perte n'oblige pas à garder tous les h<sub>t</sub>. Si tous les états sont des sorties matérialisées, ils restent en mémoire et la borne ne décrit plus le pic total.</p>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="remat"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const inp = (r: string) => $(r) as HTMLInputElement;
+    let lastT = 0;
+    function row(svgKey: string, T: number, stored: (i: number) => boolean) {
+      const cells = Math.min(T, 128), per = T / cells, W = 640, cw = (W - 4) / cells;
+      let g = '';
+      for (let c = 0; c < cells; c++) {
+        // une case représente `per` états ; elle est « conservée » si l'un d'eux l'est
+        let st = false;
+        for (let i = Math.floor(c * per); i < Math.floor((c + 1) * per) || i === Math.floor(c * per); i++) if (stored(i)) st = true;
+        g += `<rect x="${2 + c * cw}" y="2" width="${Math.max(1, cw - 1)}" height="22" rx="2" fill="${st ? 'var(--text-2)' : 'var(--h-calc)'}" opacity="${st ? 0.9 : 0.55}"/>`;
+      }
+      const s = $(svgKey) as unknown as SVGSVGElement;
+      s.setAttribute('viewBox', `0 0 ${W} 26`);
+      s.innerHTML = g;
+    }
+    function draw() {
+      const T = +inp('t').value;
+      if (T !== lastT) { lastT = T; inp('k').max = String(T); inp('k').value = String(Math.max(1, Math.round(Math.sqrt(T)))); }
+      const k = Math.min(+inp('k').value, T);
+      $('t-out').textContent = String(T);
+      $('k-out').textContent = String(k);
+      row('a', T, () => true);
+      row('b', T, (i) => i % k === 0);
+      const withRemat = Math.ceil(T / k) + k;
+      $('k1').textContent = String(T);
+      $('k2').textContent = `${withRemat} (${Math.ceil(T / k)} frontières + ${k} dans un segment)`;
+      $('k3').textContent = `k = ${Math.round(Math.sqrt(T))} → ${2 * Math.round(Math.sqrt(T))} états`;
+    }
+    ['t', 'k'].forEach((r) => inp(r).addEventListener('input', draw));
+    draw();
+  });
+</script>
+
+<style is:global>
+  .remat .posl { display: grid; grid-template-columns: 180px 1fr 50px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); margin: 4px 0; }
+  .remat .posl b { text-align: right; color: var(--text); font-weight: 500; }
+  .remat .ft { font-size: 13px; font-weight: 500; margin: 12px 0 4px; }
+  .remat .sq.st { background: var(--text-2); }
+  .remat .note { font-size: 13px; line-height: 1.5; color: var(--text-2); margin: 10px 0 0; }
+  @media (max-width: 600px) { .remat .posl { grid-template-columns: 1fr; } }
+</style>

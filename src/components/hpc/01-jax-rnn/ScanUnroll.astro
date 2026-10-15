@@ -1,0 +1,66 @@
+---
+// Chapitre HPC 1, section 4 : une boucle Python sous jit est déroulée (T copies), lax.scan garde un corps compact.
+---
+<div class="widget scanu hp" data-widget="scanu">
+  <label class="posl"><span>Nombre de pas T</span><input type="range" data-ref="t" min="1" max="200" step="1" value="24" /><b data-ref="t-out"></b></label>
+  <div class="cols">
+    <div>
+      <div class="ft">for t in range(T) <span>sous jit</span></div>
+      <svg data-ref="a" width="100%" role="img" aria-label="Programme déroulé : T copies du corps"></svg>
+    </div>
+    <div>
+      <div class="ft">lax.scan</div>
+      <svg data-ref="b" width="100%" role="img" aria-label="Programme avec boucle compilée : un seul corps"></svg>
+    </div>
+  </div>
+  <table class="cmp">
+    <thead><tr><th></th><th>for sous jit</th><th>lax.scan</th></tr></thead>
+    <tbody>
+      <tr><td>Copies du corps dans le programme</td><td data-ref="c1"></td><td>1</td></tr>
+      <tr><td>Python pendant l'exécution</td><td>aucun dans la boucle</td><td>aucun dans la boucle</td></tr>
+      <tr><td>Temps parallèle sur T</td><td>non</td><td>non</td></tr>
+    </tbody>
+  </table>
+  <p class="note">scan réduit la taille du programme ; il ne rend pas le temps parallèle, et il ne garantit pas à lui seul un temps de compilation indépendant de T.</p>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="scanu"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const t = $('t') as HTMLInputElement;
+    function draw() {
+      const T = +t.value;
+      $('t-out').textContent = String(T);
+      // déroulé : une case par copie (au plus 60 dessinées)
+      const shown = Math.min(T, 60), cols = 10, cw = 20, rh = 16;
+      let a = '';
+      for (let i = 0; i < shown; i++) a += `<rect x="${(i % cols) * (cw + 3)}" y="${Math.floor(i / cols) * (rh + 3)}" width="${cw}" height="${rh}" rx="3" fill="var(--h-calc)"/>`;
+      const rows = Math.ceil(shown / cols);
+      if (T > shown) a += `<text x="0" y="${rows * (rh + 3) + 12}" class="ax">… et ${T - shown} copies de plus (${T} au total)</text>`;
+      const A = $('a') as unknown as SVGSVGElement;
+      A.setAttribute('viewBox', `0 0 ${cols * (cw + 3)} ${rows * (rh + 3) + (T > shown ? 20 : 4)}`);
+      A.innerHTML = a;
+      // scan : un corps dans un cadre de boucle
+      const B = $('b') as unknown as SVGSVGElement;
+      B.setAttribute('viewBox', '0 0 233 60');
+      B.innerHTML = `<rect x="2" y="2" width="229" height="56" rx="8" fill="none" stroke="var(--text-2)" stroke-dasharray="4 3"/><rect x="20" y="20" width="${cw}" height="${rh}" rx="3" fill="var(--h-calc)"/><text x="50" y="33" class="ax">le corps, une fois</text><text x="229" y="16" text-anchor="end" class="ax">boucle compilée × ${T}</text>`;
+      $('c1').textContent = String(T);
+    }
+    t.addEventListener('input', draw);
+    draw();
+  });
+</script>
+
+<style is:global>
+  .scanu .posl { display: grid; grid-template-columns: 160px 1fr 50px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); margin: 4px 0 10px; }
+  .scanu .posl b { text-align: right; color: var(--text); font-weight: 500; }
+  .scanu .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+  .scanu .ft { font-size: 13px; font-weight: 500; margin: 0 0 6px; font-family: var(--mono); }
+  .scanu .ft span { font-weight: 400; color: var(--text-2); font-family: var(--font); }
+  .scanu svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .scanu table.cmp { width: 100%; border-collapse: collapse; font-size: 13px; margin: 12px 0 4px; }
+  .scanu table.cmp th { text-align: left; font-weight: 500; color: var(--text-2); padding: 4px 8px; border-bottom: 1px solid var(--border); }
+  .scanu table.cmp td { padding: 4px 8px; border-bottom: 1px solid var(--border); }
+  .scanu .note { font-size: 14px; line-height: 1.5; margin: 8px 0 0; }
+  @media (max-width: 600px) { .scanu .cols { grid-template-columns: 1fr; } .scanu .posl { grid-template-columns: 1fr; } }
+</style>

@@ -1,0 +1,99 @@
+---
+// Chapitre HPC 2 : trier, regrouper en lots, rembourrer en paliers. Simulation de la seule logique hôte de run_batched (sans JAX).
+---
+<div class="widget sorts hp" data-widget="sorts">
+  <div class="row"><span>Palier length_bucket :</span><span class="seg" data-ref="bk"></span></div>
+  <div class="row"><span>Taille de lot batch_size :</span><span class="seg" data-ref="bs"></span></div>
+  <div class="ft">Pas calculés dans chaque lot <span>(un trait = un lot ; part utile en bleu, rembourrage en clair)</span></div>
+  <p class="hlegend"><span><i class="sq u"></i>pas utiles</span><span><i class="sq w"></i>rembourrage (calculé puis ignoré)</span></p>
+  <div class="two">
+    <div><div class="st">Séquences triées par longueur</div><svg data-ref="a" width="100%" role="img" aria-label="Lots triés"></svg></div>
+    <div><div class="st">Séquences dans l'ordre d'arrivée</div><svg data-ref="b" width="100%" role="img" aria-label="Lots non triés"></svg></div>
+  </div>
+  <table class="res">
+    <thead><tr><th></th><th>trié</th><th>non trié</th></tr></thead>
+    <tbody>
+      <tr><td>Formes compilées</td><td data-ref="s1"></td><td data-ref="s2"></td></tr>
+      <tr><td>Pas inutiles</td><td data-ref="w1"></td><td data-ref="w2"></td></tr>
+      <tr><td>Calcul total (pas × lignes)</td><td data-ref="c1"></td><td data-ref="c2"></td></tr>
+    </tbody>
+  </table>
+  <p class="note" data-ref="note"></p>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="sorts"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const fr = (v: number, d = 0) => v.toLocaleString('fr-FR', { maximumFractionDigits: d });
+    // 5 000 longueurs tirées uniformément entre 50 et 2 000 (graine fixe)
+    let seed = 2026;
+    const rnd = () => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    const NSEQ = 5000;
+    const lengths = Array.from({ length: NSEQ }, () => 50 + Math.floor(rnd() * 1951));
+    const distinct = new Set(lengths).size;
+    const useful = lengths.reduce((a, b) => a + b, 0);
+    let bucket = 64, bs = 256;
+    const mk = (key: string, items: number[], set: (v: number) => void) => items.forEach((v) => {
+      const b = document.createElement('button');
+      b.textContent = String(v); b.dataset.v = String(v);
+      b.addEventListener('click', () => { set(v); draw(); });
+      $(key).appendChild(b);
+    });
+    mk('bk', [64, 128, 256, 512], (v) => (bucket = v));
+    mk('bs', [64, 128, 256, 512], (v) => (bs = v));
+
+    function simulate(order: number[]) {
+      const shapes = new Set<string>();
+      const lots: { rows: number; steps: number; useful: number }[] = [];
+      for (let s = 0; s < order.length; s += bs) {
+        const idx = order.slice(s, s + bs);
+        const rows = idx.length === bs ? bs : 2 ** Math.ceil(Math.log2(idx.length));
+        const steps = Math.ceil(Math.max(...idx.map((i) => lengths[i])) / bucket) * bucket;
+        shapes.add(`${rows}x${steps}`);
+        lots.push({ rows, steps, useful: idx.reduce((a, i) => a + lengths[i], 0) });
+      }
+      const computed = lots.reduce((a, l) => a + l.rows * l.steps, 0);
+      return { lots, shapes: shapes.size, computed, waste: 1 - useful / computed };
+    }
+    function bars(key: string, lots: { rows: number; steps: number; useful: number }[]) {
+      const W = 300, rowH = 5, maxC = Math.max(...lots.map((l) => l.rows * l.steps));
+      let g = '';
+      lots.forEach((l, i) => {
+        const w = (l.rows * l.steps / maxC) * W, u = (l.useful / (l.rows * l.steps)) * w;
+        g += `<rect x="0" y="${i * (rowH + 2)}" width="${w}" height="${rowH}" fill="var(--h-calc)" opacity="0.25"/><rect x="0" y="${i * (rowH + 2)}" width="${u}" height="${rowH}" fill="var(--h-calc)" opacity="0.9"/>`;
+      });
+      const s = $(key) as unknown as SVGSVGElement;
+      s.setAttribute('viewBox', `0 0 ${W} ${lots.length * (rowH + 2)}`);
+      s.innerHTML = g;
+    }
+    function draw() {
+      ['bk', 'bs'].forEach((k) => $(k).querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.v! === (k === 'bk' ? bucket : bs))));
+      const order = lengths.map((_, i) => i);
+      const sorted = simulate([...order].sort((a, b) => lengths[a] - lengths[b]));
+      const unsorted = simulate(order);
+      bars('a', sorted.lots); bars('b', unsorted.lots);
+      $('s1').textContent = String(sorted.shapes); $('s2').textContent = String(unsorted.shapes);
+      $('w1').textContent = `${fr(sorted.waste * 100, 1)} %`; $('w2').textContent = `${fr(unsorted.waste * 100, 1)} %`;
+      $('c1').textContent = `${fr(sorted.computed / 1e6, 1)} M`; $('c2').textContent = `${fr(unsorted.computed / 1e6, 1)} M`;
+      $('note').textContent = `${fr(NSEQ)} séquences, longueurs entre 50 et 2 000 (${fr(distinct)} longueurs distinctes : autant de formes pour une approche série par série). Trier divise le calcul total par ≈ ${fr(unsorted.computed / sorted.computed, 2)} ; length_bucket règle le nombre de compilations contre le calcul perdu.`;
+    }
+    draw();
+  });
+</script>
+
+<style is:global>
+  .sorts .row { margin-bottom: 4px; }
+  .sorts .seg { display: inline-flex; gap: 6px; }
+  .sorts .seg button { font-size: 13px; padding: 4px 12px; }
+  .sorts .ft { font-size: 13px; font-weight: 500; margin: 10px 0 4px; }
+  .sorts .ft span { font-weight: 400; color: var(--text-2); }
+  .sorts .two { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .sorts .st { font-size: 12px; color: var(--text-2); margin-bottom: 4px; }
+  .sorts .sq.u { background: var(--h-calc); }
+  .sorts .sq.w { background: var(--h-calc); opacity: 0.25; }
+  .sorts table.res { width: 100%; border-collapse: collapse; font-size: 13px; margin: 12px 0 4px; }
+  .sorts table.res th { text-align: left; font-weight: 500; color: var(--text-2); padding: 4px 8px; border-bottom: 1px solid var(--border); }
+  .sorts table.res td { padding: 4px 8px; border-bottom: 1px solid var(--border); }
+  .sorts .note { font-size: 13px; line-height: 1.5; color: var(--text-2); margin: 8px 0 0; }
+  @media (max-width: 600px) { .sorts .two { grid-template-columns: 1fr; } }
+</style>

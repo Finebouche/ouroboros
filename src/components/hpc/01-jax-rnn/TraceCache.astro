@@ -1,0 +1,83 @@
+---
+// Chapitre HPC 1, section 3 : le premier appel trace et compile ; les appels compatibles réutilisent l'exécutable.
+// Ce qui change dans les arguments décide s'il faut recompiler (clé de cache).
+---
+<div class="widget tcache hp" data-widget="tcache">
+  <div class="row"><span>À un moment, on change :</span><span class="seg" data-ref="sc"></span></div>
+  <label class="posl"><span>À l'appel n°</span><input type="range" data-ref="at" min="2" max="9" step="1" value="5" /><b data-ref="at-out"></b></label>
+  <p class="hlegend"><span><i class="sq comp"></i>tracer + compiler</span><span><i class="sq exec"></i>exécuter</span></p>
+  <svg data-ref="svg" width="100%" role="img" aria-label="Chronologie de 10 appels de la fonction compilée"></svg>
+  <table class="key">
+    <thead><tr><th>Clé de cache</th><th>Valeur appel 1</th><th>Après le changement</th></tr></thead>
+    <tbody data-ref="tbody"></tbody>
+  </table>
+  <div class="kpis">
+    <div><span>Compilations en 10 appels</span><b data-ref="k1"></b></div>
+    <div><span>Verdict</span><b data-ref="k2"></b></div>
+  </div>
+  <p class="note" data-ref="note"></p>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="tcache"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const inp = (r: string) => $(r) as HTMLInputElement;
+    const KEYS = ['formes des tableaux', 'dtypes', 'structure du pytree', 'arguments statiques (valeur)', 'appareil'];
+    const BASE = ['xs : (32, 200, 128)', 'float32', '{Wx, Wh, b, Wy}', 'return_all = False', 'cpu:0'];
+    type S = { id: string; label: string; key: number; after: string; recompile: boolean; note: string };
+    const SC: S[] = [
+      { id: 'val', label: 'les valeurs de x', key: -1, after: 'mêmes formes, autres nombres', recompile: false, note: 'Les valeurs ne comptent pas : le programme est le même, seul son contenu change. Pas de recompilation.' },
+      { id: 'shape', label: 'la forme (B : 32 → 64)', key: 0, after: 'xs : (64, 200, 128)', recompile: true, note: 'Une autre forme est un autre programme : le jaune revient. Chaque forme garde son exécutable en cache.' },
+      { id: 'dtype', label: 'le dtype (float32 → float64)', key: 1, after: 'float64', recompile: true, note: 'Le type des éléments fait partie de la clé : nouvelle compilation.' },
+      { id: 'tree', label: 'la structure du pytree', key: 2, after: '{Wx, Wh, b, Wy, Wz}', recompile: true, note: 'Une feuille de plus dans p change la structure : nouvelle compilation.' },
+      { id: 'static', label: 'un argument statique', key: 3, after: 'return_all = True', recompile: true, note: 'Un argument statique est lu au traçage : sa valeur entre dans la clé (il doit donc être hachable).' },
+    ];
+    let sc = SC[1];
+    SC.forEach((s) => {
+      const b = document.createElement('button');
+      b.textContent = s.label; b.dataset.v = s.id;
+      b.addEventListener('click', () => { sc = s; draw(); });
+      $('sc').appendChild(b);
+    });
+
+    function draw() {
+      $('sc').querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.v === sc.id));
+      const at = +inp('at').value;
+      $('at-out').textContent = String(at);
+      const W = 640, H = 56, N = 10;
+      let g = '', x = 8, compiles = 0;
+      for (let k = 1; k <= N; k++) {
+        const comp = k === 1 || (k === at && sc.recompile);
+        if (comp) compiles++;
+        if (comp) { g += `<rect x="${x}" y="8" width="64" height="26" rx="4" fill="var(--h-comp)"/>`; x += 66; }
+        g += `<rect x="${x}" y="8" width="22" height="26" rx="4" fill="var(--h-exec)"/>`;
+        g += `<text x="${x + 11}" y="48" text-anchor="middle" class="ax${k === at ? ' hl' : ''}">${k}</text>`;
+        x += 26;
+      }
+      const svg = $('svg') as unknown as SVGSVGElement;
+      svg.setAttribute('viewBox', `0 0 ${Math.max(W, x + 8)} ${H}`);
+      svg.innerHTML = g;
+      $('tbody').innerHTML = KEYS.map((k, i) => `<tr class="${i === sc.key ? 'chg' : ''}"><td>${k}</td><td>${BASE[i]}</td><td>${i === sc.key ? sc.after : '(inchangé)'}</td></tr>`).join('');
+      $('k1').textContent = String(compiles);
+      $('k2').textContent = sc.recompile ? 'recompile' : 'réutilise';
+      $('note').textContent = sc.note;
+    }
+    inp('at').addEventListener('input', draw);
+    draw();
+  });
+</script>
+
+<style is:global>
+  .tcache .row { margin-bottom: 4px; }
+  .tcache .seg { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  .tcache .seg button { font-size: 13px; padding: 4px 12px; }
+  .tcache .posl { display: grid; grid-template-columns: 160px 1fr 40px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); margin: 6px 0; }
+  .tcache .posl b { text-align: right; color: var(--text); font-weight: 500; }
+  .tcache svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .tcache svg text.ax.hl { fill: var(--text); font-weight: 600; }
+  .tcache table.key { width: 100%; border-collapse: collapse; font-size: 13px; margin: 8px 0; }
+  .tcache table.key th { text-align: left; font-weight: 500; color: var(--text-2); padding: 4px 8px; border-bottom: 1px solid var(--border); }
+  .tcache table.key td { padding: 4px 8px; border-bottom: 1px solid var(--border); }
+  .tcache table.key tr.chg td { background: var(--hl-bg); color: var(--hl-text); }
+  .tcache .note { font-size: 14px; line-height: 1.5; margin: 8px 0 0; min-height: 3em; }
+</style>

@@ -1,0 +1,408 @@
+---
+num: 1
+title: "JAX sur un RNN"
+summary: "JAX vu depuis NumPy : un RNN, traçage et compilation, scan et vmap, mesures sur CPU, autodifférentiation, entraînement et répartition."
+status: en-cours
+---
+import Reveal from '@/components/shared/Reveal.astro';
+import Quiz from '@/components/shared/Quiz.astro';
+import Refs from '@/components/shared/Refs.astro';
+import Legend from '@/components/hpc/Legend.astro';
+import GemmCost from '@/components/hpc/01-jax-rnn/GemmCost.astro';
+import Compose from '@/components/hpc/01-jax-rnn/Compose.astro';
+import TraceCache from '@/components/hpc/01-jax-rnn/TraceCache.astro';
+import ScanUnroll from '@/components/hpc/01-jax-rnn/ScanUnroll.astro';
+import ThreeImpl from '@/components/hpc/01-jax-rnn/ThreeImpl.astro';
+import Bench from '@/components/hpc/01-jax-rnn/Bench.astro';
+import Remat from '@/components/hpc/01-jax-rnn/Remat.astro';
+import DataParallel from '@/components/hpc/01-jax-rnn/DataParallel.astro';
+
+Un seul calcul pendant tout le chapitre : un réseau de neurones récurrent (**RNN**), écrit trois fois (NumPy naïf, NumPy optimisé, JAX), puis entraîné. Le travail mathématique est le même ; ce qui change, c'est le programme qui l'exécute. JAX, c'est NumPy plus des **transformations de fonctions** (`jit`, `vmap`, `grad`, `scan`) et un compilateur, **XLA**.
+
+$$
+h_t = \tanh\big(x_t W_x + h_{t-1} W_h + b\big)
+$$
+
+- $x_t$ : $(B \times D)$, $h_t$ : $(B \times H)$, $W_x$ : $(D \times H)$, $W_h$ : $(H \times H)$, $b$ : $(H)$.
+- $T$ pas successifs : $h_t$ attend $h_{t-1}$. $B$ séquences indépendantes : parallélisables. $S$ mises à jour : le même pas d'entraînement, $S$ fois.
+
+**Code couleur**, utilisé partout dans ce chapitre et le suivant, et pour rien d'autre :
+
+<Legend />
+
+Les transformations, la structure, la mémoire et les communications restent en gris ou sans couleur.
+
+| Sigle | Sens |
+|---|---|
+| GEMM, GEMV | produit matrice × matrice (BLAS niveau 3), matrice × vecteur (niveau 2, limité par la mémoire) |
+| FLOP | opération flottante ; une multiplication-addition compte pour 2 |
+| XLA, jaxpr, HLO | le compilateur derrière JAX ; le programme intermédiaire obtenu en traçant ; l'IR de XLA |
+| dtype, pytree | type des éléments (float32…) ; structure imbriquée (dict, tuple, liste) de tableaux |
+| JVP, VJP | produit jacobienne × vecteur ; vecteur × jacobienne |
+| BPTT, remat | rétropropagation à travers le temps ; rematérialisation (recalculer au lieu de stocker) |
+| all-reduce | réduction collective dont tous les participants reçoivent le résultat |
+| chaud, froid | appel qui réutilise l'exécutable ; premier appel, compilation comprise |
+
+## 1. Le calcul : des produits matriciels
+
+Un pas fait deux produits matriciels (**GEMM**, *GEneral Matrix-Matrix multiply*) puis un $\tanh$. Le nombre de FLOPs est :
+
+$$
+\text{FLOPs par pas} = 2BDH + 2BH^2 = 2BH\,(D + H)
+$$
+
+<GemmCost />
+
+- Exemple : $B = 32$, $D = H = 128$ donne $2 \cdot 32 \cdot 128 \cdot 256 \approx 2{,}1$ MFLOP par pas, et $\times\, T = 200$ environ $0{,}42$ GFLOP pour tout le lot.
+- **Ce qui sort de la boucle** : $x_t W_x$ ne dépend pas de l'état précédent, on peut le calculer pour tous les pas d'un coup : `(xs.reshape(T*B, D) @ Wx)`. Les FLOPs sont les mêmes, le nombre d'appels et la forme des produits changent. $h_{t-1} W_h$ ne sort pas : il dépend du pas précédent.
+- Le même produit matriciel revient dans chaque cellule. La différence entre les programmes est dans la façon de préparer, regrouper et répéter ces cellules.
+
+<div class="retain">
+
+**À retenir**
+
+- Un pas de RNN coûte $2BH(D+H)$ FLOPs ; ce nombre ne dépend pas du langage.
+- $x_t W_x$ peut être regroupé sur $T \cdot B$ lignes (un grand GEMM) ; $h_{t-1} W_h$ reste séquentiel.
+- Comparer deux implémentations suppose le même travail, le même dtype, le même matériel.
+
+</div>
+
+<Quiz>
+
+**Q1.** Avec $B = 64$, $D = 32$, $H = 256$, combien de FLOPs par pas, et pour $T = 100$ ?
+
+<Reveal>
+
+$2 \cdot 64 \cdot 256 \cdot (32 + 256) = 2 \cdot 64 \cdot 256 \cdot 288 \approx 9{,}4$ MFLOP par pas, soit $\approx 0{,}94$ GFLOP pour $T = 100$.
+
+</Reveal>
+
+**Q2.** Pourquoi peut-on regrouper $x_t W_x$ sur tous les pas, mais pas $h_{t-1} W_h$ ?
+
+<Reveal>
+
+$x_t W_x$ ne dépend que des entrées, connues à l'avance. $h_{t-1} W_h$ dépend de l'état calculé au pas précédent : il faut l'attendre.
+
+</Reveal>
+
+</Quiz>
+
+## 2. JAX transforme des fonctions
+
+On écrit **une cellule** : une fonction pure qui fait un pas. Chaque transformation prend une fonction et en rend une autre ; elles se composent, par exemple `jit(vmap(grad(f)))`.
+
+<Compose />
+
+- **`scan`** : les $T$ pas dépendants (l'état $h$ est porté d'un pas au suivant).
+- **`vmap`** : les $B$ séquences indépendantes ; on n'a pas à réécrire la fonction pour une séquence.
+- **`grad`** : la passe arrière, sur une perte scalaire.
+- **`jit`** : spécialise le programme pour des formes, types et arguments statiques donnés, puis le compile.
+- L'ordre exact des transformations dépend de la fonction visée.
+
+<div class="retain">
+
+**À retenir**
+
+- Une transformation reçoit une fonction pure et rend une fonction : `scan` (temps), `vmap` (lot), `grad` (arrière), `jit` (compilation).
+- Elles se composent ; le même programme élémentaire sert au batching, aux gradients et à la compilation.
+
+</div>
+
+<Refs items={[["Thinking in JAX : tracing and jit", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/tracing.html"], ["jax.jit", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/_autosummary/jax.jit.html"], ["jax.lax.scan", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/_autosummary/jax.lax.scan.html"]]} />
+
+<Quiz>
+
+**Q1.** Quelle transformation ajoute l'axe de lot $B$ ? Quel axe porte `scan` ?
+
+<Reveal>
+
+`vmap` ajoute l'axe $B$ (séquences indépendantes, paramètres partagés avec `in_axes=None`). `scan` parcourt l'axe du temps $T$.
+
+</Reveal>
+
+</Quiz>
+
+## 3. Tracer, compiler, réutiliser
+
+Au premier appel, JAX exécute la fonction avec des **traceurs** à la place des tableaux : ils portent la forme et le dtype, pas les valeurs. Il en tire un programme intermédiaire (**jaxpr**), le transmet à XLA, qui produit un exécutable. Les appels compatibles réutilisent cet exécutable.
+
+<TraceCache />
+
+Le jaxpr d'une cellule expose le calcul, pas les valeurs :
+
+```
+cell(p, h, x)
+  u = dot_general(x, p["Wx"])
+  v = dot_general(h, p["Wh"])
+  a = add(u, v)
+  a = add(a, p["b"])
+  h_next = tanh(a)
+  return h_next, h_next
+```
+
+`dot_general` est la primitive de produit contracté de JAX (un matmul généralisé). XLA peut choisir des noyaux et fusionner des opérations autour d'elle.
+
+**Trois conséquences** du traçage :
+
+| Piège | Remède |
+|---|---|
+| `if x > 0` : la branche dépend des valeurs | `lax.cond(x > 0, branche_a, branche_b, x)` |
+| `x[x > 0]` : la taille de la sortie dépend des valeurs | `jnp.where(x > 0, x, 0)` : taille fixée |
+| `np.random.rand()` : état global | `key, subkey = jax.random.split(key)` : état aléatoire explicite |
+
+- **Clé de cache** : formes, dtypes, structure du pytree, valeur des arguments statiques, appareil. Une autre forme de $B$ ou de $T$ produit une nouvelle compilation : le jaune revient.
+
+<div class="retain">
+
+**À retenir**
+
+- Premier appel : tracer (formes et dtypes seulement) puis compiler ; appels compatibles : exécuter l'exécutable.
+- Les valeurs ne sont pas connues au traçage : pas de `if` sur une valeur, pas de sortie de taille variable, pas d'état aléatoire global.
+- Un argument statique, une forme ou un dtype différents recompilent ; des valeurs différentes, non.
+
+</div>
+
+<Refs items={[["Control flow and logical operators with jit", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/control-flow.html"], ["Tracing (jit, arguments statiques, clé de cache)", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/tracing.html"]]} />
+
+<Quiz>
+
+**Q1.** On appelle une fonction `jit` avec $B = 32$ puis $B = 64$, puis de nouveau $B = 32$. Combien de compilations ?
+
+<Reveal>
+
+Deux : une par forme. Le troisième appel retrouve l'exécutable de $B = 32$ en cache.
+
+</Reveal>
+
+**Q2.** Pourquoi `x[x > 0]` ne marche-t-il pas sous `jit` ?
+
+<Reveal>
+
+La taille de la sortie dépend des valeurs de `x`, inconnues au traçage ; les tableaux doivent avoir une forme statique. Avec `jnp.where`, on garde la taille et on masque.
+
+</Reveal>
+
+</Quiz>
+
+## 4. Les boucles : `for` contre `scan`
+
+Une boucle Python sur $T$ (connu au traçage) sous `jit` est **déroulée** : le programme contient $T$ copies du corps. `lax.scan` garde le corps une seule fois, dans une boucle compilée.
+
+<ScanUnroll />
+
+<div class="retain">
+
+**À retenir**
+
+- `for` sous `jit` : taille du programme croissante avec $T$. `scan` : corps compact.
+- Dans les deux cas, le temps reste séquentiel sur $T$ : `scan` ne parallélise pas les pas.
+
+</div>
+
+<Quiz>
+
+**Q1.** `scan` rend-il le calcul de $T$ pas parallèle ?
+
+<Reveal>
+
+Non. $h_t$ attend $h_{t-1}$ : les pas restent séquentiels. `scan` réduit la taille du programme et évite le retour dans Python, rien de plus.
+
+</Reveal>
+
+</Quiz>
+
+## 5. Trois implémentations, une mesure
+
+Trois versions de la même récurrence : **NumPy naïf** (deux petits GEMM par pas), **NumPy optimisé** ($x W_x$ pré-calculé), **JAX optimisé** (même pré-calcul, plus `scan` et `jit`). Seule la sortie $h_T$ est comparée, à tolérance près.
+
+<ThreeImpl />
+
+Voici les mesures du support de présentation dont ce cours s'inspire :
+
+<Bench />
+
+- **À $H = 128$** : NumPy optimisé $\approx$ NumPy naïf ($1{,}01\times$) ; JAX chaud $\approx 1{,}50\times$ plus rapide que le naïf.
+- **Le gain chaud change avec $H$**, et le premier appel JAX coûte entre 70 et 140 ms ici : il faut le répartir sur assez d'appels. Pour $H = 128$ : $S^* = (89{,}63 - 3{,}81)/(5{,}70 - 3{,}81) \approx 45{,}4$, soit environ 46 appels.
+- **Ce que les trois versions établissent** : même récurrence et mêmes paramètres ; la réécriture algébrique aide NumPy selon $H$ ; la version JAX chaude est plus rapide ici.
+- **Ce qu'elles ne séparent pas** : temps Python, bibliothèque GEMM, fusion, allocation, boucle compilée et stratégie du backend. Pour attribuer le gain : profiler les noyaux et inspecter l'IR compilé.
+
+**Comment refaire la comparaison :**
+
+1. Même sortie et même dtype (état final seulement, avec une tolérance).
+2. Même algorithme optimisé : `reshape(T·B, D) @ Wx` des deux côtés.
+3. Séparer froid et chaud : chronométrer le premier appel, puis les appels réutilisés.
+4. Synchroniser JAX : `block_until_ready()` sur le résultat chronométré (l'exécution est asynchrone).
+5. Contrôler les transferts : entrées déjà sur l'appareil pour le temps chaud ; placement mesuré à part.
+
+<div class="retain">
+
+**À retenir**
+
+- Comparer le même travail, au même dtype, sur le même matériel ; séparer le froid du chaud ; synchroniser JAX.
+- $S \cdot N \approx J_1 + (S-1)\,J$ : la compilation s'amortit si $S$ est grand et les formes stables.
+- Une mesure donne le gain total, pas sa cause exacte ; ces temps ne se généralisent pas à un autre matériel.
+
+</div>
+
+<Quiz>
+
+**Q1.** À $H = 64$ : NumPy optimisé 1,87 ms, JAX chaud 1,09 ms, premier appel JAX 74,73 ms. Combien d'appels pour amortir le premier ?
+
+<Reveal>
+
+$S^* = (74{,}73 - 1{,}09)/(1{,}87 - 1{,}09) \approx 94{,}4$, soit environ 95 appels. À $H = 16$ il en faudrait environ 690, à $H = 256$ environ 6 : plus le calcul est gros, plus vite JAX gagne.
+
+</Reveal>
+
+**Q2.** Pourquoi `block_until_ready()` est-il nécessaire pour chronométrer JAX ?
+
+<Reveal>
+
+JAX lance le calcul de façon asynchrone et rend la main tout de suite. Sans synchronisation, on mesure le temps de lancement, pas celui du calcul.
+
+</Reveal>
+
+</Quiz>
+
+## 6. Autodifférentiation
+
+### Chaque produit en avant en coûte deux en arrière
+
+Pour $Y = XW$ et $L = \tfrac12 \lVert Y - Y^* \rVert^2$, avec $E = Y - Y^*$ :
+
+$$
+\nabla_W = X^\top E, \qquad \nabla_X = E\, W^\top
+$$
+
+1 GEMM en avant, 2 en arrière : `grad` construit ces produits automatiquement, il ne les rend pas gratuits.
+
+### JVP et VJP
+
+Pour $f : \mathbb{R}^n \to \mathbb{R}^m$ de jacobienne $J \in \mathbb{R}^{m \times n}$ :
+
+| | Produit | Sens | Ce qu'il faut garder |
+|---|---|---|---|
+| **JVP** | $v \mapsto J v$ | dans le sens du calcul, pendant la passe avant | les valeurs intermédiaires du moment, pas de bande de mode inverse |
+| **VJP** | $u \mapsto u^\top J$ | on remonte après la passe avant | les valeurs de la passe avant |
+
+Une perte scalaire donne tout le gradient par un seul VJP avec $u = 1$, quel que soit le nombre de paramètres. Le VJP **transpose** les règles linéaires locales :
+
+| Opération | JVP | VJP |
+|---|---|---|
+| matmul | $v \mapsto vW$ | $u \mapsto uW^\top$ |
+| $\tanh$ | $v \mapsto (1 - h^2) \odot v$ | $u \mapsto (1 - h^2) \odot u$ |
+| somme | $v \mapsto \sum_i v_i$ | $u \mapsto (u, \dots, u)$ |
+
+La transposée d'une somme est une copie : c'est pourquoi les gradients d'un paramètre partagé **s'additionnent** sur les pas.
+
+### BPTT et checkpointing
+
+Avec $a_t = x_t W_x + h_{t-1} W_h + b$ et $\delta_t = \partial L / \partial a_t$ :
+
+$$
+\delta_t = \Big(\frac{\partial \ell_t}{\partial h_t} + \delta_{t+1} W_h^\top\Big) \odot (1 - h_t^2), \qquad \nabla_{W_h} = \sum_t h_{t-1}^\top \delta_t
+$$
+
+La passe arrière remonte les $T$ pas, et elle a besoin des $h_t$ de la passe avant. Le **checkpointing** (`jax.checkpoint`, aussi `jax.remat`) échange mémoire contre recalcul : on ne garde que les frontières de segments, et on refait le calcul avant à l'intérieur d'un segment pendant la passe arrière.
+
+<Remat />
+
+<div class="retain">
+
+**À retenir**
+
+- Un produit en avant donne deux produits en arrière : $\nabla_W = X^\top E$ et $\nabla_X = E W^\top$.
+- JVP : $v \mapsto Jv$ (avant) ; VJP : $u \mapsto u^\top J$ (arrière, doit garder les valeurs). Une perte scalaire : un VJP avec $u = 1$.
+- Les paramètres partagés reçoivent la somme des $T$ contributions (transposée de la copie).
+- Remat : mémoire $\approx T/k + k$ états, minimum $2\sqrt{T}$ à $k = \sqrt{T}$, pour environ une passe avant en plus.
+
+</div>
+
+<Refs items={[["The Autodiff Cookbook", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/notebooks/autodiff_cookbook.html"], ["Gradient checkpointing with jax.checkpoint (jax.remat)", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/gradient-checkpointing.html"]]} />
+
+<Quiz>
+
+**Q1.** Avec $T = 400$ pas, combien d'états garde-t-on au mieux avec le remat par segments ?
+
+<Reveal>
+
+Au mieux $2\sqrt{400} = 40$ états (segments de $k = 20$ : 20 frontières + 20 dans un segment), contre 400 sans remat.
+
+</Reveal>
+
+**Q2.** Pourquoi le gradient de $W_h$ est-il une somme sur $t$ ?
+
+<Reveal>
+
+$W_h$ est utilisé à chaque pas : le même paramètre apparaît $T$ fois dans le calcul. La transposée d'une copie est une somme, donc les contributions de tous les pas s'additionnent.
+
+</Reveal>
+
+</Quiz>
+
+## 7. Entraîner, fusionner, répartir
+
+**Le code de l'entraînement** : une cellule, une séquence, un lot, une perte, une mise à jour.
+
+```python
+def cell(p, h, x):                                   # 1 pas
+    h = jnp.tanh(x @ p["Wx"] + h @ p["Wh"] + p["b"])
+    return h, h
+
+def predict(p, xs, h0):                              # T pas
+    _, hs = lax.scan(lambda h, x: cell(p, h, x), h0, xs)
+    return hs @ p["Wy"]
+
+batch_predict = jax.vmap(predict, in_axes=(None, 0, 0))   # B séquences
+
+def objective(p, xb, yb, h0b):
+    pred = batch_predict(p, xb, h0b)
+    return jnp.mean((pred - yb) ** 2)
+
+@jax.jit
+def train_step(p, xb, yb, h0b):
+    value, g = jax.value_and_grad(objective)(p, xb, yb, h0b)
+    p = jax.tree.map(lambda w, dw: w - LR * dw, p, g)   # SGD, illustratif
+    return p, value
+```
+
+Une mise à jour = passe avant + VJP + modification explicite du pytree `p` (`{"Wx": (D, H), "Wh": (H, H), "b": (H,), "Wy": (H, O)}`). Le même pytree traverse la passe avant, le VJP et la mise à jour. Attention : `LR` est le pas d'apprentissage, à ne pas confondre avec le taux de fuite `lr` des réservoirs du chapitre 2.
+
+- **Amortissement** : la compilation est due une fois pour une signature compatible, puis l'exécutable est appelé $S$ fois. Ce qui disparaît : certains retours dans Python. Ce qui reste : les GEMM et la passe arrière à chaque mise à jour.
+- **Fusion** : XLA peut fusionner l'addition, le biais et le $\tanh$ en un seul noyau, ce qui réduit le trafic mémoire. Les deux produits matriciels peuvent rester des appels de bibliothèque (BLAS) : le profilage départage le cas précis. C'est un schéma possible, pas un nombre de noyaux garanti.
+- **Inférence** : la passe avant seule se répète (ni gradient ni mise à jour). En flux, une variante de `predict` retourne $h_T$ pour initialiser le segment suivant.
+
+### Plusieurs appareils
+
+<DataParallel />
+
+<div class="retain">
+
+**À retenir**
+
+- La composition `scan` (temps) + `vmap` (lot) + `value_and_grad` + `jit` automatise le programme ; son coût dépend encore du matériel et des formes.
+- Ce qui reste : GEMM, $\tanh$, BPTT. Ce qui sort du chemin chaud : Python dans la boucle sur $T$. Ce qui s'amortit : une compilation, réutilisée $S$ fois, si les formes sont stables.
+- Plusieurs appareils : $B$ fournit le parallélisme, $T$ reste séquentiel, et un all-reduce synchronise les gradients.
+- La mesure tranche : même travail, même dtype, même matériel.
+
+</div>
+
+<Quiz>
+
+**Q1.** Dans `train_step`, qu'est-ce qui est compilé, et qu'est-ce qui est exécuté à chaque appel ?
+
+<Reveal>
+
+La compilation (traçage + XLA) a lieu au premier appel pour une signature donnée. Ensuite, chaque appel exécute l'exécutable : passe avant, VJP et mise à jour, soit les GEMM et la passe arrière.
+
+</Reveal>
+
+**Q2.** Avec $B = 32$ sur 4 appareils, que calcule chaque appareil, et que doit-on synchroniser ?
+
+<Reveal>
+
+8 séquences chacun (les paramètres sont répliqués), avec $T$ pas séquentiels dans chaque séquence. Il faut synchroniser les gradients par un all-reduce avant la mise à jour.
+
+</Reveal>
+
+</Quiz>

@@ -1,0 +1,247 @@
+---
+// Chapitre MFCC, section 2 : trois points de la DFT à voir de près.
+// (1) moitié des fréquences : un signal réel donne un spectre symétrique ;
+// (2) pourquoi une fenêtre : la DFT répète la trame, le raccord crée une fuite spectrale ;
+// (3) séparer deux fréquences : fs / L, et les zéros ajoutés ne séparent rien de plus.
+// Les signaux sont des sinusoïdes synthétiques à 16 kHz.
+---
+<div class="widget dftd pp" data-widget="dftd">
+  <div class="row"><span class="seg" data-ref="tabs"></span></div>
+
+  <div data-panel="half">
+    <div class="row">
+      <span>Nombre de points n<sub>fft</sub> :</span><span class="seg" data-ref="na"></span>
+    </div>
+    <label class="posl"><span>Fréquence du son</span><input type="range" data-ref="fa" min="200" max="7800" step="50" value="2000" /><b data-ref="fa-out"></b></label>
+    <svg data-ref="svga" width="100%" role="img" aria-label="Spectre complet d'un son pur : la moitié droite est le miroir de la moitié gauche"></svg>
+    <div class="kpis">
+      <div><span>Cases calculées</span><b data-ref="a1"></b></div>
+      <div><span>Cases gardées (n<sub>fft</sub> / 2 + 1)</span><b data-ref="a2"></b></div>
+      <div><span>Fréquence du miroir (f<sub>s</sub> − f)</span><b data-ref="a3"></b></div>
+    </div>
+    <p class="note">Un signal réel a un spectre symétrique : la moitié au-dessus de f<sub>s</sub>/2 est le miroir de celle en dessous. On ne garde que la moitié gauche.</p>
+  </div>
+
+  <div data-panel="window" hidden>
+    <div class="row"><span>Fenêtre :</span><span class="seg" data-ref="wb"></span></div>
+    <label class="posl"><span>Fréquence du son</span><input type="range" data-ref="fb" min="1000" max="1040" step="1" value="1020" /><b data-ref="fb-out"></b></label>
+    <div class="ft">La DFT répète la trame à l'infini : le raccord entre la fin d'une copie et le début de la suivante <span>(trait pointillé)</span></div>
+    <svg data-ref="svgb1" width="100%" role="img" aria-label="Trois copies de la trame côte à côte"></svg>
+    <div class="ft">Le spectre en décibels <span>(contour clair : fenêtre rectangulaire)</span></div>
+    <svg data-ref="svgb2" width="100%" role="img" aria-label="Spectre de la trame en décibels"></svg>
+    <div class="kpis">
+      <div><span>Périodes dans la trame (25 ms)</span><b data-ref="b1"></b></div>
+      <div><span>Saut au raccord</span><b data-ref="b2"></b></div>
+      <div><span>Plus haute fuite, loin du son</span><b data-ref="b3"></b></div>
+    </div>
+    <p class="note" data-ref="noteb"></p>
+  </div>
+
+  <div data-panel="sep" hidden>
+    <div class="row"><span>Longueur de trame :</span><span class="seg" data-ref="lc"></span></div>
+    <div class="row"><span>Zéros ajoutés :</span><span class="seg" data-ref="zc"></span></div>
+    <label class="posl"><span>Écart entre les deux sons</span><input type="range" data-ref="dc" min="10" max="200" step="5" value="40" /><b data-ref="dc-out"></b></label>
+    <svg data-ref="svgc" width="100%" role="img" aria-label="Spectre de deux sons proches, autour de 1 kHz"></svg>
+    <p class="lg"><i class="sq pts"></i>spectre calculé (un point par case) <i class="sq exact"></i>spectre exact (autant de zéros qu'on veut)</p>
+    <div class="kpis">
+      <div><span>Séparation minimale ≈ f<sub>s</sub> / L</span><b data-ref="c1"></b></div>
+      <div><span>Écart entre les deux sons</span><b data-ref="c2"></b></div>
+      <div><span>Les deux sons sont</span><b data-ref="c3"></b></div>
+    </div>
+    <p class="note">Les zéros ajoutés rapprochent les points calculés, donc la courbe est plus lisse. Ils ne séparent pas deux sons que la durée de la trame confond : le spectre exact (gris) n'a alors qu'une bosse.</p>
+  </div>
+</div>
+
+<script>
+  import { SR } from './signal';
+  import { windowOf, powerSpectrum, nextPow2, WINDOW_LABELS, type WindowName } from './dsp';
+
+  document.querySelectorAll<HTMLElement>('[data-widget="dftd"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const inp = (r: string) => $(r) as HTMLInputElement;
+    const svgOf = (r: string) => $(r) as unknown as SVGSVGElement;
+    const fr = (v: number, d = 0) => v.toLocaleString('fr-FR', { maximumFractionDigits: d });
+    const W = 640, ox = 52, wpx = W - ox - 8;
+    let tab = 'half';
+    let nA = 512, winB: WindowName = 'hamming', lenC = 25, padC = 1;
+
+    function seg(key: string, items: [string, string][], onPick: (v: string) => void) {
+      items.forEach(([v, label]) => {
+        const b = document.createElement('button');
+        b.textContent = label;
+        b.dataset.v = v;
+        b.addEventListener('click', () => { onPick(v); draw(); });
+        $(key).appendChild(b);
+      });
+    }
+    const mark = (key: string, v: string) => $(key).querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.v === v));
+    seg('tabs', [['half', 'Moitié des fréquences'], ['window', 'Pourquoi une fenêtre'], ['sep', 'Séparer deux fréquences']], (v) => (tab = v));
+    seg('na', [['128', '128'], ['256', '256'], ['512', '512']], (v) => (nA = +v));
+    seg('wb', (['rect', 'hamming', 'hann'] as WindowName[]).map((k) => [k, WINDOW_LABELS[k]]), (v) => (winB = v as WindowName));
+    seg('lc', [['10', '10 ms'], ['25', '25 ms'], ['50', '50 ms'], ['100', '100 ms']], (v) => (lenC = +v));
+    seg('zc', [['1', 'Aucun'], ['8', 'Beaucoup (n_fft × 8)']], (v) => (padC = +v));
+
+    // ---------- 1. moitié des fréquences ----------
+    function drawHalf() {
+      const n = nA, f = +inp('fa').value;
+      $('fa-out').textContent = `${fr(f)} Hz`;
+      const w = windowOf('hamming', n);
+      const frame = Array.from({ length: n }, (_, i) => Math.sin((2 * Math.PI * f * i) / SR) * w[i]);
+      const P = powerSpectrum(frame, n); // k = 0 … n/2
+      const pmax = Math.max(...P, 1e-12);
+      const full: number[] = new Array(n);
+      for (let k = 0; k < n; k++) full[k] = (k <= n / 2 ? P[k] : P[n - k]) / pmax;
+      const H = 150, y0 = 24, hh = H - 50, FXx = (hz: number) => ox + (hz / SR) * wpx;
+      let g = `<line x1="${ox}" y1="${y0 + hh}" x2="${W - 8}" y2="${y0 + hh}" stroke="var(--border)"/>`;
+      const bw = Math.max(2.5, wpx / n - 0.5);
+      for (let k = 0; k < n; k++) {
+        const kept = k <= n / 2, h = full[k] * hh;
+        g += `<rect x="${FXx((k * SR) / n) - bw / 2}" y="${y0 + hh - h}" width="${bw}" height="${h}" fill="${kept ? 'var(--p-wave)' : 'var(--p-frame-a)'}"/>`;
+      }
+      g += `<line x1="${FXx(SR / 2)}" y1="${y0 - 6}" x2="${FXx(SR / 2)}" y2="${y0 + hh}" stroke="var(--hl-stroke)" stroke-dasharray="4 3"/><text x="${FXx(SR / 2)}" y="${y0 - 10}" text-anchor="middle" class="ax hl">f<tspan dy="3" font-size="8">s</tspan><tspan dy="-3"> / 2 = 8 kHz</tspan></text>`;
+      g += `<text x="${ox + 4}" y="${y0 + 8}" class="ax">cases gardées</text><text x="${W - 12}" y="${y0 + 8}" text-anchor="end" class="ax">miroir : on ne le garde pas</text>`;
+      for (let kHz = 0; kHz <= 16; kHz += 2) g += `<text x="${FXx(kHz * 1000)}" y="${H - 12}" text-anchor="${kHz === 0 ? 'start' : kHz === 16 ? 'end' : 'middle'}" class="ax">${kHz === 16 ? '16 kHz' : kHz}</text>`;
+      svgOf('svga').setAttribute('viewBox', `0 0 ${W} ${H}`);
+      svgOf('svga').innerHTML = g;
+      $('a1').textContent = String(n);
+      $('a2').innerHTML = `${n / 2 + 1} <small>pour n<sub>fft</sub> = ${n}</small>`;
+      $('a3').textContent = `${fr(SR - f)} Hz`;
+    }
+
+    // ---------- 2. pourquoi une fenêtre ----------
+    const LB = 400;
+    function spectrumDb(frame: number[]) {
+      const P = powerSpectrum(frame, LB);
+      const pmax = Math.max(...P, 1e-30);
+      return Array.from(P, (p) => Math.max(-100, 10 * Math.log10(p / pmax + 1e-30)));
+    }
+    function drawWindow() {
+      const f = +inp('fb').value;
+      $('fb-out').textContent = `${fr(f)} Hz`;
+      const wr = windowOf('rect', LB), ws = windowOf(winB, LB);
+      const base = Array.from({ length: LB }, (_, i) => Math.cos((2 * Math.PI * f * i) / SR));
+      const sel = base.map((v, i) => v * ws[i]);
+      // le raccord : 48 valeurs avant la fin de la trame, 48 valeurs de la copie suivante
+      const H1 = 110, cy = 55, amp = 44, HALF = 48;
+      let g = `<line x1="${ox}" y1="${cy}" x2="${W - 8}" y2="${cy}" stroke="var(--border)"/>`;
+      const X = (i: number) => ox + (i / (2 * HALF - 1)) * wpx;
+      let pts = '';
+      for (let i = 0; i < 2 * HALF; i++) pts += `${X(i).toFixed(1)},${(cy - sel[(LB - HALF + i) % LB] * amp).toFixed(1)} `;
+      g += `<polyline points="${pts}" fill="none" stroke="var(--p-wave)" stroke-width="1.5" stroke-linejoin="round"/>`;
+      g += `<line x1="${X(HALF - 0.5)}" y1="6" x2="${X(HALF - 0.5)}" y2="${H1 - 8}" stroke="var(--hl-stroke)" stroke-dasharray="4 3"/>`;
+      g += `<text x="${X(HALF / 2)}" y="${H1 + 6}" text-anchor="middle" class="ax">fin de la trame</text><text x="${X(1.5 * HALF)}" y="${H1 + 6}" text-anchor="middle" class="ax">début de la copie</text>`;
+      svgOf('svgb1').setAttribute('viewBox', `0 0 ${W} ${H1 + 10}`);
+      svgOf('svgb1').innerHTML = g;
+
+      // spectres en dB, 0 à 4 kHz (cases de 40 Hz : n_fft = 400)
+      const dbSel = spectrumDb(sel), dbRect = spectrumDb(base.map((v, i) => v * wr[i]));
+      const kmax = Math.round(4000 / (SR / LB));
+      const H2 = 150, sy0 = 8, shh = H2 - 30;
+      const SX = (k: number) => ox + (k / kmax) * wpx, SY = (d: number) => sy0 + (-d / 100) * shh;
+      let s = '';
+      for (const d of [0, -20, -40, -60, -80, -100]) s += `<line x1="${ox}" y1="${SY(d)}" x2="${W - 8}" y2="${SY(d)}" stroke="var(--border)" stroke-width="0.5"/><text x="${ox - 4}" y="${SY(d) + 3.5}" text-anchor="end" class="ax">${d} dB</text>`;
+      const line = (a: number[], stroke: string, wd: number) => { let p = ''; for (let k = 0; k <= kmax; k++) p += `${SX(k).toFixed(1)},${SY(a[k]).toFixed(1)} `; return `<polyline points="${p}" fill="none" stroke="${stroke}" stroke-width="${wd}" stroke-linejoin="round"/>`; };
+      if (winB !== 'rect') s += line(dbRect, 'var(--p-frame-a)', 1.4);
+      s += line(dbSel, 'var(--p-wave)', 1.6);
+      for (let kHz = 0; kHz <= 4; kHz++) s += `<text x="${SX((kHz * 1000) / (SR / LB))}" y="${H2 - 2}" text-anchor="${kHz === 0 ? 'start' : kHz === 4 ? 'end' : 'middle'}" class="ax">${kHz === 4 ? '4 kHz' : kHz}</text>`;
+      svgOf('svgb2').setAttribute('viewBox', `0 0 ${W} ${H2}`);
+      svgOf('svgb2').innerHTML = s;
+
+      const periods = (f * LB) / SR;
+      $('b1').textContent = fr(periods, 2);
+      const jump = Math.abs(sel[LB - 1] - sel[0]);
+      $('b2').textContent = fr(jump, 2);
+      const near = Math.round(f / (SR / LB));
+      let hi = -100;
+      for (let k = 0; k <= kmax; k++) if (Math.abs(k - near) > 6 && dbSel[k] > hi) hi = dbSel[k];
+      $('b3').textContent = `${fr(hi)} dB`;
+      const integer = Math.abs(periods - Math.round(periods)) < 0.02;
+      $('noteb').textContent = integer
+        ? 'Nombre entier de périodes : la copie se raccorde sans saut, donc très peu de fuite, même sans fenêtre. Dans un vrai signal, cela n’arrive presque jamais.'
+        : winB === 'rect'
+          ? 'Nombre de périodes non entier : le raccord fait un saut, dont l’énergie se répand sur toutes les fréquences (fuite spectrale). Essaie Hamming ou Hann.'
+          : 'La fenêtre ramène les bords vers 0 : plus de saut au raccord, donc beaucoup moins de fuite loin du son (contour clair : sans fenêtre).';
+    }
+
+    // ---------- 3. séparer deux fréquences ----------
+    function drawSep() {
+      const d = +inp('dc').value;
+      $('dc-out').textContent = `${fr(d)} Hz`;
+      const L = Math.round((lenC * SR) / 1000), w = windowOf('hamming', L);
+      const f1 = 1000 - d / 2, f2 = 1000 + d / 2;
+      const frame = Array.from({ length: L }, (_, i) => (Math.sin((2 * Math.PI * f1 * i) / SR) + Math.sin((2 * Math.PI * f2 * i) / SR)) * w[i]);
+      const nfft = nextPow2(L) * padC;
+      const NF = 16384;
+      const P = powerSpectrum(frame, nfft), E = powerSpectrum(frame, NF);
+      const pmax = Math.max(...E, 1e-12);
+      const lo = 700, hi = 1300;
+      const H = 190, y0 = 12, hh = H - 52;
+      const FXs = (hz: number) => ox + ((hz - lo) / (hi - lo)) * wpx, YS = (v: number) => y0 + (1 - v) * hh;
+      let g = `<line x1="${ox}" y1="${YS(0)}" x2="${W - 8}" y2="${YS(0)}" stroke="var(--border)"/>`;
+      // spectre exact
+      let ex = '';
+      const e0 = Math.ceil((lo / SR) * NF), e1 = Math.floor((hi / SR) * NF);
+      const ev: number[] = [];
+      for (let k = e0; k <= e1; k++) { ev.push(E[k] / pmax); ex += `${FXs((k * SR) / NF).toFixed(1)},${YS(E[k] / pmax).toFixed(1)} `; }
+      g += `<polyline points="${ex}" fill="none" stroke="var(--text-2)" stroke-width="1.2" opacity="0.7"/>`;
+      // spectre calculé
+      let cp = '', dots = '';
+      const k0 = Math.max(0, Math.floor((lo / SR) * nfft) - 1), k1 = Math.min(P.length - 1, Math.ceil((hi / SR) * nfft) + 1);
+      for (let k = k0; k <= k1; k++) {
+        const x = FXs((k * SR) / nfft), y = YS(P[k] / pmax);
+        cp += `${x.toFixed(1)},${y.toFixed(1)} `;
+        if (x >= ox && x <= W - 8) dots += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.6" fill="var(--p-mel)"/>`;
+      }
+      g += `<polyline points="${cp}" fill="none" stroke="var(--p-mel)" stroke-width="1.2" opacity="0.8"/>${dots}`;
+      // les deux fréquences vraies
+      for (const f of [f1, f2]) g += `<line x1="${FXs(f)}" y1="${y0}" x2="${FXs(f)}" y2="${YS(0)}" stroke="var(--hl-stroke)" stroke-dasharray="3 3" stroke-width="0.9"/>`;
+      // séparation minimale fs / L
+      const sep = SR / L, bx0 = FXs(1000 - sep / 2), bx1 = FXs(1000 + sep / 2), by = YS(0) + 12;
+      g += `<path d="M${bx0} ${by - 4}V${by}H${bx1}V${by - 4}" fill="none" stroke="var(--text)" stroke-width="1.2"/><text x="${(bx0 + bx1) / 2}" y="${by + 13}" text-anchor="middle" class="ax">f<tspan dy="3" font-size="8">s</tspan><tspan dy="-3"> / L = ${fr(sep)} Hz</tspan></text>`;
+      for (let f = lo; f <= hi; f += 100) g += `<text x="${FXs(f)}" y="${H - 2}" text-anchor="${f === hi ? 'end' : 'middle'}" class="ax">${f}${f === hi ? ' Hz' : ''}</text>`;
+      svgOf('svgc').setAttribute('viewBox', `0 0 ${W} ${H}`);
+      svgOf('svgc').innerHTML = g;
+
+      // verdict : deux maxima locaux dans le spectre exact, avec un creux entre eux
+      const peaks: number[] = [];
+      for (let i = 1; i < ev.length - 1; i++) if (ev[i] > ev[i - 1] && ev[i] >= ev[i + 1] && ev[i] > 0.3) peaks.push(i);
+      let separated = false;
+      if (peaks.length >= 2) {
+        const a = peaks[0], b = peaks[peaks.length - 1];
+        const dip = Math.min(...ev.slice(a, b + 1));
+        separated = dip < 0.9 * Math.min(ev[a], ev[b]);
+      }
+      $('c1').textContent = `${fr(sep)} Hz`;
+      $('c2').textContent = `${fr(d)} Hz`;
+      $('c3').textContent = separated ? 'séparés' : 'confondus';
+    }
+
+    function draw() {
+      mark('tabs', tab); mark('na', String(nA)); mark('wb', winB); mark('lc', String(lenC)); mark('zc', String(padC));
+      root.querySelectorAll<HTMLElement>('[data-panel]').forEach((p) => (p.hidden = p.dataset.panel !== tab));
+      if (tab === 'half') drawHalf(); else if (tab === 'window') drawWindow(); else drawSep();
+    }
+    ['fa', 'fb', 'dc'].forEach((r) => inp(r).addEventListener('input', draw));
+    draw();
+  });
+</script>
+
+<style is:global>
+  .dftd .row { margin-bottom: 6px; }
+  .dftd .seg { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  .dftd .seg button { font-size: 13px; padding: 4px 12px; }
+  .dftd [data-panel][hidden] { display: none; }
+  .dftd .posl { display: grid; grid-template-columns: 180px 1fr 80px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); margin: 8px 0; }
+  .dftd .posl b { text-align: right; color: var(--text); font-weight: 500; }
+  .dftd .ft { font-size: 13px; font-weight: 500; margin: 10px 0 2px; }
+  .dftd .ft span { font-weight: 400; color: var(--text-2); }
+  .dftd .lg { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: 12px; color: var(--text-2); margin: 4px 0 0; }
+  .dftd .sq { display: inline-block; width: 12px; height: 12px; border-radius: 6px; margin-right: 4px; vertical-align: -1px; }
+  .dftd .sq.pts { background: var(--p-mel); }
+  .dftd .sq.exact { background: var(--text-2); opacity: 0.7; border-radius: 3px; height: 3px; vertical-align: 3px; }
+  .dftd svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .dftd svg text.ax.hl { fill: var(--hl-text); }
+  .dftd .kpis small { font-size: 13px; color: var(--text-2); font-weight: 400; }
+  .dftd .note { font-size: 14px; line-height: 1.5; margin: 10px 0 0; min-height: 3em; }
+  @media (max-width: 600px) { .dftd .posl { grid-template-columns: 1fr; } }
+</style>

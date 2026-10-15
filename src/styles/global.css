@@ -34,6 +34,12 @@
   --p-wave: #5b6b7e;
   --p-frame-a: #c9d3df;
   --p-frame-b: #dfe5ec;
+  --p-mel: #9a7b5a;
+  /* cours HPC : code couleur du type de travail (calcul, pilotage Python, compilation, exécutable réutilisé) */
+  --h-calc: #4a6285;
+  --h-py: #b0605a;
+  --h-comp: #c3a04d;
+  --h-exec: #5f8f6e;
   --warn: #ef9f27;
   --bad: #e24b4a;
   --hl-bg: #faeeda;
@@ -70,6 +76,11 @@
     --p-wave: #9fb0c4;
     --p-frame-a: #44505f;
     --p-frame-b: #343d49;
+    --p-mel: #c4a27c;
+    --h-calc: #8fa6c9;
+    --h-py: #d49a94;
+    --h-comp: #e0c276;
+    --h-exec: #8fbf9e;
   }
 }
 * { box-sizing: border-box; }
@@ -139,7 +150,21 @@ button.active { border-color: var(--accent); color: var(--accent); }
 .widget .kpis > div { background: var(--surface-2); border-radius: var(--radius); padding: 0.75rem 1rem; }
 .widget .kpis span { display: block; font-size: 13px; color: var(--text-2); }
 .widget .kpis b { font-size: 24px; font-weight: 500; }
+/* cours Preprocessing : indicateurs compacts, sur une ligne, sans cartes */
+.widget.pp .kpis, .widget.hp .kpis { display: flex; flex-wrap: wrap; gap: 4px 22px; margin-top: 10px; }
+.widget.pp .kpis > div, .widget.hp .kpis > div { background: none; padding: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 6px; }
+.widget.pp .kpis span, .widget.hp .kpis span { display: inline; font-size: 13px; }
+.widget.pp .kpis b, .widget.hp .kpis b { font-size: 15px; }
+.widget.pp .kpis b small, .widget.pp .kpis b sub, .widget.hp .kpis b small, .widget.hp .kpis b sub { font-size: 12px; }
 
 article table { border-collapse: collapse; width: 100%; margin: 1.2rem 0; font-size: 15px; }
 article th, article td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
 article thead th { background: var(--surface-2); font-weight: 500; font-size: 14px; }
+/* cours HPC : légende du code couleur */
+  .hlegend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--text-2); margin: 0 0 8px; }
+  .hlegend small { font-size: 12px; }
+  .hlegend .sq { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+  .hlegend .sq.calc { background: var(--h-calc); }
+  .hlegend .sq.py { background: var(--h-py); }
+  .hlegend .sq.comp { background: var(--h-comp); }
+  .hlegend .sq.exec { background: var(--h-exec); }

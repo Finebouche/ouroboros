@@ -1,0 +1,67 @@
+---
+// Chapitre HPC 1, section 7 : le lot B se répartit entre appareils ; le temps T reste séquentiel dans chaque séquence.
+// Schéma de structure, sans durées : le temps réel dépend du calcul local et des communications.
+---
+<div class="widget dpar hp" data-widget="dpar">
+  <div class="row"><span>Appareils :</span><span class="seg" data-ref="dev"></span></div>
+  <label class="posl"><span>Lot B</span><input type="range" data-ref="b" min="8" max="256" step="8" value="32" /><b data-ref="b-out"></b></label>
+  <p class="hlegend"><span><i class="sq calc"></i>calcul local</span><span><i class="sq gr"></i>données et communications</span></p>
+  <svg data-ref="svg" width="100%" role="img" aria-label="Lot réparti entre appareils, puis all-reduce des gradients"></svg>
+  <div class="kpis">
+    <div><span>Séquences par appareil</span><b data-ref="k1"></b></div>
+    <div><span>Paramètres p</span><b>répliqués sur chaque appareil</b></div>
+    <div><span>Communication</span><b data-ref="k3"></b></div>
+  </div>
+  <p class="note">Le parallélisme vient de B : chaque appareil fait ses séquences, le temps T reste séquentiel dans chacune. Chaque appareil calcule sa part du gradient, puis un <b>all-reduce</b> (réduction collective, ici une somme dont tous reçoivent le résultat) synchronise la mise à jour.</p>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="dpar"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const b = $('b') as HTMLInputElement;
+    let d = 4;
+    [1, 2, 4, 8].forEach((n) => {
+      const bt = document.createElement('button');
+      bt.textContent = String(n); bt.dataset.v = String(n);
+      bt.addEventListener('click', () => { d = n; draw(); });
+      $('dev').appendChild(bt);
+    });
+    function draw() {
+      $('dev').querySelectorAll('button').forEach((x) => x.classList.toggle('active', +x.dataset.v! === d));
+      const B = +b.value;
+      $('b-out').textContent = String(B);
+      const per = B / d;
+      const W = 640, gap = 10, w = (W - 8 - gap * (d - 1)) / d;
+      let g = '';
+      for (let i = 0; i < d; i++) {
+        const x = 4 + i * (w + gap);
+        g += `<rect x="${x}" y="4" width="${w}" height="64" rx="6" fill="var(--h-calc)" opacity="0.9"/>`;
+        g += `<text x="${x + w / 2}" y="28" text-anchor="middle" class="lab">appareil ${i + 1}</text><text x="${x + w / 2}" y="46" text-anchor="middle" class="lab s">${per % 1 === 0 ? per : per.toFixed(1)} séquences</text><text x="${x + w / 2}" y="60" text-anchor="middle" class="lab s">scan sur T pas</text>`;
+      }
+      if (d > 1) {
+        g += `<rect x="4" y="82" width="${W - 8}" height="26" rx="6" fill="var(--text-2)" opacity="0.35"/><text x="${W / 2}" y="99" text-anchor="middle" class="tx">all-reduce : somme des gradients, résultat à chaque appareil</text>`;
+        for (let i = 0; i < d; i++) { const x = 4 + i * (w + gap) + w / 2; g += `<path d="M${x} 68V82" stroke="var(--text-2)" stroke-width="1.4"/>`; }
+      }
+      const s = $('svg') as unknown as SVGSVGElement;
+      s.setAttribute('viewBox', `0 0 ${W} ${d > 1 ? 114 : 74}`);
+      s.innerHTML = g;
+      $('k1').textContent = per % 1 === 0 ? String(per) : per.toFixed(1);
+      $('k3').textContent = d > 1 ? 'un all-reduce par mise à jour' : 'aucune';
+    }
+    b.addEventListener('input', draw);
+    draw();
+  });
+</script>
+
+<style is:global>
+  .dpar .row { margin-bottom: 4px; }
+  .dpar .seg { display: inline-flex; gap: 6px; }
+  .dpar .seg button { font-size: 13px; padding: 4px 14px; }
+  .dpar .posl { display: grid; grid-template-columns: 100px 1fr 50px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); margin: 4px 0 8px; }
+  .dpar .posl b { text-align: right; color: var(--text); font-weight: 500; }
+  .dpar .sq.gr { background: var(--text-2); opacity: 0.4; }
+  .dpar svg text.lab { font: 500 12px var(--font); fill: #fff; }
+  .dpar svg text.lab.s { font-weight: 400; font-size: 11px; }
+  .dpar svg text.tx { font: 12px var(--font); fill: var(--text); }
+  .dpar .note { font-size: 14px; line-height: 1.5; margin: 8px 0 0; }
+</style>

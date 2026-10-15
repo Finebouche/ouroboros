@@ -1,0 +1,66 @@
+---
+// Chapitre HPC 2 : longueurs variables. Rembourrage à la fin, et l'état d'une séquence finie est figé par jnp.where.
+---
+<div class="widget maskd hp" data-widget="maskd">
+  <label class="posl"><span>Pas t</span><input type="range" data-ref="t" min="0" max="12" step="1" value="7" /><b data-ref="t-out"></b></label>
+  <p class="hlegend"><span><i class="sq u"></i>pas utile (t &lt; T<sub>i</sub>)</span><span><i class="sq w"></i>calculé puis ignoré (état figé)</span><span><i class="sq e"></i>ligne vide (longueur 0)</span></p>
+  <svg data-ref="svg" width="100%" role="img" aria-label="Lot de 6 séquences, rembourré à 8 lignes et 12 pas"></svg>
+  <pre class="code">active = (t &lt; lengths)[:, None]                 # (B, 1)
+state = tree_map(lambda new, old: jnp.where(active, new, old), new_state, state)</pre>
+  <div class="kpis">
+    <div><span>Séquences actives au pas t</span><b data-ref="k1"></b></div>
+    <div><span>Pas calculés</span><b data-ref="k2"></b></div>
+    <div><span>Dont inutiles</span><b data-ref="k3"></b></div>
+  </div>
+  <p class="note">Exemple : un lot de 6 séquences triées (T<sub>i</sub> = 4, 6, 8, 9, 11, 12), complété à 8 lignes (puissance de 2) et 12 pas (palier de 4 pas ici ; 64 par défaut). Les T<sub>i</sub> premiers pas sont ceux de la série seule : l'état final vaut l'état au pas T<sub>i</sub>. Les cases claires coûtent du calcul : d'où le tri par longueur. Pas de <code>if</code> sur une valeur tracée : <code>jnp.where</code> calcule les deux branches et choisit.</p>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="maskd"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const t = $('t') as HTMLInputElement;
+    const L = [4, 6, 8, 9, 11, 12, 0, 0];
+    const STEPS = 12, cw = 38, ch = 24, ox = 62, oy = 6;
+    function draw() {
+      const cur = +t.value;
+      $('t-out').textContent = String(cur);
+      let g = '';
+      let useful = 0;
+      L.forEach((Ti, r) => {
+        g += `<text x="${ox - 8}" y="${oy + r * (ch + 3) + 16}" text-anchor="end" class="ax">${Ti ? `T${r + 1} = ${Ti}` : 'vide'}</text>`;
+        for (let s = 0; s < STEPS; s++) {
+          const x = ox + s * (cw + 3), y = oy + r * (ch + 3);
+          const fill = Ti === 0 ? 'var(--text-2)' : s < Ti ? 'var(--h-calc)' : 'var(--h-calc)';
+          const op = Ti === 0 ? 0.18 : s < Ti ? 0.92 : 0.25;
+          if (Ti && s < Ti) useful++;
+          g += `<rect x="${x}" y="${y}" width="${cw}" height="${ch}" rx="3" fill="${fill}" opacity="${op}"/>`;
+        }
+      });
+      const xc = ox + cur * (cw + 3);
+      g += `<rect x="${xc - 2}" y="${oy - 3}" width="${cw + 4}" height="${L.length * (ch + 3) + 3}" rx="5" fill="none" stroke="var(--hl-stroke)" stroke-width="1.8"/>`;
+      for (let s = 0; s < STEPS; s += 1) g += `<text x="${ox + s * (cw + 3) + cw / 2}" y="${oy + L.length * (ch + 3) + 12}" text-anchor="middle" class="ax${s === cur ? ' hl' : ''}">${s}</text>`;
+      const sv = $('svg') as unknown as SVGSVGElement;
+      sv.setAttribute('viewBox', `0 0 ${ox + STEPS * (cw + 3) + 4} ${oy + L.length * (ch + 3) + 18}`);
+      sv.innerHTML = g;
+      const total = L.length * STEPS;
+      $('k1').textContent = `${L.filter((Ti) => cur < Ti).length} sur 6`;
+      $('k2').textContent = String(total);
+      $('k3').textContent = `${total - useful} (${Math.round(((total - useful) / total) * 100)} %)`;
+    }
+    t.addEventListener('input', draw);
+    draw();
+  });
+</script>
+
+<style is:global>
+  .maskd .posl { display: grid; grid-template-columns: 80px 1fr 40px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); margin: 4px 0 8px; }
+  .maskd .posl b { text-align: right; color: var(--text); font-weight: 500; }
+  .maskd .sq.u { background: var(--h-calc); }
+  .maskd .sq.w { background: var(--h-calc); opacity: 0.25; }
+  .maskd .sq.e { background: var(--text-2); opacity: 0.2; }
+  .maskd svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .maskd svg text.ax.hl { fill: var(--text); font-weight: 600; }
+  .maskd pre.code { background: var(--surface-2); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; line-height: 1.5; margin: 8px 0; overflow-x: auto; }
+  .maskd .note { font-size: 13px; line-height: 1.5; color: var(--text-2); margin: 8px 0 0; }
+  @media (max-width: 600px) { .maskd .posl { grid-template-columns: 1fr; } }
+</style>

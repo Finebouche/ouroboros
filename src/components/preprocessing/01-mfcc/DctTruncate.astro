@@ -1,0 +1,93 @@
+---
+// Chapitre MFCC, section 4 : la DCT des log-énergies de Mel ; garder les K premiers coefficients = garder la forme générale.
+---
+<div class="widget dctt pp" data-widget="dctt">
+  <label class="posl"><span>Position de la trame (25 ms)</span><input type="range" data-ref="pos" min="0" max="575" step="5" value="100" /><b data-ref="pos-out"></b></label>
+  <label class="posl"><span>Coefficients gardés K</span><input type="range" data-ref="k" min="1" max="40" step="1" value="13" /><b data-ref="k-out"></b></label>
+
+  <div class="ft">La courbe des 40 log-énergies, et sa reconstruction avec les K premiers coefficients</div>
+  <p class="lg"><i class="sq pts"></i>log-énergies (40 valeurs) <i class="sq rec"></i>reconstruction avec K coefficients</p>
+  <svg data-ref="rec" width="100%" role="img" aria-label="Log-énergies de Mel et leur reconstruction à partir des premiers coefficients de la DCT"></svg>
+
+  <div class="ft">Les coefficients de la DCT <span>(c<sub>0</sub> = niveau général, hors échelle)</span></div>
+  <svg data-ref="coef" width="100%" role="img" aria-label="Coefficients de la DCT"></svg>
+
+  <div class="kpis">
+    <div><span>c<sub>0</sub> (niveau général)</span><b data-ref="k1"></b></div>
+    <div><span>Valeurs gardées</span><b data-ref="k2"></b></div>
+    <div><span>Erreur de reconstruction moyenne</span><b data-ref="k3"></b></div>
+  </div>
+</div>
+
+<script>
+  import { makeSignal } from './signal';
+  import { melEnergiesAt, dct2, idctK } from './mel';
+
+  document.querySelectorAll<HTMLElement>('[data-widget="dctt"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const inp = (r: string) => $(r) as HTMLInputElement;
+    const x = makeSignal();
+    const M = 40;
+    const fr = (v: number, d = 2) => v.toLocaleString('fr-FR', { maximumFractionDigits: d });
+
+    function draw() {
+      const t0 = +inp('pos').value, K = +inp('k').value;
+      $('pos-out').textContent = `${t0} ms`;
+      $('k-out').textContent = String(K);
+      const v = melEnergiesAt(x, t0, M).map((e) => Math.log(Math.max(e, 1e-12)));
+      const c = dct2(v);
+      const r = idctK(c, K);
+
+      const W = 640, ox = 52, wpx = W - ox - 8, bw = wpx / M;
+      const lo = Math.min(...v, ...r), hi = Math.max(...v, ...r);
+
+      // --- reconstruction ---
+      const H1 = 150, y0 = 8, hh = H1 - 28;
+      const Y = (a: number) => y0 + (1 - (a - lo) / (hi - lo || 1)) * hh;
+      const X = (i: number) => ox + (i + 0.5) * bw;
+      let g = `<line x1="${ox}" y1="${y0 + hh}" x2="${W - 8}" y2="${y0 + hh}" stroke="var(--border)"/>`;
+      let pl = '';
+      v.forEach((a, i) => { g += `<circle cx="${X(i).toFixed(1)}" cy="${Y(a).toFixed(1)}" r="2.6" fill="var(--p-wave)" opacity="0.8"/>`; });
+      r.forEach((a, i) => { pl += `${X(i).toFixed(1)},${Y(a).toFixed(1)} `; });
+      g += `<polyline points="${pl}" fill="none" stroke="var(--p-mel)" stroke-width="2" stroke-linejoin="round"/>`;
+      g += `<text x="${ox}" y="${H1 - 4}" class="ax">filtre 1 (graves)</text><text x="${W - 8}" y="${H1 - 4}" text-anchor="end" class="ax">filtre 40 (aigus)</text>`;
+      const s1 = $('rec') as unknown as SVGSVGElement;
+      s1.setAttribute('viewBox', `0 0 ${W} ${H1}`);
+      s1.innerHTML = g;
+
+      // --- coefficients c_1 … c_39 ---
+      const H2 = 120, cy = 6 + (H2 - 28) / 2, ch = (H2 - 28) / 2;
+      const cm = Math.max(...c.slice(1).map(Math.abs), 1e-9);
+      let b = `<line x1="${ox}" y1="${cy}" x2="${W - 8}" y2="${cy}" stroke="var(--border)"/>`;
+      for (let n = 1; n < M; n++) {
+        const h = (c[n] / cm) * ch;
+        b += `<rect x="${(ox + n * bw + 0.5).toFixed(1)}" y="${(h >= 0 ? cy - h : cy).toFixed(1)}" width="${Math.max(1, bw - 1).toFixed(1)}" height="${Math.max(0.5, Math.abs(h)).toFixed(1)}" fill="${n < K ? 'var(--p-mel)' : 'var(--p-frame-a)'}"/>`;
+      }
+      for (const n of [1, 10, 20, 30, 39]) b += `<text x="${ox + (n + 0.5) * bw}" y="${H2 - 4}" text-anchor="middle" class="ax">c${String(n).split('').map((d) => '₀₁₂₃₄₅₆₇₈₉'[+d]).join('')}</text>`;
+      const s2 = $('coef') as unknown as SVGSVGElement;
+      s2.setAttribute('viewBox', `0 0 ${W} ${H2}`);
+      s2.innerHTML = b;
+
+      const err = Math.sqrt(v.reduce((a, q, i) => a + (q - r[i]) ** 2, 0) / M);
+      $('k1').textContent = fr(c[0], 1);
+      $('k2').innerHTML = `${K} <small>sur ${M}</small>`;
+      $('k3').innerHTML = `${fr(err)} <small>(en unités de ln ; ${fr(Math.exp(err), 2)} × en énergie)</small>`;
+    }
+    ['pos', 'k'].forEach((r) => inp(r).addEventListener('input', draw));
+    draw();
+  });
+</script>
+
+<style is:global>
+  .dctt .posl { display: grid; grid-template-columns: 200px 1fr 70px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); margin: 6px 0; }
+  .dctt .posl b { text-align: right; color: var(--text); font-weight: 500; }
+  .dctt .ft { font-size: 13px; font-weight: 500; margin: 12px 0 2px; }
+  .dctt .ft span { font-weight: 400; color: var(--text-2); }
+  .dctt .lg { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: 12px; color: var(--text-2); margin: 0 0 2px; }
+  .dctt .sq { display: inline-block; width: 12px; height: 12px; margin-right: 4px; vertical-align: -1px; }
+  .dctt .sq.pts { background: var(--p-wave); border-radius: 6px; }
+  .dctt .sq.rec { background: var(--p-mel); height: 3px; vertical-align: 3px; }
+  .dctt svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .dctt .kpis small { font-size: 12px; color: var(--text-2); font-weight: 400; }
+  @media (max-width: 600px) { .dctt .posl { grid-template-columns: 1fr; } }
+</style>

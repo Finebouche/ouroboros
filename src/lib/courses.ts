@@ -16,6 +16,13 @@ export const COURSES = {
     intro:
       "Un cours visuel sur le prétraitement des données avant qu'elles n'arrivent dans un modèle. Premier chapitre : du signal audio aux MFCC (Mel-Frequency Cepstral Coefficients).",
   },
+  hpc: {
+    title: 'HPC',
+    unit: 'Chapitre',
+    tagline: 'Calcul haute performance : compiler, vectoriser, répartir. Premier cours : JAX.',
+    intro:
+      "Un cours visuel sur le calcul haute performance, à partir de JAX : ce que coûte un programme numérique, ce que le compilateur change, et ce qui reste à mesurer. Chapitre 1 : JAX sur un réseau récurrent. Chapitre 2 : lecture d'un vrai code.",
+  },
 } as const;
 
 export type CourseId = keyof typeof COURSES;

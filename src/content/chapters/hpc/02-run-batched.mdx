@@ -1,0 +1,253 @@
+---
+num: 2
+title: "Un vrai code : run_batched"
+summary: "Exécuter des réservoirs reservoirpy.jax sur des milliers de séquences de longueurs variables : vmap, scan, masque, formes en paliers, coûts."
+status: en-cours
+---
+import Reveal from '@/components/shared/Reveal.astro';
+import Quiz from '@/components/shared/Quiz.astro';
+import Refs from '@/components/shared/Refs.astro';
+import Legend from '@/components/hpc/Legend.astro';
+import CodeWalk from '@/components/hpc/02-run-batched/CodeWalk.astro';
+import Intensity from '@/components/hpc/02-run-batched/Intensity.astro';
+import MaskDemo from '@/components/hpc/02-run-batched/MaskDemo.astro';
+import SortSim from '@/components/hpc/02-run-batched/SortSim.astro';
+import RunCost from '@/components/hpc/02-run-batched/RunCost.astro';
+
+Le chapitre 1 était un RNN en JAX. Ici, on lit un vrai code : `run_batched`, qui exécute des **réservoirs** de `reservoirpy.jax` par lots, sur des milliers de séquences de longueurs variables. Les idées : `vmap` sur le lot, `scan` sur le temps, un masque pour les longueurs, des formes en paliers pour limiter les compilations.
+
+Sources (d'après le support dont ce cours s'inspire) : le fichier `run_batched`, et le code de `reservoirpy.jax` (`jax/node.py`, `nodes/reservoir.py`, `nodes/intrinsic_plasticity.py`, branche principale, commit du 17 juin 2026). Je n'ai pas relu ce dépôt : les points signalés *à vérifier* le restent.
+
+<Legend />
+
+| Sigle | Sens |
+|---|---|
+| réservoir (ESN) | *echo state network* : RNN à poids aléatoires fixes ; seule une lecture linéaire est entraînée |
+| `lr` | *leak rate*, taux de fuite des neurones (≠ `LR`, le pas d'apprentissage du chapitre 1) |
+| IP | *intrinsic plasticity* : gain $a$ et biais $b$ réglés par neurone |
+| HPO | *hyperparameter optimization* : un nouveau réservoir à chaque essai |
+| rembourrage | *padding* : compléter par des zéros jusqu'à une forme fixe |
+
+## 1. Un réservoir, c'est le RNN du chapitre 1 à poids fixes
+
+$$
+s_{t+1} = (1 - lr)\, s_t + lr \cdot f\big(W s_t + W_{in}\, u_{t+1} + \text{bias}\big)
+$$
+
+$s$ : état ($N$ neurones), $u$ : entrée ($D$), $f$ : activation (`tanh` par défaut).
+
+| Chapitre 1 (RNN) | `reservoirpy.jax` | Rôle |
+|---|---|---|
+| $h_t$ | `state["out"]` $(N,)$ | état |
+| $W_h$ $(H \times H)$ | `W` $(N \times N)$ | récurrent : aléatoire, fixe |
+| $W_x$ $(D \times H)$ | `Win` $(N \times D)$ | entrée : aléatoire, fixe |
+| $b$ | `bias` | biais |
+| (aucun) | `lr` | taux de fuite (intégrateur) |
+| (aucun) | $a$, $b$ (`IPReservoir`) | gain et biais de plasticité intrinsèque |
+
+- **Pas de `grad`** : `W` et `Win` sont tirés au hasard puis figés. Seule une lecture linéaire (par exemple une régression ridge) est entraînée ; `IPReservoir` règle aussi $a$ et $b$ par une règle locale. Tout le coût est dans la passe avant, répétée sur beaucoup de séquences.
+- **Convention colonne** : `W @ s`, et non $xW$ comme au chapitre 1.
+
+## 2. Le point de départ : une série à la fois
+
+Dans `reservoirpy.jax` (condensé) :
+
+```python
+# reservoirpy/jax/nodes/reservoir.py
+@partial(jax.jit, static_argnums=(0,))      # self statique
+def _step(self, state, x):
+    s = state["out"]
+    nxt = self.activation(self.W @ s + self.Win @ x + self.bias)
+    return {"out": (1 - self.lr) * s + self.lr * nxt}
+
+# reservoirpy/jax/node.py
+def _run(self, state, x):                   # pas de jit ici
+    return jax.lax.scan(split(self._step), state, x)
+# run(liste) : boucle Python · run(tableau 3-D) : lax.map
+```
+
+1. **`self` statique** : `W`, `Win`, `bias`, `lr` sont lus au traçage et figés comme constantes ; le cache de `_step` est indexé sur l'identité du nœud. Un nouveau nœud (un essai d'HPO) donne donc une nouvelle compilation. C'est le piège classique de `jit` sur une méthode (FAQ de JAX).
+2. **`scan` hors `jit`** : la boucle est retracée à chaque `run`, et très probablement recompilée (pour une liste : à chaque série), *à vérifier avec `jax.config.update("jax_log_compiles", True)`*. Chaque longueur différente est de toute façon une nouvelle forme.
+3. **Une série à la fois** : boucle Python ou `lax.map` (séquentiel). `W @ s` est un GEMV, limité par la bande passante mémoire.
+
+Sur $M$ séries de longueurs différentes : $M$ fois « retracer + compiler » puis $T_i$ pas de GEMV.
+
+<div class="retain">
+
+**À retenir**
+
+- Un réservoir est un RNN dont $W$ et $W_{in}$ sont fixes : seul le coût de la passe avant compte.
+- `jit` avec `self` statique grave les poids dans le programme et indexe le cache sur l'objet.
+- Une série à la fois : une compilation par longueur et des GEMV, limités par la mémoire.
+
+</div>
+
+<Refs items={[["JAX FAQ : « How to use jit with methods »", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/faq.html"], ["reservoirpy (dépôt GitHub)", "équipe reservoirpy", 2026, "https://github.com/reservoirpy/reservoirpy"], ["ReservoirPy: an efficient and user-friendly library to design echo state networks", "Trouvain et al.", 2020, "10.1007/978-3-030-61616-8_40"]]} />
+
+## 3. `run_batched` en deux étages
+
+Python prépare, un exécutable compile et calcule :
+
+1. **trier** les séquences par longueur ;
+2. découper en **lots** de `batch_size` ;
+3. **rembourrer** chaque lot à une forme en paliers ;
+4. appeler `_run` (compilé une fois par forme), puis **remettre** chaque résultat dans l'ordre d'origine.
+
+```python
+order = np.argsort(lengths)                            # ①
+for start in range(0, len(order), batch_size):         # ②
+    indices = order[start:start + batch_size]
+    n_rows = batch_size if len(indices) == batch_size \
+        else 2 ** math.ceil(math.log2(len(indices)))    # ③
+    batch_lengths[:len(indices)] = lengths[indices]     # 0 = ligne vide
+    n_steps = math.ceil(batch_lengths.max() / length_bucket) * length_bucket
+    x = np.zeros((n_rows, n_steps, node.input_dim))     # zéros = rembourrage
+    states = np.asarray(_run(parameters, jnp.asarray(x), ...))
+    for k, i in enumerate(indices):                     # ④
+        results[i] = states[k]
+```
+
+Python ne revient qu'**une fois par lot** (environ 20 fois pour 5 000 séquences en lots de 256), jamais à chaque pas. Les lignes de rembourrage ont une longueur 0 : toujours inactives, elles gardent l'état initial.
+
+## 4. `_run` ligne par ligne
+
+<CodeWalk />
+
+## 5. Paramètres tracés : une compilation pour tous les nœuds
+
+| `reservoirpy.jax` : `self` statique | `run_batched` : paramètres en argument |
+|---|---|
+| `@partial(jax.jit, static_argnums=(0,))` | `_run(parameters, x, lengths, state0, ...)` |
+| `self` est haché par identité ; `W`, `Win`, `bias`, `lr` deviennent des constantes du programme | `parameters` est un pytree tracé : seules sa structure, ses formes et dtypes entrent dans la clé de cache |
+| chaque essai d'HPO : compiler, puis exécuter | essai 1 : compiler, puis exécuter ; essais 2, 3… : exécuter seulement |
+
+- **Clé de cache de `_run`** : type de nœud, activation, `return_all`, plus structure, formes et dtypes des tableaux.
+- **Réserves** : `activation` est comparée par identité (une nouvelle lambda à chaque essai recompile) ; changer $N$ ou $D$ change les formes, donc recompile.
+- **À vérifier** (bogue probable dans `reservoirpy.jax`) : `IPReservoir.partial_fit` modifie `a` et `b` après le premier appel ; le `_step` en cache, indexé sur `self`, garderait les anciennes valeurs. `run_batched` relit `a` et `b` à chaque appel.
+
+## 6. `vmap` transforme `W @ s` en GEMM
+
+<Intensity />
+
+- **Une série** : `W @ s` est un GEMV, $2N^2$ FLOPs, qui lit tout $W$ ($8N^2$ octets en float64) : $0{,}25$ FLOP/octet.
+- **$B$ séries d'un coup** : `états (B × N) @ Wᵀ` est un GEMM de $2BN^2$ FLOPs pour les mêmes $8N^2$ octets : $B/4$ FLOP/octet. $B = 32$ donne 8, $B = 256$ donne 64.
+- **Point d'équilibre** d'un CPU récent : $\approx 10$ FLOP/octet. Avec $B = 256$, le pas n'est plus limité par la mémoire mais par le calcul.
+- **Hypothèse** : $W$ et $W_{in}$ denses. Par défaut `reservoirpy.jax` les stocke en creux (BCOO, connectivité 0,1) : `W @ s` y est un produit creux. Il faut soit les densifier (`W.todense()`, environ 10 fois plus de FLOPs mais des GEMM efficaces), soit garder le creux : *à mesurer*.
+
+## 7. Longueurs variables : rembourrer, figer, trier
+
+<MaskDemo />
+
+Rembourrer **à la fin** : les $T_i$ premiers pas sont ceux de la série seule, et l'état final est l'état au pas $T_i$, exactement comme la série traitée seule. Les pas de rembourrage sont calculés puis ignorés : c'est du calcul perdu, que le **tri par longueur** réduit.
+
+<SortSim />
+
+- **Sans tri**, chaque lot contient presque toujours une séquence proche de la longueur maximale : peu de formes, mais environ la moitié du calcul est perdue.
+- **Avec tri**, le calcul perdu tombe à environ 11 % avec un palier de 64 et 26 % avec un palier de 512 (simulation ci-dessus), au prix d'une forme par lot quand le palier est fin. `length_bucket` règle ce compromis.
+- Les exécutables restent en cache d'un essai d'HPO à l'autre, tant que les données, $N$ et $D$ ne changent pas. Le palier sert surtout quand les données changent (plis de validation croisée, sous-ensembles) : on retombe sur des formes déjà compilées.
+
+<div class="retain">
+
+**À retenir**
+
+- Deux étages : Python prépare une fois par lot ; `_run` compile une fois par forme et calcule.
+- `vmap` remplace des GEMV par un GEMM : l'intensité arithmétique est multipliée par $B$.
+- Rembourrage à la fin plus `jnp.where` : longueurs variables sans branche ; le tri limite le calcul perdu ; le palier limite les compilations.
+- Paramètres en pytree tracé : une compilation pour tous les nœuds de même forme.
+
+</div>
+
+<Quiz>
+
+**Q1.** Pourquoi `run_batched` passe-t-il `parameters` en argument plutôt que d'utiliser `self` statique ?
+
+<Reveal>
+
+Avec `self` statique, les poids sont gravés dans le programme et le cache est indexé sur l'identité du nœud : chaque essai d'HPO recompile. Avec un pytree tracé, la clé de cache ne contient que structure, formes et dtypes : tous les nœuds de même forme partagent une compilation.
+
+</Reveal>
+
+**Q2.** Avec $B = 128$ en float64, quelle intensité arithmétique, et le pas est-il limité par la mémoire ou le calcul sur un CPU d'équilibre ≈ 10 ?
+
+<Reveal>
+
+$B/4 = 32$ FLOP/octet, au-dessus de 10 : le pas est limité par le calcul. Avec $B = 16$, on aurait 4 : encore limité par la mémoire.
+
+</Reveal>
+
+**Q3.** Une séquence de longueur 9 dans un lot rembourré à 12 pas : que valent son état au pas 12 et ses 3 derniers pas calculés ?
+
+<Reveal>
+
+Son état au pas 12 est l'état au pas 9 : `jnp.where(t < 9, new, old)` garde l'ancien état dès $t = 9$. Les 3 derniers pas sont calculés puis ignorés : du calcul perdu.
+
+</Reveal>
+
+**Q4.** Pourquoi une ligne vide (longueur 0) ne change-t-elle jamais d'état ?
+
+<Reveal>
+
+`active = (t < 0)` est faux à tous les pas : `jnp.where` garde toujours l'état initial. On ajoute ces lignes pour atteindre une puissance de deux et limiter le nombre de formes.
+
+</Reveal>
+
+</Quiz>
+
+## 8. Ce que coûte `run_batched`, et comment l'améliorer
+
+<RunCost />
+
+Exemple : 256 lignes, 1 024 pas, $N = 1000$, $D = 10$ donne $\approx 5{,}3 \cdot 10^{11}$ FLOPs par lot, et $\approx 2{,}1$ Go de sortie avec `return_all`.
+
+**Pistes d'amélioration**, d'après le support :
+
+1. **float64 partout** : nécessaire pour coller à reservoirpy. Sur un GPU grand public, le débit crête float64 peut être très inférieur à celui du float32 (jusqu'à 64× plus faible, mais ≈ 2× seulement si le pas est limité par la mémoire) : tester float32 avec une tolérance.
+2. **Une synchronisation par lot** : `np.asarray(_run(...))` attend chaque lot ; lancer tous les lots puis convertir recouvre préparation et calcul, mais garde toutes les sorties sur l'appareil.
+3. **`return_all` et la mémoire** : si seules des caractéristiques servent (dernier état, moyenne), les accumuler dans le `scan` au lieu de garder $(n\_rows, n\_steps, N)$.
+4. **Le compromis des paliers** : `length_bucket` et `batch_size` règlent compilations contre calcul perdu.
+5. **Égalité avec reservoirpy** : `vmap` remplace des GEMV par un GEMM, donc l'ordre des sommes peut changer ; vérifier par `np.allclose`.
+6. **Matrices creuses** : par défaut `W`, `Win` sont des BCOO ; densifier ou garder le creux ; `jnp.asarray` ne densifie pas un BCOO (*à vérifier*).
+
+**Chaque idée du chapitre 1 se retrouve dans le code :**
+
+| Chapitre 1 | Dans `run_batched` | Effet |
+|---|---|---|
+| `scan` sur $T$ | `jax.lax.scan(scan_step, state0, …)` | boucle temporelle compilée |
+| `vmap` sur $B$ | `jax.vmap(partial(_step.__wrapped__, node))` | GEMV → GEMM |
+| `jit` et arguments statiques | `static_argnames=("node_type", "activation", "return_all")` | une compilation par structure |
+| formes fixes | lignes : `batch_size` (puissance de 2 pour le dernier lot) ; pas : multiple de 64 | peu de recompilations |
+| `jnp.where` plutôt que `if` | `active = t < lengths` | longueurs variables sans branche |
+| paramètres en pytree | `parameters = {W, Win, bias, lr, a, b}` | une compilation pour tous les nœuds |
+| dtype | `jax_enable_x64` | même précision que reservoirpy (float64), égalité à `np.allclose` près |
+
+Ici, pas de `grad` : tout le gain vient de la passe avant, avec moins de compilations, des GEMM, et Python une fois par lot.
+
+<div class="retain">
+
+**À retenir**
+
+- Coût d'un lot : $n\_steps \times 2\, n\_rows\, N (N + D)$ FLOPs ; sortie $n\_rows \times n\_steps \times N \times 8$ octets avec `return_all`.
+- Les leviers : float32 (à tester), un seul aller-retour par lot, accumuler dans le `scan` plutôt que tout garder, régler paliers et taille de lot.
+- Vérifier l'égalité avec l'implémentation de référence, mesurer plutôt que supposer.
+
+</div>
+
+<Quiz>
+
+**Q1.** Avec 512 lignes, 2 048 pas, $N = 500$, $D = 20$, combien de FLOPs par lot et quelle mémoire de sortie avec `return_all` ?
+
+<Reveal>
+
+FLOPs : $2048 \times 2 \times 512 \times 500 \times 520 \approx 5{,}5 \cdot 10^{11}$. Mémoire : $512 \times 2048 \times 500 \times 8 \approx 4{,}2$ Go. Sans `return_all` : $512 \times 500 \times 8 \approx 2$ Mo.
+
+</Reveal>
+
+**Q2.** Quelle différence essentielle avec le chapitre 1 explique que tout le gain vienne de la passe avant ?
+
+<Reveal>
+
+Il n'y a pas de gradient : $W$ et $W_{in}$ sont figés, on n'entraîne qu'une lecture linéaire. Le gain vient de moins de compilations, de GEMM au lieu de GEMV, et de Python qui ne revient qu'une fois par lot.
+
+</Reveal>
+
+</Quiz>

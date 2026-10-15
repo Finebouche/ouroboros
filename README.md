@@ -6,6 +6,7 @@ Site personnel de fiches de révision visuelles. Il héberge plusieurs cours :
 |---|---|---|---|
 | Ouroboros | `ouroboros` | Module | architectures de langage récurrentes : récurrence en profondeur, dans le temps, leur couplage |
 | Preprocessing | `preprocessing` | Chapitre | prétraitement des données ; chapitre 1 : MFCC |
+| HPC | `hpc` | Chapitre | calcul haute performance ; chapitres 1 et 2 : JAX (un RNN, puis un vrai code `run_batched`) |
 
 ## Lancer
 
@@ -28,7 +29,8 @@ src/
       00-bases/                widgets du module 0 (+ qkvData.ts, données partagées par ces widgets)
       01-recurrence-profondeur/  widgets du module 1
     preprocessing/
-      01-mfcc/                 widgets du chapitre 1 (à venir)
+      01-mfcc/                 widgets du chapitre MFCC
+    hpc/                       Legend (code couleur du type de travail), widgets de 01-jax-rnn/ et 02-run-batched/
   lib/courses.ts               liste des cours (titre, unité, présentation) et fonctions de lecture de la collection
   layouts/Base.astro           mise en page commune (en-tête : Cours / <cours>)
   pages/                       index (liste des cours), [course]/index (carte de progression), [course]/[...slug] (page d'un module)
