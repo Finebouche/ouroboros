@@ -1,0 +1,41 @@
+---
+import { render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import ArchSidebar from '../../components/ouroboros/ArchSidebar.astro';
+import PipelineSidebar from '../../components/preprocessing/PipelineSidebar.astro';
+import { COURSES, courseIds, chaptersOf, chapterUrl, slugOf } from '../../lib/courses';
+
+export async function getStaticPaths() {
+  const paths = [];
+  for (const course of courseIds) {
+    const chapters = await chaptersOf(course);
+    chapters.forEach((entry, i) => {
+      paths.push({ params: { course, slug: slugOf(entry.id) }, props: { entry, prev: chapters[i - 1], next: chapters[i + 1] } });
+    });
+  }
+  return paths;
+}
+
+const { course } = Astro.params;
+const { entry, prev, next } = Astro.props;
+const meta = COURSES[course];
+const { Content } = await render(entry);
+---
+<Base title={`${meta.unit} ${entry.data.num} · ${entry.data.title}`} wide={!!entry.data.sidebar} course={course}>
+  <div class:list={[{ layout: !!entry.data.sidebar }]}>
+    {entry.data.sidebar === 'mfcc' && <PipelineSidebar />}
+    {(entry.data.sidebar === 'transformer' || entry.data.sidebar === 'loop') && <ArchSidebar variant={entry.data.sidebar} />}
+    <article>
+      <p><a href={`/${course}/`}>&larr; {meta.title}</a></p>
+      <h1>{meta.unit} {entry.data.num} · {entry.data.title}</h1>
+      <Content />
+      <nav class="pn">
+        {prev ? <a href={chapterUrl(prev.id)}>&larr; {prev.data.title}</a> : <span />}
+        {next ? <a href={chapterUrl(next.id)}>{next.data.title} &rarr;</a> : <span />}
+      </nav>
+    </article>
+  </div>
+</Base>
+<style>
+  .pn { display: flex; justify-content: space-between; margin-top: 3rem; border-top: 1px solid var(--border); padding-top: 1rem; }
+</style>

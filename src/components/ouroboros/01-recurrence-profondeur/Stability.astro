@@ -1,0 +1,87 @@
+---
+// Module 1 : jouet scalaire de la récurrence h ← a·h + e (e = 1), pour voir quand la norme de l'état converge, croît ou explose.
+// Ce n'est pas un vrai modèle : l'analyse de Parcae porte sur une approximation linéaire en dimension d_h, où a devient la matrice Ā.
+---
+<div class="widget stab" data-widget="stab">
+  <div class="row">
+    <span>Paramétrage de a :</span>
+    <span class="seg" data-ref="mode"><button data-mode="free" class="active">Libre</button><button data-mode="neg">Parcae : a = exp(−s)</button></span>
+  </div>
+  <div class="sl">
+    <label data-ref="l-free"><span>a</span><input type="range" data-ref="a" min="0.5" max="1.3" step="0.01" value="1.05" /><b data-ref="a-out"></b></label>
+    <label data-ref="l-neg" hidden><span>s &gt; 0</span><input type="range" data-ref="s" min="0.02" max="1.5" step="0.01" value="0.1" /><b data-ref="s-out"></b></label>
+  </div>
+  <p class="eq">h<sub>t+1</sub> = a · h<sub>t</sub> + e, avec e = 1 et h<sub>0</sub> = 0</p>
+  <svg data-ref="svg" width="100%" viewBox="0 0 640 220" role="img" aria-label="Norme de l'état en fonction du nombre de passes"></svg>
+  <div class="kpis">
+    <div><span>a = ρ(Ā)</span><b data-ref="k1"></b></div>
+    <div><span>État après 32 passes</span><b data-ref="k2"></b></div>
+    <div><span>Verdict</span><b data-ref="k3" class="v"></b></div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="stab"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const inp = (r: string) => $(r) as HTMLInputElement;
+    const svg = $('svg') as unknown as SVGSVGElement;
+    const fr = (v: number, d = 2) => v.toLocaleString('fr-FR', { maximumFractionDigits: d });
+    const T = 32, YMAX = 40;
+    let mode: 'free' | 'neg' = 'free';
+
+    function draw() {
+      const s = +inp('s').value;
+      const a = mode === 'free' ? +inp('a').value : Math.exp(-s);
+      $('a-out').textContent = fr(a);
+      $('s-out').textContent = fr(s);
+      const ox = 40, oy = 10, w = 590, h = 170;
+      const X = (t: number) => ox + (t / T) * w;
+      const Y = (v: number) => oy + h - (Math.min(v, YMAX) / YMAX) * h;
+      const hs = [0];
+      for (let t = 1; t <= T; t++) hs.push(a * hs[t - 1] + 1);
+      let g = '';
+      for (const v of [0, 10, 20, 30, 40]) g += `<line x1="${ox}" y1="${Y(v)}" x2="${ox + w}" y2="${Y(v)}" stroke="var(--border)" stroke-width="0.5"/><text x="${ox - 6}" y="${Y(v) + 4}" text-anchor="end">${v}</text>`;
+      for (const t of [0, 8, 16, 24, 32]) g += `<text x="${X(t)}" y="${oy + h + 16}" text-anchor="middle">${t}</text>`;
+      g += `<text x="${ox + w / 2}" y="${oy + h + 32}" text-anchor="middle">passes t</text>`;
+      if (a < 1 && 1 / (1 - a) <= YMAX) g += `<line x1="${ox}" y1="${Y(1 / (1 - a))}" x2="${ox + w}" y2="${Y(1 / (1 - a))}" stroke="var(--text-2)" stroke-dasharray="4 3"/><text x="${ox + w - 4}" y="${Y(1 / (1 - a)) - 5}" text-anchor="end">équilibre 1/(1 − a)</text>`;
+      let pts = '';
+      let out = -1;
+      hs.forEach((v, t) => {
+        if (v > YMAX && out < 0) out = t;
+        pts += `${X(t).toFixed(1)},${Y(v).toFixed(1)} `;
+      });
+      g += `<polyline points="${pts}" fill="none" stroke="var(--c-model-loop)" stroke-width="2.5" stroke-linejoin="round"/>`;
+      if (out >= 0) g += `<text x="${X(out) + 8}" y="${oy + 12}" class="warn">sort du cadre à t = ${out}</text>`;
+      svg.innerHTML = g;
+      $('k1').textContent = fr(a);
+      const v = hs[T];
+      $('k2').textContent = v > 1e4 ? v.toExponential(1).replace('.', ',').replace('e+', ' × 10^') : fr(v, 1);
+      $('k3').textContent = a < 0.995 ? 'converge' : a <= 1.005 ? 'croît sans borne' : 'explose';
+    }
+
+    root.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) =>
+      b.addEventListener('click', () => {
+        mode = b.dataset.mode as 'free' | 'neg';
+        root.querySelectorAll('[data-mode]').forEach((o) => o.classList.toggle('active', o === b));
+        ($('l-free') as HTMLElement).hidden = mode !== 'free';
+        ($('l-neg') as HTMLElement).hidden = mode !== 'neg';
+        draw();
+      }),
+    );
+    ['a', 's'].forEach((r) => inp(r).addEventListener('input', draw));
+    draw();
+  });
+</script>
+
+<style is:global>
+  .stab .seg { display: inline-flex; gap: 6px; }
+  .stab .seg button { font-size: 13px; padding: 4px 12px; }
+  .stab .sl label { display: grid; grid-template-columns: 160px 1fr 50px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); }
+  .stab .sl label[hidden] { display: none; }
+  .stab .sl b { text-align: right; color: var(--text); font-weight: 500; }
+  .stab .eq { font-size: 14px; color: var(--text-2); margin: 6px 0 2px; }
+  .stab svg text { font: 11px var(--font); fill: var(--text-2); }
+  .stab svg text.warn { fill: var(--c-model-loop); font-weight: 500; }
+  .stab .kpis b.v { font-size: 20px; }
+  @media (max-width: 600px) { .stab .sl label { grid-template-columns: 1fr; } }
+</style>

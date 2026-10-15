@@ -1,0 +1,560 @@
+---
+num: 0
+title: Bases
+summary: Modèle autoregressif, teacher forcing, attention causale, KV cache, fenêtre glissante, multi-têtes, encodage des positions.
+status: en-cours
+sidebar: transformer
+---
+import CausalAttention from '@/components/ouroboros/00-bases/CausalAttention.astro';
+import QKVProjection from '@/components/ouroboros/00-bases/QKVProjection.astro';
+import AttentionSteps from '@/components/ouroboros/00-bases/AttentionSteps.astro';
+import ArchMarker from '@/components/shared/ArchMarker.astro';
+import KVCacheSteps from '@/components/ouroboros/00-bases/KVCacheSteps.astro';
+import KVCacheMemory from '@/components/ouroboros/00-bases/KVCacheMemory.astro';
+import Reveal from '@/components/shared/Reveal.astro';
+import Quiz from '@/components/shared/Quiz.astro';
+import DotLegend from '@/components/ouroboros/DotLegend.astro';
+import Refs from '@/components/shared/Refs.astro';
+import SlidingWindow from '@/components/ouroboros/00-bases/SlidingWindow.astro';
+import MultiHead from '@/components/ouroboros/00-bases/MultiHead.astro';
+import ReachCone from '@/components/ouroboros/ReachCone.astro';
+import RoPEClock from '@/components/ouroboros/00-bases/RoPEClock.astro';
+
+<ArchMarker label="Vue d'ensemble : un transformer décodeur, un bloc répété N fois" />
+
+<ArchMarker parts="attn" label="Attention causale : Q, K, V et le masque M" />
+
+## La formule centrale
+
+$$
+A \;=\; \mathrm{softmax}\!\left(\frac{Q\,K^{\top}}{\sqrt{d_k}} \;+\; M\right) V
+$$
+
+- $Q$, $K$, $V$ : les matrices de la section 2, une ligne par token.
+- $Q\,K^{\top}$ : la grille $s \times s$ de scores.
+- $M$ : le masque, $0$ dans le triangle, $-\infty$ au-dessus (donc poids exactement $0$ après le softmax).
+- $\sqrt{d_k}$ : normalisation, avec $d_k$ la dimension des clés ; elle évite que les scores grossissent avec $d_k$.
+
+<Refs items={[["Attention Is All You Need", "Vaswani et al.", 2017, "1706.03762"]]} />
+
+<ArchMarker parts="attn kv" label="KV cache : K et V gardés en mémoire à la génération" />
+
+<DotLegend />
+
+<ArchMarker parts="embed" label="Étape 1 : Embeddings" follow="[data-widget='att-steps']" />
+
+## 1. Un bloc de transformer, étape par étape
+
+Clique sur les étapes : le schéma de gauche montre où on est.
+
+<AttentionSteps />
+
+<Refs items={[["Attention Is All You Need", "Vaswani et al.", 2017, "1706.03762"], ["On Layer Normalization in the Transformer Architecture", "Xiong et al.", 2020, "2002.04745"], ["Deep Residual Learning for Image Recognition", "He et al.", 2015, "1512.03385"]]} />
+
+<ArchMarker parts="embed norm1 qkv" label="Entrée de l'attention : le vecteur de chaque token est projeté en Q, K, V par trois matrices" />
+
+## 2. Rappel : d'où viennent Q, K et V ?
+
+Un token n'est d'abord qu'un numéro. Une table d'*embeddings* le remplace par un vecteur de $d_{\text{model}}$ nombres, noté $x_i$ : c'est tout ce que le modèle sait de ce token à l'entrée de l'attention (en pratique après un RMSNorm, et enrichi par les couches précédentes).
+
+Dans l'attention, on projette ce vecteur trois fois, avec trois matrices apprises $W_Q$, $W_K$ et $W_V$. Ce sont trois projections linéaires du même vecteur $x_i$, et ce que chacune finit par encoder est décidé par l'entraînement. Les trois résultats s'appellent la requête $q_i$ (*query*), la clé $k_i$ (*key*) et la valeur $v_i$ (*value*).
+
+$$
+Q = X\,W_Q, \qquad K = X\,W_K, \qquad V = X\,W_V
+$$
+
+<QKVProjection />
+
+<div class="retain">
+
+**À retenir**
+
+- Un token devient un vecteur $x_i$ (son embedding).
+- $q_i = x_i W_Q$, $k_i = x_i W_K$, $v_i = x_i W_V$ : trois projections linéaires du même vecteur ; ce que chacune encode est décidé par l'entraînement.
+- $q_i$, $k_i$, $v_i$ sont plus petits que $x_i$ : $d_k = d_v < d_x$.
+
+</div>
+
+<Refs items={[["Attention Is All You Need", "Vaswani et al.", 2017, "1706.03762"]]} />
+
+<Quiz>
+
+**Q1.** Si on modifie $W_K$ mais pas $W_Q$ ni $W_V$, qu'est-ce qui change dans l'attention : les scores, les valeurs $v_j$, ou les deux ?
+
+<Reveal>
+
+Les scores changent : $k_j$ change, donc $q_i \cdot k_j$ aussi, et donc les poids d'attention après softmax. Les vecteurs $v_j$ eux-mêmes ne changent pas, mais la sortie $\sum_j a_{ij}\, v_j$ change quand même, car leur pondération a changé.
+
+</Reveal>
+
+**Q2.** Pourquoi est-ce utile que les mêmes $W_Q$, $W_K$, $W_V$ servent pour tous les mots, quand on pense à l'entraînement parallèle ?
+
+<Reveal>
+
+Les mêmes matrices s'appliquent à chaque ligne de $X$, et la projection d'un token ne dépend pas des résultats des autres tokens. On calcule donc $Q = XW_Q$ (et $K$, $V$) en un seul gros produit matriciel pour toute la séquence, ce que le GPU fait très efficacement, au lieu de $s$ petites opérations l'une après l'autre.
+
+</Reveal>
+
+**Q3.** Pourquoi utilise-t-on deux matrices distinctes $W_Q$ et $W_K$ plutôt qu'une seule ? (Indice : que vaudrait le score $q_i \cdot k_j$ si $W_Q = W_K$ ?)
+
+<Reveal>
+
+Avec une seule matrice ($W_Q = W_K = W$), on aurait $q_i \cdot k_j = x_i\,W W^{\top} x_j^{\top}$, qui est égal à $q_j \cdot k_i$ : les scores seraient symétriques avant masquage, donc le score de $i$ vers $j$ serait égal à celui de $j$ vers $i$. Or « $i$ regarde $j$ » n'implique pas « $j$ regarde $i$ ». Avec deux matrices, $W_Q W_K^{\top}$ n'est pas symétrique en général, et l'attention peut être asymétrique.
+
+</Reveal>
+
+</Quiz>
+
+<ArchMarker parts="head" label="Sortie du modèle : une distribution de probabilité sur le token suivant, à chaque position (softmax sur le vocabulaire, distinct du softmax de l'attention)" />
+
+## 3. Entraîner en parallèle, générer pas à pas
+
+Un modèle de langage *autoregressif* prédit le token suivant à partir de ceux qui le précèdent.
+
+- **Entraînement (teacher forcing)** : on connaît toute la phrase, donc on calcule les prédictions de toutes les positions en une seule passe.
+- **Génération** : le token suivant n'existe pas encore, donc on avance un pas à la fois.
+
+<div class="callout">
+
+**Autoregressif, par opposition à quoi ?** À un modèle *masqué bidirectionnel* comme BERT : on cache des tokens au milieu de la phrase et chaque position voit à la fois sa gauche et sa droite (matrice d'attention pleine, sans masque causal). C'est excellent pour comprendre un texte, mais ça ne génère pas naturellement. Un modèle autoregressif ne voit que sa gauche, et réinjecte ses propres sorties comme entrées, d'où la génération pas à pas. Le bouton « BERT » du widget ci-dessous montre la différence.
+
+</div>
+
+<ArchMarker parts="attn" label="Attention causale : le masque triangulaire" />
+
+<CausalAttention />
+
+
+Chaque case (ligne *i*, colonne *j*) dit « combien le token *i* regarde le token *j* ». Le masque causal interdit de regarder à droite de la diagonale. Comme tout le triangle est connu à l'entraînement, on le remplit d'un coup avec un seul produit matriciel (*GEMM*, General Matrix Multiply). La sortie d'un mot est la moyenne des vecteurs $v_j$ des mots regardés, pondérée par les disques de sa ligne.
+
+<div class="retain">
+
+**À retenir**
+
+- Autoregressif : on prédit le token suivant en ne voyant que sa gauche (à l'opposé de BERT, bidirectionnel).
+- Entraînement : toute la séquence en parallèle (teacher forcing), via un seul produit $Q K^{\top}$ avec un masque triangulaire. Génération : un token à la fois.
+- KV cache : on garde $K$ et $V$ des tokens passés pour ne pas les recalculer ; il grandit d'un token par pas.
+
+</div>
+
+<Refs items={[["Attention Is All You Need", "Vaswani et al.", 2017, "1706.03762"], ["BERT", "Devlin et al.", 2018, "1810.04805"]]} />
+
+<Quiz>
+
+**Q1.** Si on double $s$, que deviennent le nombre de cases calculées et le nombre d'étapes séquentielles, à l'entraînement et à la génération ?
+
+<Reveal>
+
+Cases calculées : $s(s+1)/2$ devient environ 4 fois plus grand (croissance quadratique ; par exemple 36 cases pour $s = 8$, 136 pour $s = 16$). Étapes séquentielles : 1 à l'entraînement, quelle que soit $s$ ; $s$ à la génération, donc 2 fois plus.
+
+</Reveal>
+
+**Q2.** Pourquoi peut-on tout calculer d'un coup à l'entraînement et pas à la génération ?
+
+<Reveal>
+
+À l'entraînement, tous les tokens de la phrase sont connus d'avance (teacher forcing) : les $Q$, $K$, $V$ de toutes les positions existent déjà, et le masque suffit à interdire de regarder le futur. À la génération, le token $t+1$ est la sortie du pas $t$ : il n'existe pas avant, il faut donc attendre.
+
+</Reveal>
+
+**Q3.** Si chaque token devait attendre le résultat complet du précédent (comme un LSTM), même à l'entraînement, que deviendrait le parallélisme ?
+
+<Reveal>
+
+Il serait perdu sur l'axe de la séquence : le calcul du token $i$ dépendrait de la sortie du token $i-1$, donc il faudrait $s$ étapes successives au lieu d'une (le GPU ne pourrait plus paralléliser que sur le batch et à l'intérieur d'un token). C'est le problème des RNN et des LSTM, et la question centrale pour le couplage des deux récurrences dans Ouroboros.
+
+</Reveal>
+
+</Quiz>
+
+<ArchMarker parts="attn kv" label="KV cache : ce qu'on garde, ce qu'on recalcule" />
+
+## 4. Le KV cache en détail
+
+À la génération, le token $t$ compare sa requête $q_t$ aux clés et aux valeurs de tous les tokens précédents. Ces clés et valeurs ne changent plus une fois calculées : à chaque couche, la représentation du token $i$ ne dépend que des tokens $\le i$ (causalité), donc ajouter des tokens après lui ne la modifie pas. On les garde donc en mémoire plutôt que de les recalculer à chaque pas.
+
+<KVCacheSteps />
+
+### Ce que ça change
+
+Au pas $t$, on ne projette que le nouveau token, et on ajoute une ligne au cache :
+
+$$
+K_{\le t} = \begin{bmatrix} K_{<t} \\ x_t W_K \end{bmatrix}, \qquad
+V_{\le t} = \begin{bmatrix} V_{<t} \\ x_t W_V \end{bmatrix}, \qquad
+o_t = \mathrm{softmax}\!\left(\frac{q_t\, K_{\le t}^{\top}}{\sqrt{d_k}}\right) V_{\le t}
+$$
+
+- $q_t = x_t W_Q$ : la requête du nouveau token seulement.
+- $K_{<t}$, $V_{<t}$ : le cache, une ligne par token passé.
+- Pas besoin de masque : le cache ne contient que le passé.
+- Le cache économise le **recalcul**, pas la **lecture** : $q_t$ est comparé à $t$ clés dans les deux cas, donc le coût d'un pas croît avec $t$.
+- On met $K$ et $V$ en cache, pas $Q$ : la requête d'un token passé n'a servi qu'une fois, pour calculer sa propre ligne.
+
+### Ce que ça coûte en mémoire
+
+<ArchMarker parts="attn kv" label="KV cache : taille en mémoire" />
+
+$$
+M \;=\; 2 \times L \times h_{kv} \times d_k \times b \times s
+$$
+
+- $2$ : une clé et une valeur par token.
+- $L$ : nombre de couches (chacune a son propre cache).
+- $h_{kv}$ : nombre de têtes de clés et de valeurs. Avec l'attention multi-têtes classique, c'est le nombre de têtes ; avec la *grouped-query attention* (GQA), plusieurs têtes de requête partagent une tête de clés/valeurs, donc $h_{kv}$ est plus petit.
+- $d_k$ : dimension d'une tête.
+- $b$ : nombre d'octets par nombre (2 en bf16 ou fp16).
+- $s$ : nombre de tokens dans le cache. $M$ est pour une séquence ; il faut multiplier par le nombre de séquences traitées en parallèle.
+
+<KVCacheMemory />
+
+Le cache grandit linéairement et sans borne avec $s$. C'est ce que limite l'attention à fenêtre glissante (section suivante).
+
+<div class="retain">
+
+**À retenir**
+
+- Les $K$ et $V$ des tokens passés ne changent plus (causalité) : on les garde. À chaque pas, on ne projette que le nouveau token et on ajoute une ligne.
+- Sans cache, générer $s$ tokens traite $s(s+1)/2$ tokens au total ; avec cache, $s$.
+- Le cache économise le recalcul, pas la lecture : $q_t$ est comparé à $t$ clés à chaque pas.
+- On met en cache $K$ et $V$, pas $Q$.
+- Taille : $M = 2\,L\,h_{kv}\,d_k\,b\,s$ par séquence, linéaire en $s$ ; réduire $h_{kv}$ (GQA) réduit le cache d'autant.
+
+</div>
+
+<Refs items={[["Fast Transformer Decoding: One Write-Head is All You Need", "Shazeer", 2019, "1911.02150"], ["GQA", "Ainslie et al.", 2023, "2305.13245"]]} />
+
+<Quiz>
+
+**Q1.** Pour générer $s = 1000$ tokens à partir de rien, combien de tokens traite-t-on au total sans cache, et avec cache ?
+
+<Reveal>
+
+Sans cache, au pas $t$ on retraite les $t$ tokens : $1 + 2 + \dots + 1000 = 1000 \times 1001 / 2 = 500\,500$ tokens. Avec cache : $1000$, un par pas. Environ 500 fois moins.
+
+</Reveal>
+
+**Q2.** Pourquoi met-on $K$ et $V$ en cache, mais pas $Q$ ?
+
+<Reveal>
+
+La requête $q_i$ d'un token ne sert qu'au pas $i$, pour calculer sa propre ligne d'attention. Aux pas suivants, le nouveau token a sa propre requête ; les anciennes ne sont jamais relues. En revanche, les clés et les valeurs des anciens tokens sont relues à chaque pas.
+
+</Reveal>
+
+**Q3.** Un modèle a $L = 32$ couches, $h_{kv} = 8$ têtes de clés/valeurs, $d_k = 128$, en bf16 (2 octets). Quelle est la taille du cache par token ? Pour $s = 32\,000$ tokens ? Et si $h_{kv} = 32$ ?
+
+<Reveal>
+
+Par token : $2 \times 32 \times 8 \times 128 \times 2 = 131\,072$ octets, soit environ 131 Ko. Pour $32\,000$ tokens : environ $4{,}2$ Go. Avec $h_{kv} = 32$, la taille est multipliée par 4 : environ $16{,}8$ Go. Doubler $s$ double toujours le cache (croissance linéaire).
+
+</Reveal>
+
+</Quiz>
+
+<ArchMarker parts="attn kv" label="Fenêtre glissante : chaque mot ne regarde que les W derniers" />
+
+## 5. Attention à fenêtre glissante (sliding window)
+
+Chaque mot ne regarde que les $W$ derniers mots, lui compris. Tout ce qui est plus loin est masqué, comme le futur.
+
+<SlidingWindow />
+
+### Ce que ça change
+
+$$
+M_{ij} = \begin{cases} 0 & \text{si } i - W < j \le i \\ -\infty & \text{sinon} \end{cases}
+$$
+
+- **Calcul à l'entraînement** : environ $s \times W$ cases au lieu de $s(s+1)/2$.
+- **Mémoire en génération** : le cache ne garde que les $W$ derniers $K$ et $V$. Sa taille est en $O(W)$ au lieu de $O(s)$ : elle ne grandit plus avec la longueur.
+- **Le prix** : un mot ne voit plus directement ce qui est à plus de $W$ positions. Avec $L$ couches empilées, l'information peut encore avancer de proche en proche, d'au plus $W - 1$ positions par couche (ci-dessous).
+
+### De couche en couche
+
+Un mot de la couche 2 regarde les $W$ derniers vecteurs de la couche 1, et chacun de ces vecteurs a lui-même lu ses $W$ derniers mots. À chaque couche, la portée recule donc de $W - 1$ mots.
+
+<ReachCone unit="couche" sym="L" />
+
+$$
+\text{portée}(L, W) = L\,(W - 1) + 1 \;\approx\; L \cdot W
+$$
+
+- Exemple réaliste : avec $L = 32$ couches et $W = 4096$, la portée est de $32 \times 4095 + 1 = 131\,041$ tokens.
+- Le mot du début n'est pas lu directement : son information passe de vecteur en vecteur, une couche à la fois.
+- La plupart des LLM (de type GPT ou Llama) n'ont pas de fenêtre : $W = s$, et chaque mot lit directement tout le contexte. La fenêtre glissante est un choix de certains modèles, pour économiser le KV cache.
+- Avec une boucle de $T$ passes au lieu de $L$ couches, c'est le même cône (module 1, section 2).
+
+<div class="retain">
+
+**À retenir**
+
+- Fenêtre glissante : le mot $i$ ne regarde que les mots $i - W + 1$ à $i$ ; le reste est masqué à $-\infty$.
+- Calcul en $s \times W$ au lieu de $s^2/2$ ; cache en $O(W)$ au lieu de $O(s)$, donc constant quand $s$ grandit.
+- Ce qui est à plus de $W$ positions n'est plus visible en une couche : il faut plusieurs couches (au plus $W - 1$ positions gagnées par couche).
+
+</div>
+
+<Refs items={[["Longformer", "Beltagy et al.", 2020, "2004.05150"], ["Mistral 7B", "Jiang et al.", 2023, "2310.06825"]]} />
+
+<Quiz>
+
+**Q1.** Pour $s = 10\,000$ tokens et $W = 256$, combien de paires $(K, V)$ par couche et par tête garde-t-on en génération, sans fenêtre et avec fenêtre ?
+
+<Reveal>
+
+Sans fenêtre : $10\,000$. Avec fenêtre : $256$, soit environ 39 fois moins, et ce nombre ne bouge plus si $s$ augmente.
+
+</Reveal>
+
+**Q2.** Avec $W = 256$, un mot placé 1 000 positions plus tôt peut-il influencer la prédiction ? Avec une couche ? Avec plusieurs ?
+
+<Reveal>
+
+Avec une seule couche, non : il est hors de la fenêtre. Avec plusieurs couches, oui, de proche en proche : chaque couche gagne au plus $W - 1 = 255$ positions, donc il faut au moins $\lceil 1000 / 255 \rceil = 4$ couches.
+
+</Reveal>
+
+**Q3.** Pourquoi la fenêtre glissante rend-elle intéressant, pour Ouroboros, un état transporté d'un token au suivant ?
+
+<Reveal>
+
+Au-delà de la portée des fenêtres empilées, l'attention ne peut plus rien voir. Un état qui passe de token en token est alors la seule route pour garder une information plus ancienne, avec une mémoire de taille fixe. On le détaillera aux modules 7 et 8.
+
+</Reveal>
+
+</Quiz>
+
+<ArchMarker parts="mh" label="Multi-têtes : h = 2 attentions en parallèle, concaténées puis mélangées par W_O" follow="[data-widget='mhead']" />
+
+## 6. Attention multi-têtes (multi-head)
+
+Au lieu d'une seule attention avec $d_k = d_{\text{model}}$, on en calcule $h$ en parallèle, chacune avec ses propres $W_Q$, $W_K$, $W_V$, plus petites ($d_k = d_{\text{model}} / h$). Chaque tête a son propre motif d'attention ; on met leurs sorties bout à bout, puis $W_O$ les mélange.
+
+<MultiHead />
+
+### Les équations
+
+
+$$
+\text{tête}_m = \mathrm{softmax}\!\left(\frac{Q_m K_m^{\top}}{\sqrt{d_k}} + M\right) V_m
+$$
+
+$$
+\text{sortie} = \big[\,\text{tête}_1,\ \dots,\ \text{tête}_h\,\big]\; W_O
+$$
+
+- $W_Q^{(m)}, W_K^{(m)}, W_V^{(m)} \in \mathbb{R}^{d_{\text{model}} \times d_k}$, avec $d_k = d_{\text{model}} / h$.
+- $[\dots]$ : les $h$ sorties ($s \times d_k$ chacune) mises bout à bout donnent une matrice $s \times d_{\text{model}}$.
+- Paramètres : $4\, d_{\text{model}}^2$, quel que soit $h$. Couper en têtes ne coûte rien de plus.
+- KV cache : on garde $K$ et $V$ de chaque tête. Avec la GQA (section 4), plusieurs têtes de requête partagent les mêmes $K$, $V$.
+
+<div class="retain">
+
+**À retenir**
+
+- $h$ têtes en parallèle, chacune avec ses $W_Q$, $W_K$, $W_V$ de taille $d_{\text{model}} \times d_k$, $d_k = d_{\text{model}}/h$.
+- Chaque tête a son propre motif d'attention ; sorties mises bout à bout puis $\times W_O$.
+- Même nombre de paramètres ($4\,d_{\text{model}}^2$) qu'une seule grande tête.
+
+</div>
+
+<Refs items={[["Attention Is All You Need", "Vaswani et al.", 2017, "1706.03762"], ["Fast Transformer Decoding: One Write-Head is All You Need", "Shazeer", 2019, "1911.02150"], ["GQA", "Ainslie et al.", 2023, "2305.13245"]]} />
+
+<Quiz>
+
+**Q1.** Avec $d_{\text{model}} = 4096$ et $h = 32$ têtes, combien vaut $d_k$ ?
+
+<Reveal>
+
+$d_k = 4096 / 32 = 128$.
+
+</Reveal>
+
+**Q2.** Si on passe de 1 à 8 têtes sans changer $d_{\text{model}}$, le nombre de paramètres de l'attention change-t-il ?
+
+<Reveal>
+
+Non. Chaque tête a des matrices 8 fois plus étroites ($d_k = d_{\text{model}}/8$), donc les 8 têtes réunies ont autant de paramètres qu'une seule tête large : $3\, d_{\text{model}}^2$ pour $W_Q$, $W_K$, $W_V$, plus $d_{\text{model}}^2$ pour $W_O$.
+
+</Reveal>
+
+**Q3.** Un modèle a 32 têtes de requête et 8 têtes de clés/valeurs (GQA). Combien de têtes de requête partagent chaque paire $K$, $V$ ? Quel effet sur le KV cache ?
+
+<Reveal>
+
+$32 / 8 = 4$ têtes de requête par paire $K$, $V$. Le cache est 4 fois plus petit qu'avec 32 têtes de clés/valeurs.
+
+</Reveal>
+
+</Quiz>
+
+<ArchMarker parts="norm2 mlp add2" label="Seconde moitié du bloc : RMSNorm, MLP, résidu" />
+
+## 7. Le bloc complet : RMSNorm, MLP et résidus
+
+Les étapes 10 à 15 du widget de la section 1 montrent la seconde moitié du bloc. Voici les formules.
+
+<ArchMarker parts="norm2" label="RMSNorm (ici celle d'avant le MLP ; même formule pour les autres)" />
+
+### RMSNorm
+
+$$
+\mathrm{RMSNorm}(x) = \frac{x}{\sqrt{\tfrac{1}{d}\sum_{i=1}^{d} x_i^2 + \varepsilon}} \odot g
+$$
+
+- On divise le vecteur par la racine de la moyenne de ses carrés : toutes les lignes reviennent à la même échelle.
+- $g$ : un gain appris par composante ; $\varepsilon$ : une petite constante qui évite de diviser par zéro.
+- Elle agit sur chaque token séparément.
+
+<ArchMarker parts="mlp" label="MLP : appliqué à chaque token séparément" />
+
+### MLP
+
+$$
+\mathrm{MLP}(u) = \sigma(u\, W_1)\, W_2, \qquad W_1 \in \mathbb{R}^{d \times d_{\text{ff}}},\; W_2 \in \mathbb{R}^{d_{\text{ff}} \times d}
+$$
+
+- On monte de $d = d_{\text{model}}$ à $d_{\text{ff}}$ (souvent $4\,d$), on applique une non-linéarité $\sigma$ (GELU ici ; d'autres modèles utilisent des variantes, comme SwiGLU), puis on redescend à $d$.
+- Le MLP agit sur **chaque token séparément** : seule l'attention fait circuler l'information entre les tokens.
+- Avec $d_{\text{ff}} = 4\,d$, le MLP a $8\,d^2$ paramètres, deux fois plus que l'attention ($4\,d^2$).
+
+<ArchMarker parts="add1 add2" label="Résidus : chaque sous-bloc ajoute son résultat au vecteur du token" />
+
+### Le bloc et les résidus
+
+$$
+h = x + \mathrm{Attention}\big(\mathrm{RMSNorm}(x)\big), \qquad y = h + \mathrm{MLP}\big(\mathrm{RMSNorm}(h)\big)
+$$
+
+- Chaque sous-bloc ne fait qu'**ajouter** quelque chose au vecteur du token (le « flux résiduel »).
+- Le bloc est répété $N$ fois. Après la dernière couche : RMSNorm finale, puis $\times W_{\text{vocab}}$ (une colonne par mot du vocabulaire) et un softmax, qui donnent les probabilités du mot suivant.
+
+<ArchMarker parts="norm-final head" label="Après la dernière couche : RMSNorm finale et tête de sortie" />
+
+<div class="retain">
+
+**À retenir**
+
+- Bloc : $h = x + \mathrm{Attn}(\mathrm{RMSNorm}(x))$, puis $y = h + \mathrm{MLP}(\mathrm{RMSNorm}(h))$ ; répété $N$ fois.
+- RMSNorm : remet chaque vecteur à la même échelle, token par token.
+- MLP : $\sigma(u W_1) W_2$, de $d$ à $d_{\text{ff}} \approx 4d$ puis retour à $d$, token par token ; $8d^2$ paramètres.
+- Seule l'attention mélange les tokens ; RMSNorm et MLP n'en mélangent aucun.
+- Sortie : RMSNorm finale → $\times W_{\text{vocab}}$ → softmax → probabilités du mot suivant.
+
+</div>
+
+<Refs items={[["Root Mean Square Layer Normalization", "Zhang et Sennrich", 2019, "1910.07467"], ["Gaussian Error Linear Units (GELUs)", "Hendrycks et Gimpel", 2016, "1606.08415"], ["GLU Variants Improve Transformer", "Shazeer", 2020, "2002.05202"], ["Deep Residual Learning for Image Recognition", "He et al.", 2015, "1512.03385"], ["On Layer Normalization in the Transformer Architecture", "Xiong et al.", 2020, "2002.04745"]]} />
+
+<Quiz>
+
+**Q1.** Le MLP fait-il circuler de l'information entre les tokens ?
+
+<Reveal>
+
+Non. Il s'applique à chaque ligne (chaque token) séparément, avec les mêmes $W_1$ et $W_2$. Dans un transformer, seule l'attention fait circuler l'information d'un token à l'autre.
+
+</Reveal>
+
+**Q2.** Avec $d_{\text{model}} = 4096$ et $d_{\text{ff}} = 4 \times d_{\text{model}}$, combien de paramètres a le MLP d'une couche ? Et l'attention ?
+
+<Reveal>
+
+MLP : $2 \times 4096 \times 16\,384 \approx 134$ millions. Attention : $4 \times 4096^2 \approx 67$ millions. Le MLP pèse donc deux fois plus que l'attention.
+
+</Reveal>
+
+**Q3.** Si une couche entière (attention et MLP) sortait des zéros, que deviendrait le vecteur d'un token en la traversant ?
+
+<Reveal>
+
+Il passerait inchangé : avec les résidus, $h = x + 0$ puis $y = h + 0 = x$. Une couche ne peut qu'ajouter quelque chose au vecteur, ce qui facilite l'entraînement de modèles profonds.
+
+</Reveal>
+
+</Quiz>
+
+<ArchMarker parts="embed" label="Où est la position ? L'attention seule ignore l'ordre des mots" />
+
+## 8. Où est la position ?
+
+L'attention compare des vecteurs, sans savoir où ils sont dans la phrase : si on mélange les mots, chaque mot obtient les mêmes scores, simplement réordonnés. Avec le masque causal, un modèle peut en partie retrouver l'ordre seul, mais en pratique on lui donne la position de chaque token explicitement.
+
+### Positions apprises
+
+$$
+x_i = e_{\text{token}_i} + p_i, \qquad p_i = \text{ligne } i \text{ d'une table } P \in \mathbb{R}^{L_{\max} \times d}
+$$
+
+- Chaque position a son propre vecteur appris, ajouté à l'embedding du token.
+- La limite est **dure** : la table n'a que $L_{\max}$ lignes, il n'existe pas de vecteur pour la position $L_{\max} + 1$.
+
+<ArchMarker parts="qkv" label="RoPE : q et k tournent d'un angle proportionnel à leur position" />
+
+### RoPE : faire tourner q et k
+
+Au lieu d'ajouter un vecteur, on **fait tourner** $q$ et $k$, par paires de dimensions, d'un angle proportionnel à la position du token. Chaque paire tourne à sa propre vitesse.
+
+<RoPEClock />
+
+$$
+q_i \cdot k_j \;\longrightarrow\; \big(R(i\,\theta)\, q\big) \cdot \big(R(j\,\theta)\, k\big) \;=\; q \cdot R\big((j - i)\,\theta\big)\, k
+$$
+
+- $R(\alpha)$ : une rotation d'angle $\alpha$, appliquée à chaque paire de dimensions avec sa propre vitesse $\theta_m$ (dans les vrais modèles, $\theta_m = 10\,000^{-2m/d}$).
+- Le score ne dépend que de l'**écart** $i - j$ : décaler toute la phrase ne change rien. Essaie les boutons « + 5 » et « − 5 ».
+- Rien n'est appris ni stocké par position : techniquement, on peut calculer n'importe quelle position.
+
+### Pourquoi on ne dépasse pas facilement la longueur d'entraînement
+
+- Les paires lentes n'ont jamais fait un tour complet pendant l'entraînement : au-delà de la longueur d'entraînement, elles prennent des angles **jamais vus**, et le modèle se dégrade (case grisée du widget, paire lente en pointillés).
+- **Interpolation des positions** : on divise les positions par un facteur pour que les angles restent dans la zone apprise, puis on réentraîne un peu. YaRN raffine l'idée en traitant différemment les paires rapides et lentes.
+
+<div class="retain">
+
+**À retenir**
+
+- L'attention seule ignore l'ordre : il faut lui donner la position.
+- Positions apprises : $x_i = e_{\text{token}_i} + p_i$ ; limite dure à $L_{\max}$.
+- RoPE : on fait tourner $q$ et $k$ d'un angle $\propto$ position ; le score ne dépend que de l'écart $i - j$.
+- Au-delà de la longueur d'entraînement, les paires lentes prennent des angles jamais vus ; l'interpolation les ramène dans la zone apprise.
+
+</div>
+
+<Refs items={[["Attention Is All You Need", "Vaswani et al.", 2017, "1706.03762"], ["RoFormer: Enhanced Transformer with Rotary Position Embedding", "Su et al.", 2021, "2104.09864"], ["Extending Context Window of Large Language Models via Positional Interpolation", "Chen et al.", 2023, "2306.15595"], ["YaRN", "Peng et al.", 2023, "2309.00071"], ["Transformer Language Models without Positional Encodings Still Learn Positional Information", "Haviv et al.", 2022, "2203.16634"]]} />
+
+<Quiz>
+
+**Q1.** Sans information de position ni masque, l'attention peut-elle distinguer « le chat mange la souris » de « la souris mange le chat » ?
+
+<Reveal>
+
+Non : les deux phrases contiennent les mêmes mots, donc les mêmes vecteurs. Chaque mot obtient les mêmes scores et la même sortie, juste réordonnés. Le modèle ne peut pas savoir qui mange qui.
+
+</Reveal>
+
+**Q2.** Un modèle à positions apprises a $L_{\max} = 2048$. Que se passe-t-il au token 2049 ?
+
+<Reveal>
+
+Il n'y a pas de ligne 2049 dans la table des positions : sans modifier le modèle, il ne peut pas traiter ce token.
+
+</Reveal>
+
+**Q3.** Avec RoPE, si on décale toute la phrase de 100 positions, les scores $q \cdot k$ changent-ils ?
+
+<Reveal>
+
+Non : ils ne dépendent que de l'écart $i - j$ entre les deux mots, qui ne change pas.
+
+</Reveal>
+
+**Q4.** Pourquoi l'interpolation des positions aide-t-elle à allonger le contexte ?
+
+<Reveal>
+
+En divisant les positions, elle garde les angles des paires lentes dans la zone vue à l'entraînement, au lieu de leur faire prendre des angles inconnus.
+
+</Reveal>
+
+</Quiz>

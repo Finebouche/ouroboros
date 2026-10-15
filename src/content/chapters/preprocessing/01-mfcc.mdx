@@ -1,0 +1,188 @@
+---
+num: 1
+title: "MFCC"
+summary: "Du signal audio aux Mel-Frequency Cepstral Coefficients : trames, spectre, échelle de Mel, log, DCT."
+status: en-cours
+sidebar: mfcc
+---
+import ArchMarker from '@/components/shared/ArchMarker.astro';
+import Reveal from '@/components/shared/Reveal.astro';
+import Quiz from '@/components/shared/Quiz.astro';
+import Refs from '@/components/shared/Refs.astro';
+import Framing from '@/components/preprocessing/01-mfcc/Framing.astro';
+import FrameSpectrum from '@/components/preprocessing/01-mfcc/FrameSpectrum.astro';
+import Spectrogram from '@/components/preprocessing/01-mfcc/Spectrogram.astro';
+
+<ArchMarker label="Vue d'ensemble : du signal audio aux MFCC" />
+
+Les **MFCC** (*Mel-Frequency Cepstral Coefficients*) résument la forme du spectre d'un court extrait de son en une dizaine de nombres. On les calcule sur chaque **trame** du signal : on obtient une suite de petits vecteurs, qu'on donne à un classifieur ou à un modèle.
+
+Le schéma de gauche montre les étapes ; le chapitre les prend dans l'ordre :
+
+1. **Trames** : découper le signal en petits morceaux qui se chevauchent.
+2. **Fenêtre et spectre** : pour chaque trame, adoucir les bords puis calculer les fréquences présentes.
+3. **Échelle de Mel** : regrouper les fréquences comme l'oreille le fait. *(à venir)*
+4. **Log et DCT** : compresser, puis ne garder que la forme générale du spectre. *(à venir)*
+5. **Deltas et normalisation** : ajouter la variation dans le temps, retirer l'effet du micro. *(à venir)*
+
+<Refs items={[["Comparison of parametric representations for monosyllabic word recognition in continuously spoken sentences", "Davis & Mermelstein", 1980, "10.1109/TASSP.1980.1163420"]]} />
+
+<ArchMarker parts="signal frames" label="Découper le signal en trames de L valeurs, tous les H" />
+
+## 1. Du signal aux trames
+
+Un signal audio numérique est une suite de valeurs $x[n]$, mesurées $f_s$ fois par seconde (16 kHz pour la parole). Son contenu change au fil du temps : voyelle, bruit, silence. On ne calcule donc pas un spectre pour tout le signal, mais un spectre **par trame** : un morceau de $L$ valeurs, et la trame suivante démarre $H$ valeurs plus loin (le **pas**).
+
+<Framing />
+
+$$
+x_j[m] = x[\,jH + m\,], \quad m = 0, \dots, L-1 \qquad\qquad N_{\text{trames}} = 1 + \Big\lfloor \frac{N - L}{H} \Big\rfloor
+$$
+
+- **Parole** : $L = 25$ ms (400 valeurs à 16 kHz) et $H = 10$ ms (160 valeurs) sont des valeurs usuelles. Un signal de 1 s donne alors 98 trames.
+- **Pourquoi 25 ms** : assez court pour que le signal soit à peu près stable (une voyelle y est presque périodique), assez long pour contenir plusieurs périodes de la voix (à 120 Hz, une période dure 8 ms, donc environ 3 périodes par trame).
+- **Chevauchement** ($H < L$) : la fenêtre de l'étape suivante atténue les bords de chaque trame ; le chevauchement évite de perdre ce qui s'y trouve.
+- **Sons non vocaux** : les bibliothèques généralistes prennent des trames plus longues. librosa utilise 2048 valeurs avec un pas de 512 (soit 93 ms et 23 ms à 22,05 kHz).
+- Selon la bibliothèque, le signal est complété aux bords : le nombre exact de trames peut différer d'une ou deux unités de la formule.
+
+<div class="retain">
+
+**À retenir**
+
+- On découpe le signal en trames de $L$ valeurs, espacées d'un pas $H$ : $x_j[m] = x[jH + m]$.
+- Parole : 25 ms de trame, 10 ms de pas. Sons généraux : trames plus longues (librosa : 2048 valeurs, pas 512).
+- Une trame est assez courte pour être presque stationnaire, mais plus elle est courte, moins elle contient de périodes (section 2 : lien avec la résolution en fréquence).
+- Le pas plus petit que la trame crée un chevauchement : chaque instant apparaît dans plusieurs trames.
+
+</div>
+
+<Refs items={[["librosa.feature.melspectrogram (valeurs par défaut : n_fft = 2048, hop_length = 512)", "documentation librosa", 2024, "https://librosa.org/doc/0.10.2/generated/librosa.feature.melspectrogram.html"], ["torchaudio.compliance.kaldi.mfcc (valeurs par défaut de Kaldi : trame 25 ms, pas 10 ms)", "documentation torchaudio", 2024, "https://pytorch.org/audio/main/generated/torchaudio.compliance.kaldi.mfcc.html"]]} />
+
+<Quiz>
+
+**Q1.** À 16 kHz, combien de valeurs dans une trame de 25 ms ? Et dans un pas de 10 ms ?
+
+<Reveal>
+
+$0{,}025 \times 16\,000 = 400$ valeurs par trame, et $0{,}010 \times 16\,000 = 160$ valeurs par pas.
+
+</Reveal>
+
+**Q2.** Un signal de 1 s à 16 kHz, avec $L = 400$ et $H = 160$ : combien de trames, sans remplissage ?
+
+<Reveal>
+
+$1 + \lfloor (16\,000 - 400)/160 \rfloor = 1 + 97 = 98$ trames.
+
+</Reveal>
+
+**Q3.** Pourquoi ne pas calculer un seul spectre pour tout le signal ?
+
+<Reveal>
+
+Il mélangerait voyelles, bruit et silence : on saurait quelles fréquences sont présentes, mais plus quand. Un spectre par trame garde la trace du temps.
+
+</Reveal>
+
+**Q4.** Dans le widget, avec $L = 100$ ms, que contient une trame placée à la frontière entre la voyelle « a » et le bruit « s » ?
+
+<Reveal>
+
+Un mélange des deux : le spectre de cette trame ne décrit plus ni l'un ni l'autre. C'est ce qui pousse à prendre des trames courtes pour la parole.
+
+</Reveal>
+
+</Quiz>
+
+<ArchMarker parts="window dft" label="Fenêtre, puis spectre de puissance de chaque trame" />
+
+## 2. Fenêtre et spectre
+
+Pour chaque trame, deux opérations : la multiplier par une **fenêtre**, puis calculer sa **transformée de Fourier discrète** (DFT), qui dit quelles fréquences la trame contient.
+
+<FrameSpectrum />
+
+$$
+X[k] = \sum_{m=0}^{L-1} w[m]\, x_j[m]\, e^{-2\pi i\, km / n_{\text{fft}}}, \qquad P[k] = |X[k]|^2, \qquad k = 0, \dots, \tfrac{n_{\text{fft}}}{2}
+$$
+
+$$
+w[m] = 0{,}54 - 0{,}46\cos\!\Big(\frac{2\pi m}{L-1}\Big) \quad \text{(fenêtre de Hamming)}
+$$
+
+- **La DFT** : la trame est complétée de zéros jusqu'à $n_{\text{fft}}$ valeurs (une puissance de 2). $X[k]$ mesure combien la trame ressemble à une sinusoïde de fréquence $f_k = k\, f_s / n_{\text{fft}}$. On garde la **puissance** $|X[k]|^2$ : on perd la phase, pas l'énergie.
+- **Moitié des fréquences** : le signal est réel, donc les fréquences au-dessus de $f_s/2$ répètent celles en dessous. On garde $n_{\text{fft}}/2 + 1$ valeurs : 257 pour $n_{\text{fft}} = 512$.
+- **Pourquoi une fenêtre** : la DFT suppose que la trame se répète à l'infini. Une trame coupée net crée un saut entre sa fin et son début, dont l'énergie se répand sur toutes les fréquences (*fuite spectrale*). Une fenêtre ramène les bords vers 0. Passe le widget en décibels et compare « Rectangulaire » et « Hamming ».
+- **Séparer deux fréquences** : il faut qu'elles soient espacées d'au moins environ $f_s / L$ (un peu plus avec une fenêtre). Compléter par des zéros rend la courbe plus lisse, pas plus détaillée.
+
+### Le spectrogramme et le compromis temps / fréquence
+
+Mis côte à côte, les spectres des trames successives forment un **spectrogramme** : le temps en abscisse, la fréquence en ordonnée, l'énergie en intensité.
+
+<Spectrogram />
+
+- **Trame courte** : on situe bien les changements dans le temps, mais les fréquences sont floues. **Trame longue** : l'inverse.
+- **Deux choses dans un spectre de voyelle** : les **harmoniques** (lignes fines, espacées de la fréquence fondamentale $f_0$, la hauteur de la voix) et l'**enveloppe** (la forme générale, qui porte le timbre). Les MFCC garderont surtout l'enveloppe (section 4).
+
+<ArchMarker parts="preemph" label="Pré-accentuation : relever les hautes fréquences (optionnelle)" />
+
+### Pré-accentuation (optionnelle)
+
+Avant le découpage, on peut filtrer le signal :
+
+$$
+y[n] = x[n] - \alpha\, x[n-1], \qquad \alpha = 0{,}97
+$$
+
+Le spectre de la voix décroît avec la fréquence ; ce filtre relève les aigus par rapport aux graves. Coche la case du premier widget pour voir la différence. 0,97 est la valeur par défaut de `librosa.effects.preemphasis` (qui dit reprendre celle de HTK) et de Kaldi ; `librosa.feature.mfcc`, lui, ne l'applique pas.
+
+<div class="retain">
+
+**À retenir**
+
+- Pour chaque trame : multiplier par une fenêtre, puis DFT ; on garde la puissance $|X[k]|^2$ pour $k = 0, \dots, n_{\text{fft}}/2$.
+- La fenêtre (Hamming, Hann) ramène les bords à 0 pour limiter la fuite spectrale.
+- La case $k$ correspond à $k\, f_s / n_{\text{fft}}$ ; la séparation minimale est d'environ $f_s / L$, et les zéros ajoutés ne l'améliorent pas.
+- Compromis : trame courte = temps précis, fréquences floues ; trame longue = l'inverse.
+- Un spectre de voyelle = harmoniques (hauteur) + enveloppe (timbre) ; les MFCC visent l'enveloppe.
+- La pré-accentuation $y[n] = x[n] - 0{,}97\,x[n-1]$ est optionnelle.
+
+</div>
+
+<Refs items={[["On the use of windows for harmonic analysis with the discrete Fourier transform", "Harris", 1978, "10.1109/PROC.1978.10837"], ["librosa.effects.preemphasis", "documentation librosa", 2024, "https://librosa.org/doc/0.10.2/generated/librosa.effects.preemphasis.html"]]} />
+
+<Quiz>
+
+**Q1.** Avec $f_s = 16$ kHz et $n_{\text{fft}} = 512$ : combien de fréquences garde-t-on, quel écart entre deux fréquences consécutives, et à quelle fréquence correspond la case $k = 128$ ?
+
+<Reveal>
+
+257 fréquences, espacées de $16\,000 / 512 = 31{,}25$ Hz. La case 128 est à $128 \times 31{,}25 = 4000$ Hz, soit $f_s/4$.
+
+</Reveal>
+
+**Q2.** Pourquoi la fenêtre rectangulaire fait-elle remonter le « plancher » du spectre en décibels ?
+
+<Reveal>
+
+Couper la trame net crée un saut entre sa fin et son début. Ce saut contient de l'énergie à toutes les fréquences : elle s'ajoute entre les harmoniques (fuite spectrale). Hamming et Hann ramènent les bords vers 0.
+
+</Reveal>
+
+**Q3.** Compléter une trame par des zéros avant la DFT permet-il de mieux séparer deux fréquences proches ?
+
+<Reveal>
+
+Non. On ajoute des points de calcul, donc la courbe est plus lisse, mais on n'ajoute aucune information sur le signal. La séparation est fixée par la durée de la trame, environ $f_s / L$.
+
+</Reveal>
+
+**Q4.** Une trame de 10 ms, avec $f_0 = 120$ Hz : voit-on les harmoniques séparés ? Et avec 50 ms ?
+
+<Reveal>
+
+À 10 ms, la séparation minimale est d'environ 100 Hz, du même ordre que l'écart entre harmoniques (120 Hz) : ils se fondent. À 50 ms, elle est d'environ 20 Hz : ils sont nettement séparés. Voir le spectrogramme.
+
+</Reveal>
+
+</Quiz>

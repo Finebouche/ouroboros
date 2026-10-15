@@ -1,0 +1,147 @@
+---
+// Chapitre MFCC, section 2 : une trame, sa fenêtre, son spectre de puissance.
+---
+<div class="widget fspec" data-widget="fspec">
+  <div class="row"><span>Longueur de trame :</span><span class="seg" data-ref="len"></span></div>
+  <div class="row"><span>Fenêtre :</span><span class="seg" data-ref="win"></span></div>
+  <div class="row">
+    <span>Échelle du spectre :</span><span class="seg" data-ref="scale"></span>
+    <label class="pre"><input type="checkbox" data-ref="pre" /> Pré-accentuation (0,97)</label>
+  </div>
+  <label class="posl"><span>Position de la trame</span><input type="range" data-ref="pos" min="0" max="500" step="5" value="100" /><b data-ref="pos-out"></b></label>
+  <div class="ft">La trame, avant et après la fenêtre <span data-ref="seg"></span></div>
+  <p class="lg"><i class="sq raw"></i>trame brute <i class="sq win"></i>forme de la fenêtre <i class="sq out"></i>trame fenêtrée</p>
+  <svg data-ref="frame" width="100%" role="img" aria-label="Trame brute, fenêtre et trame fenêtrée"></svg>
+  <div class="ft">Son spectre de puissance</div>
+  <svg data-ref="spec" width="100%" role="img" aria-label="Spectre de puissance de la trame"></svg>
+  <div class="kpis">
+    <div><span>Points de FFT</span><b data-ref="k1"></b></div>
+    <div><span>Écart entre deux fréquences calculées</span><b data-ref="k2"></b></div>
+    <div><span>Séparation minimale ≈ f<sub>s</sub> / L</span><b data-ref="k3"></b></div>
+  </div>
+</div>
+
+<script>
+  import { SR, N, SEGMENTS, makeSignal } from './signal';
+  import { nextPow2, windowOf, preemphasis, powerSpectrum, WINDOW_LABELS, type WindowName } from './dsp';
+
+  document.querySelectorAll<HTMLElement>('[data-widget="fspec"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const inp = (r: string) => $(r) as HTMLInputElement;
+    const raw = makeSignal();
+    const emph = preemphasis(raw);
+    const LENS = [10, 25, 50, 100];
+    let lenMs = 25, win: WindowName = 'hamming', db = false;
+
+    function seg(key: string, items: [string, string][], onPick: (v: string) => void) {
+      items.forEach(([v, label]) => {
+        const b = document.createElement('button');
+        b.textContent = label;
+        b.dataset.v = v;
+        b.addEventListener('click', () => { onPick(v); draw(); });
+        $(key).appendChild(b);
+      });
+    }
+    seg('len', LENS.map((v) => [String(v), `${v} ms`]), (v) => {
+      lenMs = +v;
+      inp('pos').max = String(600 - lenMs);
+      if (+inp('pos').value > 600 - lenMs) inp('pos').value = String(600 - lenMs);
+    });
+    seg('win', (Object.keys(WINDOW_LABELS) as WindowName[]).map((k) => [k, WINDOW_LABELS[k]]), (v) => (win = v as WindowName));
+    seg('scale', [['lin', 'Linéaire'], ['db', 'Décibels']], (v) => (db = v === 'db'));
+
+    function draw() {
+      const mark = (key: string, v: string) => $(key).querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.v === v));
+      mark('len', String(lenMs)); mark('win', win); mark('scale', db ? 'db' : 'lin');
+      const x = inp('pre').checked ? emph : raw;
+      const L = Math.round((lenMs * SR) / 1000);
+      const t0 = +inp('pos').value;
+      const s0 = Math.round((t0 * SR) / 1000);
+      $('pos-out').textContent = `${t0} ms`;
+      const mid = (t0 + lenMs / 2) / 1000;
+      const sg = SEGMENTS.find((s) => mid >= s.from && mid < s.to) ?? SEGMENTS[SEGMENTS.length - 1];
+      $('seg').textContent = `(autour de ${Math.round(mid * 1000)} ms : ${sg.label})`;
+
+      const frame = Array.from(x.slice(s0, s0 + L));
+      const w = windowOf(win, L);
+      const fw = frame.map((v, i) => v * w[i]);
+      const W = 640, ox = 8, wpx = W - 16;
+
+      // --- trame ---
+      const peak = Math.max(0.05, ...frame.map(Math.abs));
+      const fh = 96, cy = 48, amp = 40 / peak;
+      const X = (i: number) => ox + (i / (L - 1)) * wpx;
+      let g = `<line x1="${ox}" y1="${cy}" x2="${W - ox}" y2="${cy}" stroke="var(--border)"/>`;
+      if (win !== 'rect') {
+        let top = '', bot = '';
+        for (let i = 0; i < L; i++) { top += `${X(i).toFixed(1)},${(cy - w[i] * 40).toFixed(1)} `; }
+        for (let i = L - 1; i >= 0; i--) { bot += `${X(i).toFixed(1)},${(cy + w[i] * 40).toFixed(1)} `; }
+        g += `<polygon points="${top}${bot}" fill="var(--p-frame-b)" opacity="0.8"/>`;
+        let pr = '';
+        frame.forEach((v, i) => (pr += `${X(i).toFixed(1)},${(cy - v * amp).toFixed(1)} `));
+        g += `<polyline points="${pr}" fill="none" stroke="var(--p-frame-a)" stroke-width="1.2" stroke-linejoin="round"/>`;
+      }
+      let po = '';
+      fw.forEach((v, i) => (po += `${X(i).toFixed(1)},${(cy - v * amp).toFixed(1)} `));
+      g += `<polyline points="${po}" fill="none" stroke="var(--p-wave)" stroke-width="1.5" stroke-linejoin="round"/>`;
+      for (const f of [0, 0.5, 1]) g += `<text x="${ox + f * wpx}" y="${fh + 4}" text-anchor="${f === 0 ? 'start' : f === 1 ? 'end' : 'middle'}" class="ax">${(f * lenMs).toFixed(f === 0.5 && lenMs % 2 ? 1 : 0).replace('.', ',')} ms</text>`;
+      const fr = $('frame') as unknown as SVGSVGElement;
+      fr.setAttribute('viewBox', `0 0 ${W} ${fh + 10}`);
+      fr.innerHTML = g;
+
+      // --- spectre ---
+      const nfft = nextPow2(L);
+      const P = powerSpectrum(fw, nfft);
+      const pmax = Math.max(...P, 1e-12);
+      const DBMIN = -80;
+      const val = (p: number) => (db ? Math.max(0, 1 - Math.max(DBMIN, 10 * Math.log10(p / pmax + 1e-12)) / DBMIN) : p / pmax);
+      const sh = 130, sy0 = 8, sh0 = sh - 22;
+      const SX = (k: number) => ox + 28 + (k / (P.length - 1)) * (wpx - 28);
+      const SY = (v: number) => sy0 + (1 - v) * sh0;
+      let s = '';
+      const yTicks = db ? [0, -20, -40, -60, -80] : [0, 0.5, 1];
+      for (const t of yTicks) {
+        const v = db ? 1 - t / DBMIN : t;
+        s += `<line x1="${ox + 28}" y1="${SY(v)}" x2="${W - ox}" y2="${SY(v)}" stroke="var(--border)" stroke-width="0.5"/><text x="${ox + 24}" y="${SY(v) + 3.5}" text-anchor="end" class="ax">${db ? `${t} dB` : t === 0 ? '0' : t === 1 ? 'max' : '½'}</text>`;
+      }
+      let area = `${SX(0)},${SY(0)} `;
+      for (let k = 0; k < P.length; k++) area += `${SX(k).toFixed(1)},${SY(val(P[k])).toFixed(1)} `;
+      area += `${SX(P.length - 1)},${SY(0)}`;
+      s += `<polygon points="${area}" fill="var(--p-wave)" opacity="0.22"/><polyline points="${area.split(' ').slice(1, -1).join(' ')}" fill="none" stroke="var(--p-wave)" stroke-width="1.3" stroke-linejoin="round"/>`;
+      for (let kHz = 0; kHz <= 8; kHz++) {
+        const k = (kHz * 1000) / (SR / nfft);
+        s += `<line x1="${SX(k)}" y1="${sy0 + sh0}" x2="${SX(k)}" y2="${sy0 + sh0 + 4}" stroke="var(--text-2)"/><text x="${SX(k)}" y="${sh + 4}" text-anchor="${kHz === 0 ? 'start' : kHz === 8 ? 'end' : 'middle'}" class="ax">${kHz === 8 ? '8 kHz' : kHz}</text>`;
+      }
+      const sp = $('spec') as unknown as SVGSVGElement;
+      sp.setAttribute('viewBox', `0 0 ${W} ${sh + 10}`);
+      sp.innerHTML = s;
+
+      $('k1').innerHTML = `${nfft} <small>→ ${nfft / 2 + 1} fréquences</small>`;
+      $('k2').textContent = `${(SR / nfft).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} Hz`;
+      $('k3').textContent = `${(SR / L).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} Hz`;
+    }
+
+    inp('pos').addEventListener('input', draw);
+    inp('pre').addEventListener('change', draw);
+    draw();
+  });
+</script>
+
+<style is:global>
+  .fspec .row { margin-bottom: 6px; }
+  .fspec .seg { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  .fspec .seg button { font-size: 13px; padding: 4px 12px; }
+  .fspec .pre { margin-left: 12px; cursor: pointer; }
+  .fspec .posl { display: grid; grid-template-columns: 160px 1fr 60px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); margin: 8px 0; }
+  .fspec .posl b { text-align: right; color: var(--text); font-weight: 500; }
+  .fspec .ft { font-size: 13px; font-weight: 500; margin: 10px 0 2px; }
+  .fspec .ft span { font-weight: 400; color: var(--text-2); }
+  .fspec .lg { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: 12px; color: var(--text-2); margin: 0 0 4px; }
+  .fspec .sq { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+  .fspec .sq.raw { background: var(--p-frame-a); }
+  .fspec .sq.win { background: var(--p-frame-b); border: 1px solid var(--border); }
+  .fspec .sq.out { background: var(--p-wave); }
+  .fspec svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .fspec .kpis small { font-size: 13px; color: var(--text-2); font-weight: 400; }
+  @media (max-width: 600px) { .fspec .posl { grid-template-columns: 1fr; } }
+</style>

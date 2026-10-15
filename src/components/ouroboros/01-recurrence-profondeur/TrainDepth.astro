@@ -1,0 +1,148 @@
+---
+// Module 1 : nombre de passes tiré au hasard à l'entraînement (loi log-normale Poisson de Huginn) et rétropropagation tronquée.
+---
+<div class="widget tdepth" data-widget="tdepth">
+  <div class="row">
+    <span>Tirage de r :</span>
+    <span class="seg" data-ref="mode"><button data-mode="fixed">r fixe</button><button data-mode="lnp" class="active">Log-normal Poisson</button></span>
+  </div>
+  <div class="sl">
+    <label><span>Moyenne visée <i>r̄</i></span><input type="range" data-ref="rbar" min="4" max="64" step="1" value="32" /><b data-ref="rbar-out"></b></label>
+    <label><span>Passes rétropropagées <i>k</i></span><input type="range" data-ref="k" min="1" max="32" step="1" value="8" /><b data-ref="k-out"></b></label>
+  </div>
+  <div class="td-t">Probabilité de chaque nombre de passes r</div>
+  <svg data-ref="hist" width="100%" role="img" aria-label="Distribution du nombre de passes tiré à l'entraînement"></svg>
+  <div class="row td-draw"><button data-ref="draw">Tirer un r</button><span>Un pas d'entraînement : r = <b data-ref="r-out"></b> passes</span></div>
+  <div class="td-t">Les passes de ce tirage</div>
+  <div class="td-row" data-ref="passes"></div>
+  <p class="lg"><i class="sq nog"></i>passe sans gradient (calcul seul) <i class="sq gr"></i>passe rétropropagée (les k dernières)</p>
+  <div class="kpis">
+    <div><span>Moyenne de r</span><b data-ref="k1"></b></div>
+    <div><span>Médiane de r</span><b data-ref="k2"></b></div>
+    <div><span>Passes avec gradient</span><b data-ref="k3"></b></div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="tdepth"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const inp = (r: string) => $(r) as HTMLInputElement;
+    const SIG = 0.5;
+    let mode: 'fixed' | 'lnp' = 'lnp';
+    let r = 0;
+    let seed = 12345;
+    const rnd = () => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+
+    // r = 1 + Poisson(e^τ), τ ~ N(ln r̄ − σ²/2, σ²) : on intègre numériquement sur τ
+    function pmf(rbar: number): number[] {
+      const R = Math.ceil(rbar * 3.5) + 6;
+      const mu = Math.log(rbar) - (SIG * SIG) / 2;
+      const lf = [0];
+      for (let n = 1; n <= R; n++) lf[n] = lf[n - 1] + Math.log(n);
+      const p = new Array(R + 1).fill(0);
+      const G = 500, lo = mu - 4 * SIG, hi = mu + 4 * SIG, dt = (hi - lo) / G;
+      for (let g = 0; g < G; g++) {
+        const tau = lo + (g + 0.5) * dt;
+        const w = (Math.exp(-0.5 * ((tau - mu) / SIG) ** 2) / (SIG * Math.sqrt(2 * Math.PI))) * dt;
+        const lam = Math.exp(tau);
+        for (let n = 0; n < R; n++) p[n + 1] += w * Math.exp(-lam + n * tau - lf[n]);
+      }
+      return p;
+    }
+
+    let P: number[] = [];
+    let CDF: number[] = [];
+
+    function recompute() {
+      const rbar = +inp('rbar').value;
+      if (mode === 'fixed') {
+        P = new Array(rbar + 4).fill(0);
+        P[rbar] = 1;
+      } else P = pmf(rbar);
+      const tot = P.reduce((a, b) => a + b, 0);
+      P = P.map((v) => v / tot);
+      CDF = [];
+      P.reduce((a, v, i) => ((CDF[i] = a + v), a + v), 0);
+    }
+
+    function sample() {
+      const u = rnd();
+      const i = CDF.findIndex((c, idx) => idx >= 1 && c >= u);
+      r = i < 1 ? P.length - 1 : i;
+    }
+
+    function draw() {
+      const rbar = +inp('rbar').value, k = +inp('k').value;
+      $('rbar-out').textContent = String(rbar);
+      $('k-out').textContent = String(k);
+      // histogramme
+      const W = 640, H = 120, ox = 6, oy = 6, bh = H - 24;
+      const n = P.length - 1;
+      const bw = (W - ox * 2) / n;
+      const pmax = Math.max(...P);
+      let g = '';
+      for (let i = 1; i <= n; i++) {
+        const h = (P[i] / pmax) * bh;
+        const cur = i === r;
+        g += `<rect x="${(ox + (i - 1) * bw + 0.5).toFixed(1)}" y="${(oy + bh - h).toFixed(1)}" width="${Math.max(1, bw - 1).toFixed(1)}" height="${h.toFixed(1)}" fill="${cur ? 'var(--c-reach-target)' : 'var(--c-model-loop)'}" opacity="${cur ? 1 : 0.75}"/>`;
+      }
+      g += `<line x1="${ox}" y1="${oy + bh}" x2="${W - ox}" y2="${oy + bh}" stroke="var(--border)"/>`;
+      const tick = (v: number, txt: string) => {
+        const x = ox + (v - 0.5) * bw;
+        g += `<line x1="${x}" y1="${oy + bh}" x2="${x}" y2="${oy + bh + 4}" stroke="var(--text-2)"/><text x="${x}" y="${H - 4}" text-anchor="middle">${txt}</text>`;
+      };
+      const step = n > 120 ? 40 : n > 60 ? 20 : 10;
+      for (let v = step; v <= n; v += step) tick(v, String(v));
+      const svg = $('hist') as unknown as SVGSVGElement;
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      svg.innerHTML = g;
+
+      $('r-out').textContent = String(r);
+      const gr = Math.min(r, k);
+      $('passes').innerHTML = Array.from({ length: r }, (_, i) => `<i class="${i >= r - gr ? 'gr' : 'nog'}"></i>`).join('');
+      const mean = P.reduce((a, v, i) => a + v * i, 0);
+      const median = CDF.findIndex((c, i) => i >= 1 && c >= 0.5);
+      $('k1').textContent = mean.toFixed(1).replace('.', ',');
+      $('k2').textContent = String(median);
+      $('k3').innerHTML = `${gr} <small>sur ${r}</small>`;
+    }
+
+    root.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) =>
+      b.addEventListener('click', () => {
+        mode = b.dataset.mode as 'fixed' | 'lnp';
+        root.querySelectorAll('[data-mode]').forEach((o) => o.classList.toggle('active', o === b));
+        recompute(); sample(); draw();
+      }),
+    );
+    inp('rbar').addEventListener('input', () => { recompute(); sample(); draw(); });
+    inp('k').addEventListener('input', draw);
+    $('draw').addEventListener('click', () => { sample(); draw(); });
+    recompute();
+    r = CDF.findIndex((c, i) => i >= 1 && c >= 0.5); // premier exemple : la médiane
+    draw();
+  });
+</script>
+
+<style is:global>
+  .tdepth .seg { display: inline-flex; gap: 6px; }
+  .tdepth .seg button, .tdepth .td-draw button { font-size: 13px; padding: 4px 12px; }
+  .tdepth .sl { display: grid; gap: 6px; margin-bottom: 8px; }
+  .tdepth .sl label { display: grid; grid-template-columns: 200px 1fr 40px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); }
+  .tdepth .sl b { text-align: right; color: var(--text); font-weight: 500; }
+  .tdepth .td-t { font-size: 13px; font-weight: 500; margin: 12px 0 4px; }
+  .tdepth svg text { font: 11px var(--font); fill: var(--text-2); }
+  .tdepth .td-draw { margin: 6px 0 0; }
+  .tdepth .td-row { display: flex; flex-wrap: wrap; gap: 3px; margin: 4px 0 8px; }
+  .tdepth .td-row i, .tdepth .lg .sq { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
+  .tdepth .td-row i.gr, .tdepth .lg .sq.gr { background: var(--c-model-loop); }
+  .tdepth .td-row i.nog, .tdepth .lg .sq.nog { background: var(--c-reach-soft); }
+  .tdepth .lg { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: 12px; color: var(--text-2); margin: 0 0 8px; }
+  .tdepth .lg .sq { margin-right: 4px; vertical-align: -1px; }
+  .tdepth .kpis small { font-size: 13px; color: var(--text-2); font-weight: 400; }
+  @media (max-width: 600px) { .tdepth .sl label { grid-template-columns: 1fr; } }
+</style>

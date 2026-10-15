@@ -1,0 +1,332 @@
+---
+num: 1
+title: "Récurrence en profondeur"
+summary: "Looped transformers : un bloc partagé bouclé T fois, coûts, champ réceptif T·W, nombre de passes variable, sortie anticipée, stabilité."
+status: en-cours
+sidebar: loop
+---
+import ArchMarker from '@/components/shared/ArchMarker.astro';
+import Reveal from '@/components/shared/Reveal.astro';
+import Quiz from '@/components/shared/Quiz.astro';
+import Refs from '@/components/shared/Refs.astro';
+import LoopStack from '@/components/ouroboros/01-recurrence-profondeur/LoopStack.astro';
+import ReachCone from '@/components/ouroboros/ReachCone.astro';
+import TrainDepth from '@/components/ouroboros/01-recurrence-profondeur/TrainDepth.astro';
+import EarlyExit from '@/components/ouroboros/01-recurrence-profondeur/EarlyExit.astro';
+import Stability from '@/components/ouroboros/01-recurrence-profondeur/Stability.astro';
+
+<ArchMarker parts="block loop" label="Un bloc partagé, répété T fois sur chaque token" />
+
+Au lieu d'empiler $N$ couches différentes, on réutilise **le même bloc** (mêmes poids) plusieurs fois de suite. Exemples : Universal Transformer (2018), ALBERT (2019, poids partagés entre couches), et plus récemment Huginn (2025), Ouro (2025) et Parcae (2026).
+
+<Refs items={[["Universal Transformers", "Dehghani et al.", 2018, "1807.03819"], ["ALBERT", "Lan et al.", 2019, "1909.11942"], ["Scaling up Test-Time Compute with Latent Reasoning: A Recurrent Depth Approach (Huginn)", "Geiping et al.", 2025, "2502.05171"], ["Scaling Latent Reasoning via Looped Language Models (Ouro)", "Zhu et al.", 2025, "2510.25741"], ["Parcae: Scaling Laws For Stable Looped Language Models", "Prairie et al.", 2026, "2604.12946"]]} />
+
+<ArchMarker parts="embed inject block loop" label="Boucler un bloc, avec réinjection de l'embedding" follow="[data-widget='lstack']" />
+
+## 1. Boucler un bloc
+
+Même teinte = mêmes poids.
+
+<LoopStack />
+
+$$
+h^{(0)} = e, \qquad h^{(t+1)} = \mathrm{Bloc}_{\theta}\big(h^{(t)} + e\big), \qquad t = 0, \dots, T-1
+$$
+
+- $e$ : l'embedding du token ; $h^{(t)}$ : son vecteur après $t$ passes.
+- $\theta$ : les poids du bloc, **les mêmes à chaque passe**. Un bloc peut lui-même contenir $k$ couches différentes.
+- **Input injection** : on rajoute $e$ à l'entrée de chaque passe. Sans elle, une passe ne voit que $h^{(t)}$ et l'information du token d'origine peut se diluer quand $T$ grandit ; avec elle, chaque passe repart du token. Selon les modèles, l'état initial est $e$, zéro ou aléatoire, et l'injection est une addition ou une concaténation suivie d'une projection.
+
+### Ce que ça coûte
+
+- Un bloc a environ $12\,d^2$ paramètres ($4d^2$ d'attention, $8d^2$ de MLP ; module 0, section 7) et coûte environ 2 opérations par paramètre et par token. Les barres du widget le montrent : boucler divise les **paramètres** par $T$, mais le **calcul**, la **mémoire d'activations** et le **KV cache** restent ceux d'un modèle de $kT$ couches (chaque passe a ses propres $K$, $V$).
+- Le KV cache peut être réduit : Ouro, au décodage, ne garde que celui de la dernière passe (4 fois moins, perte de 0,1 à 2 points selon le benchmark), mais pas au prefill, où chaque passe garde le sien (section 4). Et on peut ne rétropropager qu'à travers les dernières passes (section 3).
+
+<div class="retain">
+
+**À retenir**
+
+- Transformer bouclé : $k$ blocs différents répétés $T$ fois, soit $k \times T$ couches calculées avec seulement $k$ jeux de poids.
+- $h^{(t+1)} = \mathrm{Bloc}_\theta(h^{(t)} + e)$ : mêmes poids $\theta$ à chaque passe.
+- Input injection : $e$ est réinjecté à chaque passe, pour ne pas perdre le token d'origine.
+- Coût : paramètres $12d^2 \times k$ au lieu de $12d^2 \times kT$ ; calcul, mémoire d'activations et KV cache comme $kT$ couches.
+
+</div>
+
+<Refs items={[["Looped Transformers are Better at Learning Learning Algorithms", "Yang et al.", 2023, "2311.12424"], ["Scaling up Test-Time Compute with Latent Reasoning: A Recurrent Depth Approach (Huginn)", "Geiping et al.", 2025, "2502.05171"], ["ALBERT", "Lan et al.", 2019, "1909.11942"], ["Parcae: Scaling Laws For Stable Looped Language Models", "Prairie et al.", 2026, "2604.12946"]]} />
+
+<Quiz>
+
+**Q1.** Avec $k = 2$ blocs et $T = 6$ passes, combien de couches calcule-t-on par token, et combien de jeux de poids différents y a-t-il ?
+
+<Reveal>
+
+$2 \times 6 = 12$ couches calculées, avec seulement 2 jeux de poids.
+
+</Reveal>
+
+**Q2.** Si on double $T$ sans changer $k$, que deviennent le calcul par token et le nombre de paramètres ?
+
+<Reveal>
+
+Le calcul double (deux fois plus de couches calculées) ; le nombre de paramètres ne change pas.
+
+</Reveal>
+
+**Q3.** Dans la formule, qu'est-ce qui distingue une boucle avec input injection d'une boucle sans ?
+
+<Reveal>
+
+Avec : $h^{(t+1)} = \mathrm{Bloc}_\theta(h^{(t)} + e)$, le token d'origine $e$ entre à chaque passe. Sans : $h^{(t+1)} = \mathrm{Bloc}_\theta(h^{(t)})$, il n'entre qu'au départ.
+
+</Reveal>
+
+**Q4.** Avec $d_{\text{model}} = 2048$, combien de paramètres a un bloc ? Un modèle classique de 12 couches ? Un modèle bouclé de 2 blocs × 6 passes ?
+
+<Reveal>
+
+Un bloc : $12 \times 2048^2 \approx 50$ millions. Classique 12 couches : environ 604 millions. Bouclé 2 × 6 : environ 101 millions (hors embeddings). Le calcul par token, lui, est le même pour les deux.
+
+</Reveal>
+
+**Q5.** Pourquoi le KV cache d'un modèle bouclé grandit-il comme celui d'un modèle de $kT$ couches ?
+
+<Reveal>
+
+À chaque passe, les vecteurs des tokens sont différents, donc leurs $K$ et $V$ aussi. L'attention de la passe $t$ a besoin des $K$, $V$ de la passe $t$ pour tous les tokens précédents : il faut un cache par couche et par passe.
+
+</Reveal>
+
+</Quiz>
+
+<ArchMarker parts="block loop" label="Champ réceptif : chaque passe élargit la portée de W − 1 tokens" />
+
+## 2. Champ réceptif avec une fenêtre : T·W
+
+Avec une attention à fenêtre glissante $W$ (module 0, section 5), une passe permet à un token de voir $W - 1$ tokens en arrière. Chaque passe repart des vecteurs de la passe précédente, qui ont eux-mêmes déjà regardé $W - 1$ tokens plus loin : la portée s'élargit à chaque passe.
+
+<ReachCone />
+
+$$
+\text{portée}(T, W) = T\,(W - 1) + 1 \;\approx\; T \cdot W
+$$
+
+- Une passe : $W$ tokens. $T$ passes : environ $T \cdot W$.
+- Au-delà, l'information ne peut pas atteindre le token par l'attention, quel que soit le nombre de passes déjà fait. Pour Ouroboros, c'est là qu'un état transporté d'un token au suivant devient la seule route.
+
+<div class="retain">
+
+**À retenir**
+
+- Chaque passe élargit la portée de $W - 1$ tokens : $T(W-1)+1 \approx T \cdot W$ tokens après $T$ passes.
+- Doubler $T$ double la portée, mais aussi le calcul par token.
+- Au-delà de $T \cdot W$, rien ne passe par l'attention : il faut une autre mémoire.
+
+</div>
+
+<Refs items={[["Longformer", "Beltagy et al.", 2020, "2004.05150"]]} />
+
+<Quiz>
+
+**Q1.** Avec $W = 256$ et $T = 4$ passes, combien de tokens un token peut-il voir ?
+
+<Reveal>
+
+$4 \times 255 + 1 = 1021$ tokens.
+
+</Reveal>
+
+**Q2.** Pour doubler la portée, vaut-il mieux doubler $T$ ou doubler $W$ ? Que coûte chaque option ?
+
+<Reveal>
+
+Les deux doublent environ la portée. Doubler $T$ double tout le calcul par token (attention et MLP) et le nombre de KV caches. Doubler $W$ double la taille de chaque KV cache et le coût de l'attention, mais pas celui du MLP.
+
+</Reveal>
+
+**Q3.** Avec $W = 256$ et $T = 4$, une information placée 2 000 tokens plus tôt peut-elle influencer la prédiction ?
+
+<Reveal>
+
+Non par l'attention : la portée est de 1021 tokens. Il faudrait un état transporté d'un token au suivant, ce que propose Ouroboros.
+
+</Reveal>
+
+</Quiz>
+
+<ArchMarker parts="block loop" label="Nombre de passes tiré au hasard à l'entraînement" />
+
+## 3. Combien de passes ? Un nombre tiré au hasard
+
+Huginn ne fixe pas $r$, le nombre de passes : à chaque pas d'entraînement, il le **tire au hasard**. Au test, on choisit $r$ selon le budget de calcul. (Interprétation : c'est ce tirage qui apprend au modèle à fonctionner avec n'importe quel $r$.)
+
+<TrainDepth />
+
+$$
+\tau \sim \mathcal{N}\!\big(\ln \bar r - \tfrac{\sigma^2}{2},\ \sigma^2\big), \qquad r = 1 + \mathrm{Poisson}\big(e^{\tau}\big), \qquad \sigma = \tfrac12
+$$
+
+- **Loi** (Huginn, §3.3 et §4.1) : log-normale Poisson, avec $\bar r = 32$. La plupart des tirages tombent sous $\bar r$, mais la queue est lourde : certains pas font beaucoup plus de passes.
+- **Rétropropagation tronquée** : le gradient ne traverse que les $k = 8$ **dernières** passes ; les précédentes sont calculées sans gradient. Le prélude (qui produit $e$) reçoit quand même du gradient, car $e$ est réinjecté dans chaque passe.
+- **État initial** aléatoire, tiré d'une loi normale sans lien avec l'entrée (Huginn, §3.1 et §4.1).
+- Parcae tire la profondeur **par séquence** dans un micro-batch (ce qui, selon eux, réduit les pics de perte) et fixe $k = \lceil \bar r / 2 \rceil$ (§4.2). Ouro, lui, n'a pas de tirage : 4 passes fixes, et c'est une porte de sortie apprise qui décide (section 4).
+
+<div class="retain">
+
+**À retenir**
+
+- Huginn tire $r$ au hasard à chaque pas (log-normale Poisson, $\bar r = 32$) : au test, $r$ se choisit librement.
+- Rétropropagation tronquée : seules les $k$ dernières passes reçoivent du gradient (Huginn : $k = 8$ ; Parcae : $\lceil \bar r / 2 \rceil$).
+- Le gradient atteint quand même le prélude, grâce à l'injection de $e$ à chaque passe.
+
+</div>
+
+<Refs items={[["Scaling up Test-Time Compute with Latent Reasoning (Huginn)", "Geiping et al.", 2025, "2502.05171"], ["Parcae: Scaling Laws For Stable Looped Language Models", "Prairie et al.", 2026, "2604.12946"]]} />
+
+<Quiz>
+
+**Q1.** Avec $k = 8$ et tirage $r = 20$, combien de passes reçoivent du gradient ? Et si $r = 5$ ?
+
+<Reveal>
+
+$r = 20$ : 8 passes avec gradient, 12 sans. $r = 5$ : les 5 passes, puisque $\min(r, k) = 5$.
+
+</Reveal>
+
+**Q2.** Les 12 premières passes n'ont pas de gradient. Pourquoi le prélude en reçoit-il quand même ?
+
+<Reveal>
+
+$e$ est réinjecté dans **chaque** passe, y compris les 8 dernières, qui sont rétropropagées : le gradient remonte par ces injections jusqu'au prélude.
+
+</Reveal>
+
+**Q3.** Avec une moyenne visée de 32, la plupart des tirages sont-ils au-dessus ou en dessous de 32 ?
+
+<Reveal>
+
+En dessous : la loi a une queue lourde, quelques grands tirages tirent la moyenne vers le haut (voir la médiane dans le widget).
+
+</Reveal>
+
+</Quiz>
+
+<ArchMarker parts="block loop head" label="Sortir tôt : lire la prédiction après la passe t" />
+
+## 4. Sortir tôt, mot par mot
+
+Tous les mots n'ont pas besoin du même nombre de passes. L'idée : après chaque passe, une règle décide de s'arrêter. Quatre règles, quatre façons de décider :
+
+| Travail | On s'arrête quand… | Entraîné ? |
+|---|---|---|
+| ACT (Graves, 2016) | la somme des probabilités d'arrêt $h_n = \sigma(W_h s_n + b_h)$ atteint $1 - \epsilon$ | oui : coût $\tau\,(N + R)$ ajouté à la perte, $R$ = reste |
+| Huginn (2025) | la divergence KL entre les sorties de deux passes successives passe sous $5 \cdot 10^{-4}$ | non : critère appliqué au test (§6.1) |
+| Ouro (2025) | la probabilité cumulée de sortie atteint un seuil $q$ | oui : une porte apprise après chaque passe |
+| MoR (2025) | un routeur ne le garde plus parmi les mieux notés à cette passe (*expert-choice*), ou lui a attribué d'emblée sa profondeur (*token-choice*) | oui : routeur léger entraîné avec le modèle |
+
+<EarlyExit />
+
+Ouro, en détail. La porte donne $\lambda_t = \sigma\big(\mathrm{Linear}(h^{(t)})\big)$, la probabilité de sortir à la passe $t$ si on n'est pas sorti avant. Puis :
+
+$$
+\mathrm{CDF}(n) = 1 - \prod_{j \le n} (1 - \lambda_j), \qquad t_{\text{sortie}} = \min\{\, m : \mathrm{CDF}(m) \ge q \,\}
+$$
+
+- **Piège de l'entraînement** (Ouro, §3.3) : sans précaution, les passes profondes reçoivent plus de signal, leur perte baisse, la porte leur donne encore plus de poids, et la loi de sortie s'effondre sur la dernière passe. Ouro ajoute un terme d'entropie $-\beta H(p_\phi)$ (loi a priori uniforme sur les passes) pour éviter cet effondrement.
+- **Ce que ça casse** (MoR, §2.2.2) : un mot sorti à la passe 2 n'a plus d'état aux passes 3 et 4, donc pas de $K$, $V$ à ces passes pour les autres mots. MoR propose soit de ne cacher que les mots encore actifs à chaque profondeur (*recursion-wise caching*), soit de réutiliser les $K$, $V$ de la première récursion (*KV sharing*). Le partage dégrade le routage *expert-choice* mais aide le *token-choice* (§4.3).
+- **Autre piège** (MoR, §2.2.1) : le routage *expert-choice* choisit les $k$ meilleurs mots du lot, donc utilise de l'information sur les mots futurs. À l'inférence, elle n'existe pas : il faut un entraînement auxiliaire pour prédire l'appartenance au top-$k$.
+- **KV cache d'Ouro** (§5.4.2) : au décodage, ne garder que le cache de la dernière passe divise la mémoire par 4 pour une perte de 0,1 point (GSM8K) à 2 points (MATH-500). Garder seulement celui de la première passe fait s'effondrer le modèle. Au prefill, chaque passe doit garder son cache (perte de plus de 10 points sinon).
+
+<div class="retain">
+
+**À retenir**
+
+- Sortir tôt = une règle qui regarde l'état après chaque passe : somme de probabilités d'arrêt (ACT), KL entre passes (Huginn), seuil sur la probabilité cumulée (Ouro), routeur (MoR).
+- Une porte apprise a besoin d'un garde-fou contre l'effondrement vers la dernière passe (entropie, loi a priori uniforme).
+- Un mot sorti tôt n'a pas de $K$, $V$ aux passes suivantes : cache par profondeur ou partage du cache.
+
+</div>
+
+<Refs items={[["Adaptive Computation Time for Recurrent Neural Networks", "Graves", 2016, "1603.08983"], ["Scaling up Test-Time Compute with Latent Reasoning (Huginn)", "Geiping et al.", 2025, "2502.05171"], ["Scaling Latent Reasoning via Looped Language Models (Ouro)", "Zhu et al.", 2025, "2510.25741"], ["Mixture-of-Recursions", "Bae et al.", 2025, "2507.10524"]]} />
+
+<Quiz>
+
+**Q1.** Avec la règle d'Ouro, que se passe-t-il pour $q = 1$ ? Pourquoi ?
+
+<Reveal>
+
+Tous les mots font les 4 passes : $\mathrm{CDF}(n) < 1$ pour $n < 4$, et seule la dernière passe atteint 1 (elle absorbe la probabilité restante).
+
+</Reveal>
+
+**Q2.** Pourquoi la perte seule, sans terme d'entropie, pousse-t-elle la porte d'Ouro vers la dernière passe ?
+
+<Reveal>
+
+Les passes profondes reçoivent plus de poids, donc plus de signal : leur perte baisse, ce qui leur redonne encore plus de poids. C'est auto-renforçant.
+
+</Reveal>
+
+**Q3.** Un mot sort à la passe 2. Quel problème cela pose-t-il pour l'attention des mots suivants à la passe 4 ?
+
+<Reveal>
+
+Il n'a pas de $K$, $V$ à la passe 4 : il n'a pas été calculé. Soit on l'ignore (cache par profondeur), soit on réutilise ses $K$, $V$ de la première passe (partage).
+
+</Reveal>
+
+</Quiz>
+
+<ArchMarker parts="block loop inject" label="Instabilités : l'état peut diverger quand on boucle" />
+
+## 5. Instabilités : quand l'état diverge
+
+Boucler un bloc, c'est appliquer la même transformation $T$ fois : si elle amplifie, l'état explose. Parcae (2026) décrit deux symptômes : l'**explosion du résiduel** (la norme de l'état $\lVert h_T \rVert$ croît sans borne) et des **pics de perte** tardifs, qu'ils attribuent à l'entraînement à profondeur variable.
+
+<Stability />
+
+- **Analyse** (Parcae, §4.1) : on linéarise la boucle, $h_{t+1} = \bar A\, h_t + \bar B\, e + \bar R(h_t, e)$. L'état reste borné seulement si le rayon spectral $\rho(\bar A) < 1$ (le papier écrit « norme spectrale »).
+- **Injection** (Parcae, Table 1) : l'addition donne $\rho = 1$, tout juste stable ; la concaténation suivie d'une projection (Huginn) n'impose rien, donc instable. Le modèle de référence de type Huginn diverge aux pas d'apprentissage élevés (Table 2 : dès $4\cdot10^{-4}$).
+- **Correctif** : $A = -\mathrm{Diag}\big(\exp(\log A)\big)$ est négative, et la discrétisation $\bar A = \exp(\Delta A)$ donne des valeurs dans $(0, 1)$ : $\rho(\bar A) < 1$ par construction. C'est le mode « Parcae » du widget.
+- **Ouro** (§4.3) : avec 8 passes, pics de perte et oscillations du gradient. Ils supposent que le gradient s'amplifie à travers les itérations, et passent à 4 passes. Ils utilisent aussi une normalisation « en sandwich » (RMSNorm).
+- Le widget est un **jouet scalaire** : le vrai état est un vecteur, la boucle est non linéaire.
+
+<div class="retain">
+
+**À retenir**
+
+- Une boucle est stable si la partie linéaire de la récurrence contracte : $\rho(\bar A) < 1$.
+- Parcae le garantit par un paramétrage négatif ($\bar A = e^{\Delta A}$) ; Ouro a réduit le nombre de passes de 8 à 4.
+- Parcae tire aussi la profondeur par séquence pour réduire les pics de perte (§4.2).
+
+</div>
+
+<Refs items={[["Parcae: Scaling Laws For Stable Looped Language Models", "Prairie et al.", 2026, "2604.12946"], ["Scaling Latent Reasoning via Looped Language Models (Ouro)", "Zhu et al.", 2025, "2510.25741"], ["Scaling up Test-Time Compute with Latent Reasoning (Huginn)", "Geiping et al.", 2025, "2502.05171"]]} />
+
+<Quiz>
+
+**Q1.** Avec $a = 1{,}05$, que vaut l'état après 32 passes ($e = 1$, $h_0 = 0$) ?
+
+<Reveal>
+
+$\sum_{i<32} 1{,}05^{\,i} = (1{,}05^{32} - 1)/0{,}05 \approx 75$ : il dépasse déjà largement l'échelle du widget, et continue d'augmenter exponentiellement.
+
+</Reveal>
+
+**Q2.** Pourquoi $a = \exp(-s)$ ne peut-il jamais exploser ?
+
+<Reveal>
+
+Pour tout $s > 0$, $\exp(-s) \in (0, 1)$ : le rayon spectral reste sous 1, l'état converge vers $1/(1-a)$.
+
+</Reveal>
+
+**Q3.** Le widget montre un cas stable. Est-ce une preuve que le vrai modèle l'est ?
+
+<Reveal>
+
+Non : c'est un jouet scalaire linéaire. L'analyse de Parcae porte sur une approximation linéaire du vrai modèle, non linéaire, en grande dimension.
+
+</Reveal>
+
+</Quiz>

@@ -1,0 +1,32 @@
+---
+import Base from '../../layouts/Base.astro';
+import { COURSES, courseIds, chaptersOf, chapterUrl, STATUS_LABELS, type CourseId } from '../../lib/courses';
+
+export function getStaticPaths() {
+  return courseIds.map((course) => ({ params: { course } }));
+}
+
+const course = Astro.params.course as CourseId;
+const meta = COURSES[course];
+const chapters = await chaptersOf(course);
+---
+<Base title="Carte de progression" course={course}>
+  <h1>{meta.title}</h1>
+  <p>{meta.intro}</p>
+  <h2>Carte de progression</h2>
+  <ol class="modules">
+    {chapters.map((m) => (
+      <li>
+        <a href={chapterUrl(m.id)}>{meta.unit} {m.data.num} · {m.data.title}</a>
+        <span class={`badge ${m.data.status}`}>{STATUS_LABELS[m.data.status]}</span>
+        <div class="sum">{m.data.summary}</div>
+      </li>
+    ))}
+  </ol>
+</Base>
+<style>
+  .modules { list-style: none; padding: 0; }
+  .modules li { border-bottom: 1px solid var(--border); padding: 0.8rem 0; }
+  .modules a { font-weight: 500; margin-right: 0.6rem; }
+  .sum { color: var(--text-2); font-size: 15px; }
+</style>

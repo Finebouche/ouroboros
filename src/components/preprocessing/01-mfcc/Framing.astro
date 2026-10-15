@@ -1,0 +1,135 @@
+---
+// Chapitre MFCC, section 1 : découper le signal en trames (longueur, pas, chevauchement) et voir ce qu'une trame contient.
+---
+<div class="widget framing" data-widget="framing">
+  <div class="row"><span>Longueur de trame :</span><span class="seg" data-ref="len"></span></div>
+  <div class="row"><span>Pas entre deux trames :</span><span class="seg" data-ref="hop"></span></div>
+  <label class="posl"><span>Position de la trame</span><input type="range" data-ref="pos" min="0" max="0" step="1" value="0" /><b data-ref="pos-out"></b></label>
+  <p class="lg"><i class="sq cur"></i>trame choisie <i class="sq nb"></i>trames voisines (elles se chevauchent)</p>
+  <svg data-ref="wave" width="100%" role="img" aria-label="Signal audio, avec la trame choisie et ses voisines"></svg>
+  <div class="ft">Contenu de la trame choisie <span data-ref="range"></span></div>
+  <svg data-ref="zoom" width="100%" role="img" aria-label="Valeurs du signal à l'intérieur de la trame choisie"></svg>
+  <div class="kpis">
+    <div><span>Valeurs par trame</span><b data-ref="k1"></b></div>
+    <div><span>Chevauchement</span><b data-ref="k2"></b></div>
+    <div><span>Trames pour ce signal</span><b data-ref="k3"></b></div>
+  </div>
+</div>
+
+<script>
+  import { SR, N, SEGMENTS, makeSignal } from './signal';
+
+  document.querySelectorAll<HTMLElement>('[data-widget="framing"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const inp = (r: string) => $(r) as HTMLInputElement;
+    const x = makeSignal();
+    const LENS = [10, 25, 50, 100]; // ms
+    const HOPS = [5, 10, 25]; // ms
+    let lenMs = 25, hopMs = 10;
+    const ms = (v: number) => (v * SR) / 1000;
+    const nFrames = () => Math.max(0, 1 + Math.floor((N - ms(lenMs)) / ms(hopMs)));
+
+    function seg(key: 'len' | 'hop', values: number[], get: () => number, set: (v: number) => void) {
+      values.forEach((v) => {
+        const b = document.createElement('button');
+        b.textContent = `${v} ms`;
+        b.dataset.v = String(v);
+        b.addEventListener('click', () => {
+          const t = inp('pos').valueAsNumber * ms(hopMs); // on garde la position dans le temps
+          set(v);
+          const n = nFrames();
+          inp('pos').max = String(n - 1);
+          inp('pos').value = String(Math.min(n - 1, Math.round(t / ms(hopMs))));
+          draw();
+        });
+        $(key).appendChild(b);
+      });
+    }
+    seg('len', LENS, () => lenMs, (v) => (lenMs = v));
+    seg('hop', HOPS, () => hopMs, (v) => (hopMs = v));
+
+    function draw() {
+      const Ls = ms(lenMs), Hs = ms(hopMs), n = nFrames();
+      $('len').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.v! === lenMs));
+      $('hop').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.v! === hopMs));
+      const j = Math.min(+inp('pos').value, n - 1);
+      const s0 = j * Hs;
+      $('pos-out').textContent = `${Math.round((s0 / SR) * 1000)} ms`;
+
+      // --- signal entier ---
+      const W = 640, ox = 8, wpx = W - 16, cy = 58, amp = 40;
+      const X = (s: number) => ox + (s / N) * wpx;
+      let g = '';
+      SEGMENTS.forEach((sg, i) => {
+        const x0 = X(sg.from * SR), x1 = X(sg.to * SR);
+        if (i > 0) g += `<line x1="${x0}" y1="16" x2="${x0}" y2="102" stroke="var(--border)" stroke-dasharray="3 3"/>`;
+        g += `<text x="${(x0 + x1) / 2}" y="12" text-anchor="middle" class="sg">${sg.label}</text>`;
+      });
+      // trame choisie : bande
+      g += `<rect x="${X(s0)}" y="16" width="${Math.max(1.5, (Ls / N) * wpx)}" height="86" fill="var(--hl-bg)" stroke="var(--hl-stroke)" stroke-width="1"/>`;
+      // courbe : enveloppe min / max par colonne de pixels
+      let d = '';
+      for (let px = 0; px < wpx; px++) {
+        const a = Math.floor((px / wpx) * N), b = Math.max(a + 1, Math.floor(((px + 1) / wpx) * N));
+        let mn = 1, mx = -1;
+        for (let i = a; i < b; i++) { if (x[i] < mn) mn = x[i]; if (x[i] > mx) mx = x[i]; }
+        d += `M${ox + px + 0.5} ${cy - mx * amp}V${cy - mn * amp}`;
+      }
+      g += `<path d="${d}" stroke="var(--p-wave)" stroke-width="1" fill="none"/>`;
+      // la trame choisie et ses voisines, sur trois lignes
+      [-1, 0, 1].forEach((o, r) => {
+        const jj = j + o;
+        if (jj < 0 || jj >= n) return;
+        const bx = X(jj * Hs), bw = Math.max(1.5, (Ls / N) * wpx);
+        g += `<rect x="${bx}" y="${110 + r * 11}" width="${bw}" height="8" rx="2" fill="${o === 0 ? 'var(--hl-stroke)' : r === 0 ? 'var(--p-frame-a)' : 'var(--p-frame-b)'}"/>`;
+      });
+      const wave = $('wave') as unknown as SVGSVGElement;
+      wave.setAttribute('viewBox', `0 0 ${W} 146`);
+      wave.innerHTML = g;
+
+      // --- contenu de la trame ---
+      const a = Math.round(s0), len = Math.round(Ls);
+      const zH = 90, zy = 45, za = 36;
+      let z = `<line x1="${ox}" y1="${zy}" x2="${W - ox}" y2="${zy}" stroke="var(--border)"/>`;
+      let pts = '';
+      for (let i = 0; i < len && a + i < N; i++) pts += `${(ox + (i / len) * wpx).toFixed(1)},${(zy - x[a + i] * za).toFixed(1)} `;
+      z += `<polyline points="${pts}" fill="none" stroke="var(--p-wave)" stroke-width="1.2" stroke-linejoin="round"/>`;
+      for (const f of [0, 0.5, 1]) {
+        const tx = ox + f * wpx;
+        z += `<line x1="${tx}" y1="${zH - 14}" x2="${tx}" y2="${zH - 9}" stroke="var(--text-2)"/><text x="${tx}" y="${zH}" text-anchor="${f === 0 ? 'start' : f === 1 ? 'end' : 'middle'}" class="ax">${(f * lenMs).toFixed(f === 0.5 && lenMs % 2 ? 1 : 0).replace('.', ',')} ms</text>`;
+      }
+      const zoom = $('zoom') as unknown as SVGSVGElement;
+      zoom.setAttribute('viewBox', `0 0 ${W} ${zH + 4}`);
+      zoom.innerHTML = z;
+      const t0 = Math.round((s0 / SR) * 1000), t1 = Math.round(((s0 + Ls) / SR) * 1000);
+      $('range').textContent = `(de ${t0} à ${t1} ms)`;
+
+      $('k1').innerHTML = `${len} <small>= ${lenMs} ms × ${SR / 1000} kHz</small>`;
+      $('k2').innerHTML = lenMs > hopMs ? `${Math.round((1 - hopMs / lenMs) * 100)} %` : `aucun <small>(trous entre trames)</small>`;
+      $('k3').innerHTML = `${n} <small>sur ${(N / SR).toLocaleString('fr-FR')} s</small>`;
+    }
+
+    inp('pos').max = String(nFrames() - 1);
+    inp('pos').value = String(Math.round(ms(100) / ms(hopMs))); // départ à 100 ms, au milieu de la voyelle « a »
+    inp('pos').addEventListener('input', draw);
+    draw();
+  });
+</script>
+
+<style is:global>
+  .framing .row { margin-bottom: 6px; }
+  .framing .seg { display: inline-flex; gap: 6px; }
+  .framing .seg button { font-size: 13px; padding: 4px 12px; }
+  .framing .posl { display: grid; grid-template-columns: 160px 1fr 60px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); margin: 8px 0; }
+  .framing .posl b { text-align: right; color: var(--text); font-weight: 500; }
+  .framing .lg { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: 12px; color: var(--text-2); margin: 0 0 6px; }
+  .framing .sq { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+  .framing .sq.cur { background: var(--hl-stroke); }
+  .framing .sq.nb { background: var(--p-frame-a); }
+  .framing .ft { font-size: 13px; font-weight: 500; margin: 10px 0 2px; }
+  .framing .ft span { font-weight: 400; color: var(--text-2); }
+  .framing svg text.sg { font: 11px var(--font); fill: var(--text-2); }
+  .framing svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .framing .kpis small { font-size: 13px; color: var(--text-2); font-weight: 400; }
+  @media (max-width: 600px) { .framing .posl { grid-template-columns: 1fr; } }
+</style>
