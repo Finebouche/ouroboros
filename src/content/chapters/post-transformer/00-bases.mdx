@@ -5,20 +5,20 @@ summary: Modèle autoregressif, teacher forcing, attention causale, KV cache, fe
 status: en-cours
 sidebar: transformer
 ---
-import CausalAttention from '@/components/transformers/00-bases/CausalAttention.astro';
-import QKVProjection from '@/components/transformers/00-bases/QKVProjection.astro';
-import AttentionSteps from '@/components/transformers/00-bases/AttentionSteps.astro';
+import CausalAttention from '@/components/post-transformer/00-bases/CausalAttention.astro';
+import QKVProjection from '@/components/post-transformer/00-bases/QKVProjection.astro';
+import AttentionSteps from '@/components/post-transformer/00-bases/AttentionSteps.astro';
 import ArchMarker from '@/components/shared/ArchMarker.astro';
-import KVCacheSteps from '@/components/transformers/00-bases/KVCacheSteps.astro';
-import KVCacheMemory from '@/components/transformers/00-bases/KVCacheMemory.astro';
+import KVCacheSteps from '@/components/post-transformer/00-bases/KVCacheSteps.astro';
+import KVCacheMemory from '@/components/post-transformer/00-bases/KVCacheMemory.astro';
 import Reveal from '@/components/shared/Reveal.astro';
 import Quiz from '@/components/shared/Quiz.astro';
-import DotLegend from '@/components/transformers/DotLegend.astro';
+import DotLegend from '@/components/post-transformer/DotLegend.astro';
 import Refs from '@/components/shared/Refs.astro';
-import SlidingWindow from '@/components/transformers/00-bases/SlidingWindow.astro';
-import MultiHead from '@/components/transformers/00-bases/MultiHead.astro';
-import ReachCone from '@/components/transformers/ReachCone.astro';
-import RoPEClock from '@/components/transformers/00-bases/RoPEClock.astro';
+import SlidingWindow from '@/components/post-transformer/00-bases/SlidingWindow.astro';
+import MultiHead from '@/components/post-transformer/00-bases/MultiHead.astro';
+import ReachCone from '@/components/post-transformer/ReachCone.astro';
+import RoPEClock from '@/components/post-transformer/00-bases/RoPEClock.astro';
 
 <ArchMarker label="Vue d'ensemble : un transformer décodeur, un bloc répété N fois" />
 
