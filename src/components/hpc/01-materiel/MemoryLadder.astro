@@ -3,7 +3,9 @@
 // Latences : ordres de grandeur typiques, variables d'une machine à l'autre. Débits : valeurs nominales (voir hw.ts et le texte).
 ---
 <div class="widget mladder hp" data-widget="mladder">
-  <div class="row"><span>Échelle :</span><span class="seg" data-ref="sc"></span></div>
+  <p class="hlegend">
+    <span><i class="sq mem"></i>mémoire et transferts (en gris : ce n'est pas du travail de calcul)</span>
+  </p>
   <div class="ft">Latence : combien de temps avant que la première donnée arrive</div>
   <svg data-ref="lat" width="100%" role="img" aria-label="Échelle logarithmique des latences"></svg>
   <div class="ft">Débit : combien de temps pour déplacer 1 Go <button class="go" data-ref="go">Lancer</button></div>
@@ -39,25 +41,9 @@
       ['HBM2e (A100 80 Go)', 2.039e12],
       ['HBM3 (H100 SXM)', 3.35e12],
     ];
-    let human = false;
-    [['réelle', 0], ['humaine (1 ns devient 1 s)', 1]].forEach(([l, v]) => {
-      const b = document.createElement('button');
-      b.textContent = String(l); b.dataset.v = String(v);
-      b.addEventListener('click', () => { human = v === 1; draw(); });
-      $('sc').appendChild(b);
-    });
-    const humanize = (s: number) => {
-      const h = s * 1e9; // secondes « humaines »
-      if (h < 60) return `${h.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} s`;
-      if (h < 3600) return `${(h / 60).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} min`;
-      if (h < 86400) return `${(h / 3600).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} h`;
-      if (h < 86400 * 60) return `${(h / 86400).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} jours`;
-      return `${(h / 86400 / 30).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} mois`;
-    };
     const COL = ['var(--h-calc)', 'var(--h-py)', 'var(--text-2)'];
 
     function draw() {
-      $('sc').querySelectorAll('button').forEach((b) => b.classList.toggle('active', (b.dataset.v === '1') === human));
       const W = 640, ox = 230, wpx = W - ox - 80, rowH = 22;
       const lo = -10, hi = -3; // 0,1 ns à 1 ms
       const X = (s: number) => ox + ((Math.log10(s) - lo) / (hi - lo)) * wpx;
@@ -65,13 +51,13 @@
       for (let e = lo; e <= hi; e++) {
         const x = X(10 ** e);
         g += `<line x1="${x}" y1="0" x2="${x}" y2="${LAT.length * rowH}" stroke="var(--border)" stroke-width="0.5"/>`;
-        g += `<text x="${x}" y="${LAT.length * rowH + 13}" text-anchor="middle" class="ax">${human ? humanize(10 ** e) : fmtTime(10 ** e)}</text>`;
+        g += `<text x="${x}" y="${LAT.length * rowH + 13}" text-anchor="middle" class="ax">${fmtTime(10 ** e)}</text>`;
       }
       LAT.forEach(([l, s, k], i) => {
         const y = i * rowH + 3;
         g += `<text x="${ox - 8}" y="${y + 12}" text-anchor="end" class="ax">${l}</text>`;
         g += `<rect x="${ox}" y="${y}" width="${Math.max(2, X(s) - ox)}" height="15" rx="3" fill="${COL[k]}" opacity="0.85"/>`;
-        g += `<text x="${X(s) + 6}" y="${y + 12}" class="ax v">${human ? humanize(s) : fmtTime(s)}</text>`;
+        g += `<text x="${X(s) + 6}" y="${y + 12}" class="ax v">${fmtTime(s)}</text>`;
       });
       const a = $('lat') as unknown as SVGSVGElement;
       a.setAttribute('viewBox', `0 0 ${W} ${LAT.length * rowH + 18}`);
@@ -91,7 +77,7 @@
         g += `<text x="${ox - 8}" y="${y + 12}" text-anchor="end" class="ax">${l}</text>`;
         g += `<rect x="${ox}" y="${y}" width="${wpx}" height="15" rx="3" fill="var(--surface-2)" stroke="var(--border)"/>`;
         g += `<rect x="${ox}" y="${y}" width="${wpx * done}" height="15" rx="3" fill="var(--text-2)" opacity="0.75"/>`;
-        g += `<text x="${ox + wpx + 6}" y="${y + 12}" class="ax v">${human ? humanize(t) : fmtTime(t)}</text>`;
+        g += `<text x="${ox + wpx + 6}" y="${y + 12}" class="ax v">${fmtTime(t)}</text>`;
       });
       const s = $('bw') as unknown as SVGSVGElement;
       s.setAttribute('viewBox', `0 0 ${W} ${BW.length * rowH + 4}`);
@@ -109,9 +95,7 @@
 </script>
 
 <style is:global>
-  .mladder .row { margin-bottom: 4px; }
-  .mladder .seg { display: inline-flex; gap: 6px; }
-  .mladder .seg button { font-size: 13px; padding: 4px 12px; }
+  .mladder .hlegend .sq.mem { background: var(--text-2); }
   .mladder .ft { font-size: 13px; font-weight: 500; margin: 12px 0 4px; display: flex; align-items: center; gap: 10px; }
   .mladder .go { font-size: 12px; padding: 2px 10px; }
   .mladder svg text.ax { font: 11px var(--font); fill: var(--text-2); }

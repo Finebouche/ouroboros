@@ -1,10 +1,10 @@
-# Cours (site Astro)
+# Ouroboros (site Astro)
 
-Site personnel de fiches de révision visuelles. Il héberge plusieurs cours :
+Site personnel de cours : des fiches de révision visuelles. Il héberge plusieurs cours :
 
 | Cours | Dossier | Unité | Contenu |
 |---|---|---|---|
-| Ouroboros | `ouroboros` | Module | architectures de langage récurrentes : récurrence en profondeur, dans le temps, leur couplage |
+| Transformers | `transformers` | Module | transformers et architectures récurrentes : récurrence en profondeur, dans le temps, leur couplage (projet de recherche Ouroboros) |
 | Preprocessing | `preprocessing` | Chapitre | prétraitement des données ; chapitre 1 : MFCC |
 | HPC | `hpc` | Chapitre | calcul haute performance : matériel et roofline, NumPy contre JAX, transformations, sharding, étude de cas `run_batched` |
 
@@ -22,10 +22,10 @@ URLs : `/` (liste des cours), `/<cours>/` (carte de progression), `/<cours>/<fic
 
 ```
 src/
-  content/chapters/<cours>/    un fichier par module ou chapitre (ouroboros/00-bases.mdx, preprocessing/01-mfcc.md…), contenu en français
+  content/chapters/<cours>/    un fichier par module ou chapitre (transformers/00-bases.mdx, preprocessing/01-mfcc.md…), contenu en français
   components/
     shared/                    composants communs à tous les cours : Quiz, Reveal, Refs
-    ouroboros/                 composants propres au cours Ouroboros : ArchSidebar, ArchMarker, DotLegend, ReachCone
+    transformers/              composants propres au cours Transformers : ArchSidebar, ArchMarker, DotLegend, ReachCone
       00-bases/                widgets du module 0 (+ qkvData.ts, données partagées par ces widgets)
       01-recurrence-profondeur/  widgets du module 1
     preprocessing/
@@ -66,7 +66,7 @@ Un module peut afficher un schéma collant à gauche en ajoutant `sidebar: trans
 
 Les `parts` valides sont `head`, `norm-final`, `norm1`, `qkv`, `attn`, `wo`, `kv`, `add1`, `norm2`, `mlp`, `add2`, `embed`. Une boîte du schéma peut porter plusieurs parties (`data-part="qkv kv"`). Le repère actif est le dernier qui a dépassé 40 % de la hauteur de l'écran. Après un changement de schéma de contenu (`content.config.ts`), redémarre le serveur de dev.
 
-## Couleurs des données (cours Ouroboros)
+## Couleurs des données (cours Transformers)
 
 Toujours passer par les variables de `global.css`, jamais par un code hexadécimal dans un widget :
 

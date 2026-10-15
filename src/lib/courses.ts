@@ -2,10 +2,10 @@ import { getCollection } from 'astro:content';
 
 // Les cours du site. La clé est le nom du dossier dans src/content/chapters/ et le premier segment de l'URL.
 export const COURSES = {
-  ouroboros: {
-    title: 'Ouroboros',
+  transformers: {
+    title: 'Transformers',
     unit: 'Module',
-    tagline: 'Récurrence en profondeur, récurrence dans le temps, et leur couplage.',
+    tagline: 'Les bases du transformer, puis récurrence en profondeur, récurrence dans le temps et leur couplage (projet de recherche Ouroboros).',
     intro:
       "Un cours visuel pour comprendre comment une récurrence en profondeur (un bloc bouclé T fois) et une récurrence dans le temps (un état transporté d'un token au suivant) peuvent coexister, et pourquoi certains couplages gardent l'entraînement parallèle.",
   },

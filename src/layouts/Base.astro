@@ -4,7 +4,7 @@ import 'katex/dist/katex.min.css';
 import { COURSES, type CourseId } from '../lib/courses';
 interface Props { title: string; wide?: boolean; course?: CourseId }
 const { title, wide = false, course } = Astro.props;
-const courseTitle = course ? COURSES[course].title : 'Cours';
+const courseTitle = course ? COURSES[course].title : 'Ouroboros';
 ---
 <!doctype html>
 <html lang="fr">
@@ -16,7 +16,7 @@ const courseTitle = course ? COURSES[course].title : 'Cours';
   <body>
     <header class="site-header">
       <div class:list={["shell", { wide }]}>
-        <a class="brand" href="/">Cours</a>
+        <a class="brand" href="/">Ouroboros</a>
         {course && <span class="crumb"><span aria-hidden="true">/ </span><a href={`/${course}/`}>{courseTitle}</a></span>}
       </div>
     </header>

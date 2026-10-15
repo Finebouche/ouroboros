@@ -168,3 +168,7 @@ article thead th { background: var(--surface-2); font-weight: 500; font-size: 14
   .hlegend .sq.py { background: var(--h-py); }
   .hlegend .sq.comp { background: var(--h-comp); }
   .hlegend .sq.exec { background: var(--h-exec); }
+/* encart du code couleur HPC */
+.hcode { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 0.7rem 1rem; margin: 1.5rem 0; }
+.hcode .hcl { font-size: 13px; font-weight: 500; }
+.hcode .hlegend { margin: 0; font-size: 13px; }

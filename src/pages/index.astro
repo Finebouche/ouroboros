@@ -10,7 +10,8 @@ const courses = await Promise.all(
 );
 ---
 <Base title="Mes cours">
-  <h1>Mes cours</h1>
+  <h1>Ouroboros</h1>
+  <p class="lead">Mes cours : des fiches de révision visuelles et interactives.</p>
   <ul class="courses">
     {courses.map((c) => (
       <li>
@@ -22,6 +23,7 @@ const courses = await Promise.all(
   </ul>
 </Base>
 <style>
+  .lead { color: var(--text-2); }
   .courses { list-style: none; padding: 0; }
   .courses li { border-bottom: 1px solid var(--border); padding: 1rem 0; }
   .ct { font-size: 20px; font-weight: 500; }
