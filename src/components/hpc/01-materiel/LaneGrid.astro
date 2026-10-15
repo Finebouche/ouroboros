@@ -1,0 +1,74 @@
+---
+// Chapitre HPC 1 : chaque point est une voie FMA FP32 (une multiplication-addition par cycle). Même taille de point partout :
+// la surface montre le parallélisme. En dessous : ce que la mémoire peut fournir à chaque voie.
+---
+<div class="widget lanes hp" data-widget="lanes">
+  <canvas data-ref="cv" role="img" aria-label="Voies de calcul FP32 de quatre machines, un point par voie"></canvas>
+  <table class="lt">
+    <thead><tr><th></th><th data-ref="h0"></th><th data-ref="h1"></th><th data-ref="h2"></th><th data-ref="h3"></th></tr></thead>
+    <tbody data-ref="tb"></tbody>
+  </table>
+  <p class="note">Fréquence déduite : crête / (2 × voies). Octets par voie et par cycle : débit mémoire / (voies × fréquence). Intensité d'équilibre : crête / débit, le nombre de FLOPs qu'il faut faire par octet lu pour que le calcul, et non la mémoire, limite.</p>
+</div>
+
+<script>
+  import { HWS, fmtRate } from '../hw';
+  document.querySelectorAll<HTMLElement>('[data-widget="lanes"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const cv = $('cv') as unknown as HTMLCanvasElement;
+    const hw = HWS.filter((h) => h.lanes);
+    const fr = (v: number, d = 2) => v.toLocaleString('fr-FR', { maximumFractionDigits: d });
+
+    hw.forEach((h, i) => ($(`h${i}`).textContent = h.name));
+    const rows: [string, (h: (typeof hw)[number]) => string][] = [
+      ['Voies FMA FP32', (h) => fr(h.lanes!, 0)],
+      ['Fréquence déduite', (h) => `${fr(h.vec! / (2 * h.lanes!) / 1e9)} GHz`],
+      ['Crête FP32', (h) => fmtRate(h.vec!, 'FLOP/s')],
+      ['Débit mémoire', (h) => fmtRate(h.bw, 'o/s')],
+      ['Octets par voie et par cycle', (h) => fr(h.bw / (h.lanes! * (h.vec! / (2 * h.lanes!))), 3)],
+      ['Intensité d’équilibre (FLOP/octet)', (h) => fr(h.vec! / h.bw, 1)],
+    ];
+    $('tb').innerHTML = rows.map(([l, f]) => `<tr><td>${l}</td>${hw.map((h) => `<td>${f(h)}</td>`).join('')}</tr>`).join('');
+
+    function draw() {
+      const cs = getComputedStyle(root);
+      const ink = cs.getPropertyValue('--h-calc').trim(), txt = cs.getPropertyValue('--text-2').trim();
+      // dessin en pixels physiques, pas entier : pas de moiré
+      const dpr = window.devicePixelRatio || 1;
+      const cssW = cv.parentElement!.clientWidth || 600;
+      const sides = hw.map((h) => Math.ceil(Math.sqrt(h.lanes!)));
+      const gapDev = Math.round(22 * dpr), cols = sides.reduce((a, b) => a + b, 0);
+      const pitch = Math.max(2, Math.floor((cssW * dpr - gapDev * (hw.length - 1) - 8) / cols));
+      const dot = Math.max(1, pitch - 1);
+      const labelDev = Math.round(34 * dpr), top = Math.round(4 * dpr);
+      const Wd = sides.reduce((a, b) => a + b * pitch, 0) + gapDev * (hw.length - 1) + 8;
+      const Hd = Math.max(...sides) * pitch + top + labelDev;
+      cv.width = Wd; cv.height = Hd;
+      cv.style.width = `${Wd / dpr}px`; cv.style.height = `${Hd / dpr}px`;
+      const ctx = cv.getContext('2d')!;
+      let x0 = 4;
+      const base = top + Math.max(...sides) * pitch;
+      hw.forEach((h, i) => {
+        const s = sides[i];
+        ctx.fillStyle = ink;
+        for (let k = 0; k < h.lanes!; k++) ctx.fillRect(x0 + (k % s) * pitch, base - (Math.floor(k / s) + 1) * pitch, dot, dot);
+        ctx.fillStyle = txt; ctx.font = `${Math.round(11 * dpr)}px system-ui, sans-serif`; ctx.textAlign = 'left';
+        ctx.fillText(h.name, x0, base + Math.round((i % 2 ? 27 : 13) * dpr));
+        ctx.fillText(h.lanes!.toLocaleString('fr-FR'), x0 + ctx.measureText(h.name + ' ').width, base + Math.round((i % 2 ? 27 : 13) * dpr));
+        x0 += s * pitch + gapDev;
+      });
+    }
+    draw();
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw);
+    window.addEventListener('resize', draw);
+  });
+</script>
+
+<style is:global>
+  .lanes canvas { display: block; max-width: 100%; }
+  .lanes table.lt { width: 100%; border-collapse: collapse; font-size: 13px; margin: 10px 0 4px; }
+  .lanes table.lt th, .lanes table.lt td { padding: 4px 8px; border-bottom: 1px solid var(--border); text-align: right; }
+  .lanes table.lt th:first-child, .lanes table.lt td:first-child { text-align: left; color: var(--text-2); }
+  .lanes table.lt th { font-weight: 500; }
+  .lanes .note { font-size: 13px; color: var(--text-2); line-height: 1.5; margin: 8px 0 0; }
+</style>

@@ -1,0 +1,92 @@
+---
+// Chapitre HPC 3 : scan séquentiel contre scan associatif (parallèle). Le graphe des dépendances : la hauteur est la profondeur
+// (le temps minimal avec une infinité de voies), le nombre de nœuds est le travail. Version parallèle dessinée : Hillis–Steele.
+---
+<div class="widget sdepth hp" data-widget="sdepth">
+  <div class="row"><span>Récurrence :</span><span class="seg" data-ref="md"></span><span class="sp">T :</span><span class="seg" data-ref="tt"></span></div>
+  <label class="posl"><span>Voies de calcul P</span><input type="range" data-ref="p" min="0" max="6" step="1" value="3" /><b data-ref="p-out"></b></label>
+  <pre class="code" data-ref="code"></pre>
+  <svg data-ref="svg" width="100%" role="img" aria-label="Graphe des dépendances du scan"></svg>
+  <div class="kpis">
+    <div><span>Profondeur</span><b data-ref="k1"></b></div>
+    <div><span>Travail (opérations)</span><b data-ref="k2"></b></div>
+    <div><span>Étapes avec P voies</span><b data-ref="k3"></b></div>
+  </div>
+  <p class="note" data-ref="note"></p>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="sdepth"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const pIn = $('p') as HTMLInputElement;
+    let assoc = true, T = 16;
+    const mk = (key: string, items: [string, number][], set: (v: number) => void) => items.forEach(([l, v]) => {
+      const b = document.createElement('button');
+      b.textContent = l; b.dataset.v = String(v);
+      b.addEventListener('click', () => { set(v); draw(); });
+      $(key).appendChild(b);
+    });
+    mk('md', [['non linéaire : h = tanh(W h + x)', 0], ['linéaire : h = a ⊙ h + b', 1]], (v) => (assoc = v === 1));
+    mk('tt', [['8', 8], ['16', 16], ['32', 32]], (v) => (T = v));
+
+    function draw() {
+      $('md').querySelectorAll('button').forEach((b) => b.classList.toggle('active', (b.dataset.v === '1') === assoc));
+      $('tt').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.v! === T));
+      const P = 2 ** +pIn.value;
+      $('p-out').textContent = String(P);
+      const W = 640, ox = 20, cw = (W - 2 * ox) / T, rh = assoc ? 34 : 11;
+      let g = '';
+      const node = (i: number, lvl: number, on = true) => `<circle cx="${ox + (i + 0.5) * cw}" cy="${10 + lvl * rh}" r="${Math.min(5, cw / 3)}" fill="${on ? 'var(--h-calc)' : 'var(--surface-2)'}" stroke="${on ? 'none' : 'var(--border)'}"/>`;
+      const edge = (i: number, l0: number, j: number, l1: number) => `<line x1="${ox + (i + 0.5) * cw}" y1="${10 + l0 * rh}" x2="${ox + (j + 0.5) * cw}" y2="${10 + l1 * rh}" stroke="var(--text-2)" stroke-width="0.8" opacity="0.6"/>`;
+      let depth = 0, work = 0, steps = 0;
+      if (!assoc) {
+        // chaîne : le pas t attend le pas t − 1
+        for (let t = 0; t < T; t++) { if (t > 0) g += edge(t - 1, t, t, t + 1); g += node(t, t + 1); }
+        for (let t = 0; t < T; t++) g += node(t, 0, false);
+        depth = T; work = T; steps = T;
+      } else {
+        // Hillis–Steele : au niveau d, l'élément i combine avec i − 2^d
+        const L = Math.ceil(Math.log2(T));
+        for (let t = 0; t < T; t++) g += node(t, 0, false);
+        for (let d = 0; d < L; d++) {
+          let ops = 0;
+          for (let i = 0; i < T; i++) {
+            const j = i - 2 ** d;
+            g += edge(i, d, i, d + 1);
+            if (j >= 0) { g += edge(j, d, i, d + 1); ops++; }
+            g += node(i, d + 1, j >= 0);
+          }
+          work += ops; steps += Math.ceil(ops / P);
+        }
+        depth = L;
+      }
+      const lvls = assoc ? Math.ceil(Math.log2(T)) + 1 : T + 1;
+      const s = $('svg') as unknown as SVGSVGElement;
+      s.setAttribute('viewBox', `0 0 ${W} ${lvls * rh + 14}`);
+      s.innerHTML = g;
+      $('code').textContent = assoc
+        ? '# (a, b) ∘ (a′, b′) = (a′ a, a′ b + b′)  : associatif\nA, H = jax.lax.associative_scan(combine, (a, b))'
+        : '# h_t dépend de h_(t-1) à travers tanh : rien à regrouper\n_, hs = jax.lax.scan(step, h0, xs)';
+      $('k1').textContent = `${depth} niveaux`;
+      $('k2').textContent = String(work);
+      $('k3').textContent = String(steps);
+      $('note').textContent = assoc
+        ? `Profondeur log₂ T : on regroupe les pas deux à deux. Prix : plus de travail (${work} combinaisons au lieu de ${T - 1} ici ; d’autres algorithmes, comme celui de Blelloch, gardent un travail linéaire). Utile si P est grand, ce qu’est un GPU.`
+        : 'Chaque pas attend le précédent : profondeur T, quel que soit le nombre de voies. Le parallélisme ne peut venir que du lot B ou de la largeur H.';
+    }
+    pIn.addEventListener('input', draw);
+    draw();
+  });
+</script>
+
+<style is:global>
+  .sdepth .row { margin-bottom: 4px; }
+  .sdepth .seg { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  .sdepth .seg button { font-size: 13px; padding: 4px 12px; }
+  .sdepth .sp { margin-left: 16px; }
+  .sdepth .posl { display: grid; grid-template-columns: 140px 1fr 40px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); margin: 8px 0; }
+  .sdepth .posl b { text-align: right; color: var(--text); font-weight: 500; }
+  .sdepth pre.code { background: var(--surface-2); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; line-height: 1.5; margin: 6px 0; white-space: pre-wrap; }
+  .sdepth .note { font-size: 14px; line-height: 1.5; margin: 8px 0 0; min-height: 3em; }
+  @media (max-width: 600px) { .sdepth .posl { grid-template-columns: 1fr; } }
+</style>

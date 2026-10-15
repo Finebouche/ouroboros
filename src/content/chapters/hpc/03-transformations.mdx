@@ -1,0 +1,96 @@
+---
+num: 3
+title: "Transformations et matériel : vmap, scan, grad"
+summary: "Ce que chaque transformation fait au matériel : vmap réutilise les données, scan reste séquentiel (sauf récurrence linéaire), grad garde la passe avant en mémoire."
+status: en-cours
+---
+import Reveal from '@/components/shared/Reveal.astro';
+import Quiz from '@/components/shared/Quiz.astro';
+import Refs from '@/components/shared/Refs.astro';
+import VmapReuse from '@/components/hpc/03-transformations/VmapReuse.astro';
+import ScanDepth from '@/components/hpc/03-transformations/ScanDepth.astro';
+import TapeMemory from '@/components/hpc/03-transformations/TapeMemory.astro';
+
+NumPy n'a ni `vmap`, ni `scan`, ni `grad`. Ce sont des **transformations de programme** : elles prennent une fonction pure et en rendent une autre. Chacune a une conséquence matérielle précise.
+
+## 1. `vmap` : regrouper pour réutiliser
+
+On écrit la fonction pour **un** exemple ; `vmap` ajoute un axe de lot à chaque primitive (règles de *batching*). Pour un produit matrice-vecteur, l'effet est de changer de catégorie BLAS :
+
+$$
+\underbrace{W\,s}_{\text{GEMV : } I \approx 2/b} \quad\xrightarrow{\ \texttt{vmap}\ }\quad \underbrace{S\,W^\top}_{\text{GEMM : } I \approx 2B/b}
+$$
+
+($b$ : octets par valeur, 4 en float32.)
+
+<VmapReuse />
+
+- **Le mécanisme** : $W$ est lu une fois pour $B$ vecteurs au lieu de $B$ fois. Les FLOPs sont identiques, les octets divisés par $B$.
+- **`in_axes`** dit quel argument porte le lot : `jax.vmap(f, in_axes=(None, 0))` partage $W$ et découpe $s$.
+- **Limite** : au-delà de l'équilibre, plus de lot n'accélère plus le pas (il est limité par le calcul), mais augmente la mémoire et la latence.
+
+## 2. `scan` : séquentiel par nature
+
+`lax.scan` compile le corps d'une boucle une seule fois et porte un état d'une itération à la suivante. Il ne rend pas les pas parallèles : la profondeur du calcul reste $T$.
+
+<ScanDepth />
+
+- **Récurrence non linéaire** ($h_t = \tanh(W h_{t-1} + x_t)$) : chaque pas attend le précédent. Le parallélisme ne peut venir que du lot $B$ et de la largeur $H$ : sur GPU, un petit $B \times H$ laisse la plupart des voies inactives à chaque pas.
+- **Récurrence linéaire** ($h_t = a_t \odot h_{t-1} + b_t$) : la composition de deux pas est encore un pas affine,
+
+$$
+(a, b) \circ (a', b') = (a' a,\ a' b + b'),
+$$
+
+et cette opération est **associative**. On peut donc regrouper les pas deux à deux : `lax.associative_scan` calcule les $T$ états avec une profondeur $O(\log T)$. C'est la raison d'être des modèles récurrents linéaires (Mamba, RWKV, DeltaNet…) : voir le cours Ouroboros, module 3.
+- **Brent** : avec $P$ voies, temps $\approx \text{travail}/P + \text{profondeur}$. Le scan parallèle fait plus de travail que le scan séquentiel ; il ne gagne que si $P$ est grand.
+
+## 3. `grad` : la mémoire du mode inverse
+
+`grad` d'une perte scalaire calcule un **VJP** (produit vecteur × jacobienne) : il remonte le calcul à l'envers, et a besoin des valeurs intermédiaires de la passe avant (les **résidus**). Pour un calcul de $T$ pas, la mémoire monte avec $T$.
+
+<TapeMemory />
+
+- **Coût en calcul** : chaque produit en avant en demande deux en arrière ($\nabla_W = X^\top E$, $\nabla_X = E W^\top$ pour $Y = XW$). Un pas arrière coûte donc environ deux pas avant.
+- **`jax.checkpoint`** (alias `jax.remat`) choisit ce qui est gardé et ce qui est recalculé. Par segments de longueur $k$ : pic $\approx T/k + k$ états, minimum $2\sqrt{T}$ pour $k = \sqrt{T}$, au prix d'environ une passe avant en plus (+ 33 % ici).
+- **Mode direct** (`jax.jvp`) : ne garde pas de résidus, mais coûte une passe par direction d'entrée. Pour une perte scalaire et beaucoup de paramètres, le mode inverse gagne.
+
+<div class="retain">
+
+**À retenir**
+
+- `vmap` : même FLOPs, $B$ fois moins d'octets pour les poids partagés ; GEMV → GEMM.
+- `scan` : une boucle compilée, profondeur $T$. Seule une récurrence linéaire (associative) se parallélise en profondeur $O(\log T)$ avec `associative_scan`.
+- `grad` : un pas arrière ≈ deux pas avant ; mémoire ∝ $T$ ; `jax.checkpoint` la ramène à $\approx 2\sqrt{T}$ pour une passe avant de plus.
+
+</div>
+
+<Refs items={[["jax.vmap", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/_autosummary/jax.vmap.html"], ["jax.lax.associative_scan", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/_autosummary/jax.lax.associative_scan.html"], ["Gradient checkpointing with jax.checkpoint (jax.remat)", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/gradient-checkpointing.html"], ["The Autodiff Cookbook", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/notebooks/autodiff_cookbook.html"]]} />
+
+<Quiz>
+
+**Q1.** $W$ fait $4096 \times 4096$ en float32. Combien d'octets de $W$ lit-on pour 64 produits $W s$ en boucle, et avec `vmap` ?
+
+<Reveal>
+
+$W$ fait $4096^2 \times 4 \approx 67$ Mo. En boucle : $64 \times 67$ Mo $\approx 4{,}3$ Go. Avec `vmap` : 67 Mo, lus une fois. L'intensité passe de $\approx 0{,}5$ à $\approx 32$ FLOP/octet.
+
+</Reveal>
+
+**Q2.** Pourquoi `associative_scan` ne s'applique-t-il pas à $h_t = \tanh(W h_{t-1} + x_t)$ ?
+
+<Reveal>
+
+Composer deux pas donne $\tanh(W \tanh(W h + x_1) + x_2)$ : ce n'est pas un pas de la même forme, il n'existe pas d'opération associative de taille fixe qui résume deux pas. Le linéaire, lui, reste affine après composition.
+
+</Reveal>
+
+**Q3.** $T = 400$ : quel pic de mémoire sans checkpoint, et au mieux avec ?
+
+<Reveal>
+
+Sans : 400 états. Avec des segments de $k = 20$ : $400/20 + 20 = 40$ états, pour environ une passe avant de plus.
+
+</Reveal>
+
+</Quiz>

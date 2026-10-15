@@ -1,0 +1,134 @@
+---
+num: 2
+title: "NumPy contre JAX : deux modèles d'exécution"
+summary: "Exécution immédiate contre programme tracé et compilé : coût fixe et asynchronisme, fusion et trafic mémoire, ce que fait XLA, cache de compilation."
+status: en-cours
+---
+import Reveal from '@/components/shared/Reveal.astro';
+import Quiz from '@/components/shared/Quiz.astro';
+import Refs from '@/components/shared/Refs.astro';
+import Legend from '@/components/hpc/Legend.astro';
+import Dispatch from '@/components/hpc/02-numpy-jax/Dispatch.astro';
+import FusionTape from '@/components/hpc/02-numpy-jax/FusionTape.astro';
+import XRay from '@/components/hpc/02-numpy-jax/XRay.astro';
+import TraceCache from '@/components/hpc/02-numpy-jax/TraceCache.astro';
+import Bench from '@/components/hpc/02-numpy-jax/Bench.astro';
+
+Même syntaxe, même mathématique, deux machines différentes :
+
+| | NumPy | JAX |
+|---|---|---|
+| Exécution | immédiate : chaque opération est un appel de bibliothèque | `jit` : la fonction est tracée, puis compilée en un programme par XLA |
+| Où vivent les tableaux | mémoire de l'hôte | mémoire de l'appareil (CPU, GPU, TPU) |
+| Retour à Python | après chaque opération | asynchrone : Python continue pendant que l'appareil calcule |
+| Opérations élément par élément | un passage mémoire par opération, un seul cœur | fusionnées en un noyau, sur l'appareil |
+| Tableaux | modifiables : `x[i] = v` | immuables : `x = x.at[i].set(v)` |
+| Type par défaut | float64 | float32 (`jax_enable_x64` pour float64) |
+| Aléatoire | état global | clés explicites : `jax.random.split(key)` |
+| Indice hors limites | erreur | lecture ramenée au bord, écriture ignorée |
+
+Le reste du chapitre montre ce que les trois premières lignes coûtent ou rapportent.
+
+<Legend />
+
+## 1. Le coût fixe et l'asynchronisme
+
+Une chaîne de $k$ opérations élément par élément sur $N$ valeurs, exécutée de trois façons. Deux voies : l'**hôte** (l'interpréteur Python) et l'**appareil** (qui calcule).
+
+<Dispatch />
+
+- **Petits tableaux** : le temps est fait de coûts fixes (appel, dispatch, lancement de noyau). JAX opération par opération est alors plus lent que NumPy ; `jit` ne paie le coût fixe qu'une fois pour toute la chaîne.
+- **Grands tableaux** : le temps est fait de passages mémoire. La fusion en divise le nombre par $k$, le GPU multiplie le débit par environ 200 par rapport à un cœur CPU.
+- **Asynchronisme** : sous JAX, l'hôte ne fait que poser des tâches dans une file ; il peut prendre de l'avance pendant que l'appareil calcule. D'où la règle de mesure : `f(x).block_until_ready()`, sinon on mesure le temps de mise en file.
+- **Transferts** : coche « données sur l'hôte » ; à 25 Go/s, le PCIe coûte plus que le calcul sur la HBM. Les données doivent rester sur l'appareil d'un appel à l'autre.
+
+## 2. La fusion : un film de la mémoire
+
+<FusionTape />
+
+- NumPy écrit chaque résultat intermédiaire en mémoire, puis le relit : $8k$ octets par valeur pour une chaîne de $k$ opérations (float32).
+- `jit` lit l'entrée une fois, enchaîne les $k$ opérations dans les registres, écrit la sortie une fois : 8 octets par valeur. Les FLOPs sont les mêmes ; l'intensité arithmétique est multipliée par $k$ (chapitre 1).
+- Si le tableau tient dans un cache, les temporaires de NumPy y restent et l'écart diminue : la fusion compte surtout pour les tableaux plus grands que les caches.
+
+## 3. Radiographie de `jit`
+
+`jit` passe par trois représentations : le code Python, le **jaxpr** (la liste des primitives, obtenue en traçant), puis les **noyaux** produits par XLA après fusion.
+
+<XRay />
+
+Pour voir les deux dernières sur ta machine :
+
+```python
+print(jax.make_jaxpr(f)(x, W, b))                    # le jaxpr
+print(jax.jit(f).lower(x, W, b).compile().as_text())  # le programme optimisé par XLA
+```
+
+- Les **produits matriciels** sont confiés à une bibliothèque (cuBLAS sur GPU) ou à un noyau généré ; tout le reste est fusionné autour d'eux.
+- **Recalculer plutôt que relire** : une exponentielle coûte moins qu'un aller-retour en mémoire, donc XLA duplique volontiers des opérations bon marché dans plusieurs noyaux.
+- Le découpage affiché est typique d'XLA sur GPU ; il change selon la version, le matériel et les formes. Le texte compilé fait foi.
+
+## 4. Le cache de compilation
+
+Le premier appel trace (formes et dtypes seulement, pas les valeurs) puis compile ; les appels compatibles réutilisent l'exécutable.
+
+<TraceCache />
+
+Conséquences du traçage :
+
+| Écrit comme NumPy | Sous `jit` | Pourquoi |
+|---|---|---|
+| `if x > 0:` | `lax.cond(x > 0, f, g, x)` | la valeur de `x` est inconnue au traçage |
+| `x[x > 0]` | `jnp.where(x > 0, x, 0)` | la taille de la sortie dépendrait des valeurs |
+| `for t in range(T):` | `lax.scan(step, h0, xs)` | une boucle Python est déroulée en $T$ copies |
+| `np.random.rand()` | `jax.random.normal(key, shape)` | pas d'état global dans une fonction pure |
+
+## 5. Une mesure réelle, relue
+
+Mesures du support d'origine : un RNN ($T = 200$, $B = 32$, float32) sur un **CPU virtuel à 1 thread**, en NumPy naïf, NumPy avec $x W_x$ pré-calculé, et JAX (`scan` + `jit`).
+
+<Bench />
+
+- **Ce que le modèle de la section 1 explique** : sur un seul thread CPU, il n'y a ni HBM ni milliers de voies. À petit $H$, le gain de JAX vient surtout du **coût fixe** : 200 pas, donc 600 à 1 000 appels NumPy, contre un seul appel de l'exécutable. À grand $H$, d'autres causes s'ajoutent (bibliothèque GEMM, fusion) ; la mesure ne les sépare pas. D'où un gain modeste (1,5 à 2,5 ×) et une compilation de 70 à 140 ms à amortir.
+- **Ce que la mesure ne dit pas** : rien sur un GPU, où le même code gagnerait surtout par le débit et le parallélisme du lot (chapitre 3).
+
+<div class="retain">
+
+**À retenir**
+
+- NumPy : une opération, un appel, une passe mémoire, un cœur. JAX `jit` : un programme, des noyaux fusionnés, sur l'appareil, en asynchrone.
+- Petits tableaux : le coût fixe domine, `jit` le paie une fois. Grands tableaux : les passes mémoire dominent, la fusion les divise par $k$ et le GPU multiplie le débit.
+- Toujours `block_until_ready()` pour mesurer ; garder les données sur l'appareil.
+- Le jaxpr montre les primitives ; `lower(...).compile().as_text()` montre ce que XLA en a fait.
+- La compilation est payée par forme, dtype, structure et argument statique ; pas par valeur.
+
+</div>
+
+<Refs items={[["Asynchronous dispatch", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/async_dispatch.html"], ["Tracing, jit et arguments statiques", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/tracing.html"], ["Control flow and logical operators with jit", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/control-flow.html"]]} />
+
+<Quiz>
+
+**Q1.** Dans le widget, sur GPU, à partir de quelle taille environ `jit` devient-il limité par la mémoire plutôt que par le coût fixe ? Que vaut un passage de $10^6$ valeurs sur la HBM d'un H100 ?
+
+<Reveal>
+
+$8 \cdot 10^6$ octets à $3{,}35$ To/s : $\approx 2{,}4$ µs, du même ordre que le lancement d'un noyau (≈ 5 µs). La mémoire domine au-delà de quelques millions de valeurs ; en dessous, ce sont les coûts fixes.
+
+</Reveal>
+
+**Q2.** Pourquoi `t = time.time(); y = f(x); print(time.time() - t)` donne-t-il un temps faux avec JAX ?
+
+<Reveal>
+
+L'appel rend la main dès que le travail est mis en file (dispatch asynchrone) : on mesure la mise en file, pas le calcul. Il faut `f(x).block_until_ready()`.
+
+</Reveal>
+
+**Q3.** Pour softmax, XLA recalcule $\exp(x - m)$ dans deux noyaux. Pourquoi est-ce un bon choix ?
+
+<Reveal>
+
+L'opération est limitée par la mémoire : écrire puis relire un tableau de taille $N$ coûte $8N$ octets, alors qu'une exponentielle de plus est presque gratuite pour des voies de calcul sous-occupées.
+
+</Reveal>
+
+</Quiz>

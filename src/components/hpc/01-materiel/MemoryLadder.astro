@@ -1,0 +1,119 @@
+---
+// Chapitre HPC 1 : l'échelle des délais (latence) et des débits, de la voie de calcul au réseau.
+// Latences : ordres de grandeur typiques, variables d'une machine à l'autre. Débits : valeurs nominales (voir hw.ts et le texte).
+---
+<div class="widget mladder hp" data-widget="mladder">
+  <div class="row"><span>Échelle :</span><span class="seg" data-ref="sc"></span></div>
+  <div class="ft">Latence : combien de temps avant que la première donnée arrive</div>
+  <svg data-ref="lat" width="100%" role="img" aria-label="Échelle logarithmique des latences"></svg>
+  <div class="ft">Débit : combien de temps pour déplacer 1 Go <button class="go" data-ref="go">Lancer</button></div>
+  <svg data-ref="bw" width="100%" role="img" aria-label="Temps pour déplacer 1 Go à travers chaque lien"></svg>
+  <div class="kpis">
+    <div><span>FLOPs qu'un H100 fait pendant un accès DRAM (≈ 90 ns)</span><b data-ref="k1"></b></div>
+    <div><span>… pendant un appel Python (≈ 1 µs)</span><b data-ref="k2"></b></div>
+  </div>
+</div>
+
+<script>
+  import { fmtTime, fmtRate } from '../hw';
+  document.querySelectorAll<HTMLElement>('[data-widget="mladder"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    // [libellé, secondes, groupe] ; groupe : 0 = calcul, 1 = pilotage (appel, lancement), 2 = mémoire et transferts
+    const LAT: [string, number, number][] = [
+      ['une FMA (1 cycle à 3 GHz)', 0.33e-9, 0],
+      ['cache L1', 1e-9, 2],
+      ['cache L2', 4e-9, 2],
+      ['cache L3', 15e-9, 2],
+      ['mémoire principale (DRAM)', 90e-9, 2],
+      ['appel d’une opération NumPy', 1e-6, 1],
+      ['lancement d’un noyau GPU', 5e-6, 1],
+      ['appel d’une fonction jit JAX', 10e-6, 1],
+      ['transfert PCIe de 1 Mo', 1e6 / 32e9 + 2e-6, 2],
+      ['aller-retour réseau en centre de calcul', 500e-6, 2],
+    ];
+    const BW: [string, number][] = [
+      ['PCIe 4.0 x16 (hôte ↔ GPU, théorique)', 32e9],
+      ['DRAM portable (2 canaux DDR5)', 76.8e9],
+      ['DRAM serveur (8 canaux DDR5)', 307e9],
+      ['NVLink 4 (H100, total)', 900e9],
+      ['HBM2e (A100 80 Go)', 2.039e12],
+      ['HBM3 (H100 SXM)', 3.35e12],
+    ];
+    let human = false;
+    [['réelle', 0], ['humaine (1 ns devient 1 s)', 1]].forEach(([l, v]) => {
+      const b = document.createElement('button');
+      b.textContent = String(l); b.dataset.v = String(v);
+      b.addEventListener('click', () => { human = v === 1; draw(); });
+      $('sc').appendChild(b);
+    });
+    const humanize = (s: number) => {
+      const h = s * 1e9; // secondes « humaines »
+      if (h < 60) return `${h.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} s`;
+      if (h < 3600) return `${(h / 60).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} min`;
+      if (h < 86400) return `${(h / 3600).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} h`;
+      if (h < 86400 * 60) return `${(h / 86400).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} jours`;
+      return `${(h / 86400 / 30).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} mois`;
+    };
+    const COL = ['var(--h-calc)', 'var(--h-py)', 'var(--text-2)'];
+
+    function draw() {
+      $('sc').querySelectorAll('button').forEach((b) => b.classList.toggle('active', (b.dataset.v === '1') === human));
+      const W = 640, ox = 230, wpx = W - ox - 80, rowH = 22;
+      const lo = -10, hi = -3; // 0,1 ns à 1 ms
+      const X = (s: number) => ox + ((Math.log10(s) - lo) / (hi - lo)) * wpx;
+      let g = '';
+      for (let e = lo; e <= hi; e++) {
+        const x = X(10 ** e);
+        g += `<line x1="${x}" y1="0" x2="${x}" y2="${LAT.length * rowH}" stroke="var(--border)" stroke-width="0.5"/>`;
+        g += `<text x="${x}" y="${LAT.length * rowH + 13}" text-anchor="middle" class="ax">${human ? humanize(10 ** e) : fmtTime(10 ** e)}</text>`;
+      }
+      LAT.forEach(([l, s, k], i) => {
+        const y = i * rowH + 3;
+        g += `<text x="${ox - 8}" y="${y + 12}" text-anchor="end" class="ax">${l}</text>`;
+        g += `<rect x="${ox}" y="${y}" width="${Math.max(2, X(s) - ox)}" height="15" rx="3" fill="${COL[k]}" opacity="0.85"/>`;
+        g += `<text x="${X(s) + 6}" y="${y + 12}" class="ax v">${human ? humanize(s) : fmtTime(s)}</text>`;
+      });
+      const a = $('lat') as unknown as SVGSVGElement;
+      a.setAttribute('viewBox', `0 0 ${W} ${LAT.length * rowH + 18}`);
+      a.innerHTML = g;
+      drawBw(1);
+      $('k1').textContent = fmtRate(90e-9 * 67e12, 'FLOP');
+      $('k2').textContent = fmtRate(1e-6 * 67e12, 'FLOP');
+    }
+
+    // les barres se remplissent à une vitesse proportionnelle au débit
+    function drawBw(frac: number) {
+      const W = 640, ox = 230, wpx = W - ox - 80, rowH = 22;
+      const tmax = 1e9 / BW[0][1];
+      let g = '';
+      BW.forEach(([l, b], i) => {
+        const y = i * rowH + 3, t = 1e9 / b, done = Math.min(1, (frac * tmax) / t);
+        g += `<text x="${ox - 8}" y="${y + 12}" text-anchor="end" class="ax">${l}</text>`;
+        g += `<rect x="${ox}" y="${y}" width="${wpx}" height="15" rx="3" fill="var(--surface-2)" stroke="var(--border)"/>`;
+        g += `<rect x="${ox}" y="${y}" width="${wpx * done}" height="15" rx="3" fill="var(--text-2)" opacity="0.75"/>`;
+        g += `<text x="${ox + wpx + 6}" y="${y + 12}" class="ax v">${human ? humanize(t) : fmtTime(t)}</text>`;
+      });
+      const s = $('bw') as unknown as SVGSVGElement;
+      s.setAttribute('viewBox', `0 0 ${W} ${BW.length * rowH + 4}`);
+      s.innerHTML = g;
+    }
+    let raf = 0;
+    $('go').addEventListener('click', () => {
+      cancelAnimationFrame(raf);
+      const t0 = performance.now(), dur = 2500; // la barre la plus lente met 2,5 s
+      const tick = (now: number) => { const f = Math.min(1, (now - t0) / dur); drawBw(f); if (f < 1) raf = requestAnimationFrame(tick); };
+      raf = requestAnimationFrame(tick);
+    });
+    draw();
+  });
+</script>
+
+<style is:global>
+  .mladder .row { margin-bottom: 4px; }
+  .mladder .seg { display: inline-flex; gap: 6px; }
+  .mladder .seg button { font-size: 13px; padding: 4px 12px; }
+  .mladder .ft { font-size: 13px; font-weight: 500; margin: 12px 0 4px; display: flex; align-items: center; gap: 10px; }
+  .mladder .go { font-size: 12px; padding: 2px 10px; }
+  .mladder svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .mladder svg text.ax.v { fill: var(--text); }
+</style>

@@ -1,6 +1,6 @@
 ---
-num: 2
-title: "Un vrai code : run_batched"
+num: 5
+title: "Étude de cas : run_batched"
 summary: "Exécuter des réservoirs reservoirpy.jax sur des milliers de séquences de longueurs variables : vmap, scan, masque, formes en paliers, coûts."
 status: en-cours
 ---
@@ -14,7 +14,7 @@ import MaskDemo from '@/components/hpc/02-run-batched/MaskDemo.astro';
 import SortSim from '@/components/hpc/02-run-batched/SortSim.astro';
 import RunCost from '@/components/hpc/02-run-batched/RunCost.astro';
 
-Le chapitre 1 était un RNN en JAX. Ici, on lit un vrai code : `run_batched`, qui exécute des **réservoirs** de `reservoirpy.jax` par lots, sur des milliers de séquences de longueurs variables. Les idées : `vmap` sur le lot, `scan` sur le temps, un masque pour les longueurs, des formes en paliers pour limiter les compilations.
+Les chapitres précédents donnent les outils ; ici, on lit un vrai code : `run_batched`, qui exécute des **réservoirs** de `reservoirpy.jax` par lots, sur des milliers de séquences de longueurs variables. Les idées : `vmap` sur le lot, `scan` sur le temps, un masque pour les longueurs, des formes en paliers pour limiter les compilations.
 
 Sources (d'après le support dont ce cours s'inspire) : le fichier `run_batched`, et le code de `reservoirpy.jax` (`jax/node.py`, `nodes/reservoir.py`, `nodes/intrinsic_plasticity.py`, branche principale, commit du 17 juin 2026). Je n'ai pas relu ce dépôt : les points signalés *à vérifier* le restent.
 
@@ -23,12 +23,12 @@ Sources (d'après le support dont ce cours s'inspire) : le fichier `run_batched`
 | Sigle | Sens |
 |---|---|
 | réservoir (ESN) | *echo state network* : RNN à poids aléatoires fixes ; seule une lecture linéaire est entraînée |
-| `lr` | *leak rate*, taux de fuite des neurones (≠ `LR`, le pas d'apprentissage du chapitre 1) |
+| `lr` | *leak rate*, taux de fuite des neurones (≠ `LR`, un pas d'apprentissage) |
 | IP | *intrinsic plasticity* : gain $a$ et biais $b$ réglés par neurone |
 | HPO | *hyperparameter optimization* : un nouveau réservoir à chaque essai |
 | rembourrage | *padding* : compléter par des zéros jusqu'à une forme fixe |
 
-## 1. Un réservoir, c'est le RNN du chapitre 1 à poids fixes
+## 1. Un réservoir, c'est un RNN à poids fixes
 
 $$
 s_{t+1} = (1 - lr)\, s_t + lr \cdot f\big(W s_t + W_{in}\, u_{t+1} + \text{bias}\big)
@@ -36,7 +36,7 @@ $$
 
 $s$ : état ($N$ neurones), $u$ : entrée ($D$), $f$ : activation (`tanh` par défaut).
 
-| Chapitre 1 (RNN) | `reservoirpy.jax` | Rôle |
+| RNN classique | `reservoirpy.jax` | Rôle |
 |---|---|---|
 | $h_t$ | `state["out"]` $(N,)$ | état |
 | $W_h$ $(H \times H)$ | `W` $(N \times N)$ | récurrent : aléatoire, fixe |
@@ -46,7 +46,7 @@ $s$ : état ($N$ neurones), $u$ : entrée ($D$), $f$ : activation (`tanh` par d�
 | (aucun) | $a$, $b$ (`IPReservoir`) | gain et biais de plasticité intrinsèque |
 
 - **Pas de `grad`** : `W` et `Win` sont tirés au hasard puis figés. Seule une lecture linéaire (par exemple une régression ridge) est entraînée ; `IPReservoir` règle aussi $a$ et $b$ par une règle locale. Tout le coût est dans la passe avant, répétée sur beaucoup de séquences.
-- **Convention colonne** : `W @ s`, et non $xW$ comme au chapitre 1.
+- **Convention colonne** : `W @ s`, et non $xW$ (convention ligne).
 
 ## 2. Le point de départ : une série à la fois
 
@@ -208,9 +208,9 @@ Exemple : 256 lignes, 1 024 pas, $N = 1000$, $D = 10$ donne $\approx 5{,}3 \cdot
 5. **Égalité avec reservoirpy** : `vmap` remplace des GEMV par un GEMM, donc l'ordre des sommes peut changer ; vérifier par `np.allclose`.
 6. **Matrices creuses** : par défaut `W`, `Win` sont des BCOO ; densifier ou garder le creux ; `jnp.asarray` ne densifie pas un BCOO (*à vérifier*).
 
-**Chaque idée du chapitre 1 se retrouve dans le code :**
+**Chaque idée des chapitres 2 à 4 se retrouve dans le code :**
 
-| Chapitre 1 | Dans `run_batched` | Effet |
+| Notion | Dans `run_batched` | Effet |
 |---|---|---|
 | `scan` sur $T$ | `jax.lax.scan(scan_step, state0, …)` | boucle temporelle compilée |
 | `vmap` sur $B$ | `jax.vmap(partial(_step.__wrapped__, node))` | GEMV → GEMM |
@@ -242,7 +242,7 @@ FLOPs : $2048 \times 2 \times 512 \times 500 \times 520 \approx 5{,}5 \cdot 10^{
 
 </Reveal>
 
-**Q2.** Quelle différence essentielle avec le chapitre 1 explique que tout le gain vienne de la passe avant ?
+**Q2.** Quelle différence essentielle avec l'entraînement d'un RNN explique que tout le gain vienne de la passe avant ?
 
 <Reveal>
 

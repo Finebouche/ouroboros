@@ -1,0 +1,101 @@
+---
+// Chapitre HPC 3 : la mémoire pendant grad. Le mode inverse garde les valeurs de la passe avant (les résidus) jusqu'à la passe arrière.
+// Avec jax.checkpoint par segments : on ne garde que les frontières, on recalcule l'intérieur d'un segment juste avant de le remonter.
+// Unités : un pas avant = 1, un pas arrière = 2 (ordre de grandeur courant) ; un état gardé = 1 unité de mémoire.
+---
+<div class="widget tape hp" data-widget="tape">
+  <div class="row"><span>Stratégie :</span><span class="seg" data-ref="md"></span></div>
+  <div class="sl">
+    <label><span>Pas T</span><input type="range" data-ref="t" min="16" max="256" step="16" value="64" /><b data-ref="t-out"></b></label>
+    <label><span>Longueur d'un segment k</span><input type="range" data-ref="k" min="2" max="64" step="1" value="8" /><b data-ref="k-out"></b></label>
+  </div>
+  <svg data-ref="svg" width="100%" role="img" aria-label="Mémoire occupée au fil du temps pendant le calcul du gradient"></svg>
+  <div class="kpis">
+    <div><span>Pic de mémoire</span><b data-ref="k1"></b></div>
+    <div><span>Temps total</span><b data-ref="k2"></b></div>
+    <div><span>Optimum k ≈ √T</span><b data-ref="k3"></b></div>
+  </div>
+  <p class="note">Bornes simples : elles supposent que la perte n'oblige pas à garder tous les états. Le facteur 2 du pas arrière est un ordre de grandeur (deux produits matriciels pour un en avant).</p>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="tape"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const inp = (r: string) => $(r) as HTMLInputElement;
+    let remat = true;
+    [['tout garder', 0], ['jax.checkpoint par segments', 1]].forEach(([l, v]) => {
+      const b = document.createElement('button');
+      b.textContent = String(l); b.dataset.v = String(v);
+      b.addEventListener('click', () => { remat = v === 1; draw(); });
+      $('md').appendChild(b);
+    });
+    type Seg = { t0: number; t1: number; m0: number; m1: number; ph: 'fwd' | 'rec' | 'bwd' };
+    function simulate(T: number, k: number, rm: boolean): Seg[] {
+      const out: Seg[] = [];
+      let t = 0, m = 0;
+      const push = (dt: number, dm: number, ph: Seg['ph']) => { out.push({ t0: t, t1: t + dt, m0: m, m1: m + dm, ph }); t += dt; m += dm; };
+      if (!rm) {
+        for (let i = 0; i < T; i++) push(1, 1, 'fwd');
+        for (let i = 0; i < T; i++) push(2, -1, 'bwd');
+        return out;
+      }
+      const n = Math.ceil(T / k);
+      for (let s = 0; s < n; s++) { const len = Math.min(k, T - s * k); push(len, len === 0 ? 0 : 1, 'fwd'); } // une frontière gardée par segment
+      for (let s = n - 1; s >= 0; s--) {
+        const len = Math.min(k, T - s * k);
+        for (let i = 0; i < len; i++) push(1, 1, 'rec');
+        for (let i = 0; i < len; i++) push(2, -1, 'bwd');
+        push(0, -1, 'bwd'); // la frontière du segment est libérée
+      }
+      return out;
+    }
+    function draw() {
+      $('md').querySelectorAll('button').forEach((b) => b.classList.toggle('active', (b.dataset.v === '1') === remat));
+      const T = +inp('t').value;
+      inp('k').max = String(T);
+      const k = Math.min(+inp('k').value, T);
+      inp('k').disabled = !remat;
+      $('t-out').textContent = String(T); $('k-out').textContent = String(k);
+      const segs = simulate(T, k, remat);
+      const tEnd = segs[segs.length - 1].t1, peak = Math.max(...segs.map((s) => Math.max(s.m0, s.m1)));
+      const ref = simulate(T, k, false), tRef = ref[ref.length - 1].t1;
+      const W = 640, ox = 40, pw = W - ox - 10, H = 190, oy = 22, ph = H - 46;
+      const X = (t: number) => ox + (t / Math.max(tEnd, tRef)) * pw, Y = (m: number) => oy + ph - (m / T) * ph;
+      let g = '';
+      // bande des phases
+      const CL: Record<string, [string, number, string]> = { fwd: ['var(--h-calc)', 0.55, 'avant'], rec: ['var(--h-calc)', 0.25, 'recalcul'], bwd: ['var(--h-calc)', 0.95, 'arrière'] };
+      segs.forEach((s) => { if (s.t1 > s.t0) g += `<rect x="${X(s.t0)}" y="4" width="${Math.max(0.5, X(s.t1) - X(s.t0))}" height="10" fill="${CL[s.ph][0]}" opacity="${CL[s.ph][1]}"/>`; });
+      // courbe de mémoire
+      let path = `M${X(0)} ${Y(0)}`;
+      segs.forEach((s) => { path += `L${X(s.t1)} ${Y(s.m1)}`; });
+      g += `<path d="${path}L${X(tEnd)} ${Y(0)}Z" fill="var(--text-2)" opacity="0.18"/><path d="${path}" fill="none" stroke="var(--text)" stroke-width="1.6"/>`;
+      g += `<line x1="${ox}" y1="${Y(peak)}" x2="${ox + pw}" y2="${Y(peak)}" stroke="var(--hl-stroke)" stroke-dasharray="4 3"/><text x="${ox + pw - 2}" y="${Y(peak) - 4}" text-anchor="end" class="ax hl">pic : ${peak}</text>`;
+      g += `<line x1="${ox}" y1="${Y(0)}" x2="${ox + pw}" y2="${Y(0)}" stroke="var(--border)"/><text x="${ox - 6}" y="${Y(T) + 4}" text-anchor="end" class="ax">${T}</text><text x="${ox - 6}" y="${Y(0) + 4}" text-anchor="end" class="ax">0</text>`;
+      g += `<text x="${ox + pw / 2}" y="${H - 4}" text-anchor="middle" class="ax">temps (un pas avant = 1)</text>`;
+      g += `<text x="${ox}" y="${H - 16}" class="ax">mémoire : états gardés</text>`;
+      [['avant', 0.55], ['recalcul', 0.25], ['arrière', 0.95]].forEach(([l, o], i) => { g += `<rect x="${ox + pw - 210 + i * 72}" y="${H - 26}" width="10" height="10" fill="var(--h-calc)" opacity="${o}"/><text x="${ox + pw - 196 + i * 72}" y="${H - 17}" class="ax">${l}</text>`; });
+      const s = $('svg') as unknown as SVGSVGElement;
+      s.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      s.innerHTML = g;
+      $('k1').textContent = `${peak} états${remat ? ` (au lieu de ${T})` : ''}`;
+      $('k2').textContent = `${tEnd}${remat ? ` (+ ${Math.round(((tEnd - tRef) / tRef) * 100)} %)` : ''}`;
+      const ko = Math.round(Math.sqrt(T));
+      $('k3').textContent = `k = ${ko} → pic ≈ ${Math.ceil(T / ko) + ko}`;
+    }
+    ['t', 'k'].forEach((r) => inp(r).addEventListener('input', draw));
+    draw();
+  });
+</script>
+
+<style is:global>
+  .tape .row { margin-bottom: 4px; }
+  .tape .seg { display: inline-flex; gap: 6px; }
+  .tape .seg button { font-size: 13px; padding: 4px 12px; }
+  .tape .sl { display: grid; gap: 4px; margin: 8px 0; }
+  .tape .sl label { display: grid; grid-template-columns: 180px 1fr 40px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); }
+  .tape .sl b { text-align: right; color: var(--text); font-weight: 500; }
+  .tape svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .tape svg text.ax.hl { fill: var(--hl-text); font-weight: 500; }
+  .tape .note { font-size: 13px; color: var(--text-2); line-height: 1.5; margin: 8px 0 0; }
+  @media (max-width: 600px) { .tape .sl label { grid-template-columns: 1fr; } }
+</style>

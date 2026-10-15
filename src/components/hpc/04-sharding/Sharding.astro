@@ -1,0 +1,119 @@
+---
+// Chapitre HPC 4 : Y = X W sur une grille de 8 appareils (2 × 4, axes « data » et « model »).
+// Chaque bloc est coloré par l'appareil qui le possède ; un bloc répliqué porte les pastilles de tous ses propriétaires.
+// Tailles : B = 1024, D = H = 4096, float32.
+---
+<div class="widget shard hp" data-widget="shard">
+  <div class="row"><span>Stratégie :</span><span class="seg" data-ref="st"></span></div>
+  <div class="grid">
+    <div>
+      <div class="ft">La grille d'appareils</div>
+      <svg data-ref="mesh" width="100%" role="img" aria-label="Grille de 8 appareils, 2 × 4"></svg>
+    </div>
+    <div>
+      <div class="ft">Qui possède quoi <span>(X : B × D, W : D × H, Y : B × H)</span></div>
+      <svg data-ref="mats" width="100%" role="img" aria-label="Répartition des blocs de X, W et Y entre appareils"></svg>
+    </div>
+  </div>
+  <pre class="code" data-ref="code"></pre>
+  <div class="kpis">
+    <div><span>W par appareil</span><b data-ref="k1"></b></div>
+    <div><span>Communication, passe avant</span><b data-ref="k2"></b></div>
+    <div><span>Communication, gradient de W</span><b data-ref="k3"></b></div>
+  </div>
+  <p class="note" data-ref="note"></p>
+</div>
+
+<script>
+  import { fmtRate } from '../hw';
+  document.querySelectorAll<HTMLElement>('[data-widget="shard"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const DATA = 2, MODEL = 4, B = 1024, D = 4096, H = 4096;
+    const dev = (d: number, m: number) => d * MODEL + m;
+    const color = (i: number) => `hsl(${(205 + i * 41) % 360}, 24%, ${i % 2 ? 60 : 48}%)`;
+    // spec : pour chaque dimension, l'axe de la grille qui la découpe (null = répliqué)
+    type Spec = [('data' | 'model' | null), ('data' | 'model' | null)];
+    type S = { id: string; label: string; X: Spec; W: Spec; Y: Spec; fwd: string; fwdBytes: number; grad: string; gradBytes: number; note: string };
+    const ring = (size: number, p: number) => (2 * (p - 1) / p) * size; // octets envoyés par appareil, all-reduce en anneau
+    const ST: S[] = [
+      { id: 'dp', label: 'données', X: ['data', null], W: [null, null], Y: ['data', null], fwd: 'aucune', fwdBytes: 0, grad: 'all-reduce de ∇W sur « data »', gradBytes: ring(D * H * 4, DATA),
+        note: 'Chaque groupe traite sa moitié du lot avec une copie complète de W. Rien à échanger en avant ; les gradients de W doivent être additionnés entre groupes.' },
+      { id: 'col', label: 'modèle, colonnes de W', X: [null, null], W: [null, 'model'], Y: [null, 'model'], fwd: 'aucune', fwdBytes: 0, grad: 'aucune (chacun a sa part de ∇W)', gradBytes: 0,
+        note: 'Chaque appareil calcule ses colonnes de Y : W est divisé par 4 en mémoire, X est répliqué. La couche suivante devra peut-être regrouper Y (all-gather).' },
+      { id: 'row', label: 'modèle, lignes de W', X: [null, 'model'], W: ['model', null], Y: [null, null], fwd: 'all-reduce de Y (sommes partielles)', fwdBytes: ring(B * H * 4, MODEL), grad: 'aucune (chacun a sa part de ∇W)', gradBytes: 0,
+        note: 'La dimension contractée D est découpée : chaque appareil produit une somme partielle de tout Y, qu’il faut additionner (all-reduce, ou reduce-scatter si Y peut rester découpé).' },
+      { id: '2d', label: 'données × modèle', X: ['data', null], W: [null, 'model'], Y: ['data', 'model'], fwd: 'aucune', fwdBytes: 0, grad: 'all-reduce de la part de ∇W sur « data »', gradBytes: ring((D * H * 4) / MODEL, DATA),
+        note: 'Les deux à la fois : chaque appareil a un quart de W et la moitié du lot. Y est découpé selon les deux axes.' },
+    ];
+    let st = ST[0];
+    ST.forEach((s) => {
+      const b = document.createElement('button');
+      b.textContent = s.label; b.dataset.v = s.id;
+      b.addEventListener('click', () => { st = s; draw(); });
+      $('st').appendChild(b);
+    });
+    // propriétaires d'un bloc (i, j) d'une matrice découpée en 4 × 4 blocs selon spec
+    function owners(spec: Spec, i: number, j: number) {
+      const out: number[] = [];
+      for (let d = 0; d < DATA; d++) for (let m = 0; m < MODEL; m++) {
+        const ok = (ax: 'data' | 'model' | null, idx: number) => ax === null ? true : ax === 'data' ? Math.floor(idx / (4 / DATA)) === d : Math.floor(idx / (4 / MODEL)) === m;
+        if (ok(spec[0], i) && ok(spec[1], j)) out.push(dev(d, m));
+      }
+      return out;
+    }
+    function mat(x0: number, y0: number, name: string, spec: Spec, cs: number, partial = false) {
+      let g = `<text x="${x0 + 2 * cs}" y="${y0 - 6}" text-anchor="middle" class="ax v">${name}</text>`;
+      for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+        const o = owners(spec, i, j), x = x0 + j * cs, y = y0 + i * cs;
+        if (o.length === 1) g += `<rect x="${x}" y="${y}" width="${cs - 2}" height="${cs - 2}" rx="3" fill="${color(o[0])}"/>`;
+        else {
+          g += `<rect x="${x}" y="${y}" width="${cs - 2}" height="${cs - 2}" rx="3" fill="var(--surface-2)" stroke="var(--border)"/>`;
+          o.forEach((d, q) => { g += `<circle cx="${x + 5 + (q % 4) * ((cs - 10) / 3)}" cy="${y + 6 + Math.floor(q / 4) * ((cs - 12) / 1)}" r="2.6" fill="${color(d)}"/>`; });
+        }
+      }
+      if (partial) g += `<text x="${x0 + 2 * cs}" y="${y0 + 4 * cs + 12}" text-anchor="middle" class="ax hl">sommes partielles</text>`;
+      return g;
+    }
+    function draw() {
+      $('st').querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.v === st.id));
+      let m = '';
+      for (let d = 0; d < DATA; d++) for (let k = 0; k < MODEL; k++) {
+        const i = dev(d, k);
+        m += `<rect x="${30 + k * 38}" y="${18 + d * 38}" width="34" height="34" rx="5" fill="${color(i)}"/><text x="${47 + k * 38}" y="${39 + d * 38}" text-anchor="middle" class="lab">${i}</text>`;
+      }
+      m += `<text x="${30 + 2 * 38}" y="12" text-anchor="middle" class="ax">← model →</text><text x="12" y="${18 + 38}" transform="rotate(-90 12 ${18 + 38})" text-anchor="middle" class="ax">data</text>`;
+      const ms = $('mesh') as unknown as SVGSVGElement;
+      ms.setAttribute('viewBox', '0 0 190 100');
+      ms.innerHTML = m;
+      const cs = 26;
+      let g = mat(4, 18, 'X', st.X, cs) + `<text x="${4 + 4 * cs + 10}" y="${18 + 2 * cs + 5}" class="op">×</text>` + mat(4 * cs + 32, 18, 'W', st.W, cs) + `<text x="${8 * cs + 42}" y="${18 + 2 * cs + 5}" class="op">=</text>` + mat(8 * cs + 64, 18, 'Y', st.Y, cs, st.id === 'row');
+      const mt = $('mats') as unknown as SVGSVGElement;
+      mt.setAttribute('viewBox', `0 0 ${12 * cs + 80} ${4 * cs + 36}`);
+      mt.innerHTML = g;
+      const P = (s: Spec) => `P(${s.map((a) => (a ? `'${a}'` : 'None')).join(', ')})`;
+      $('code').textContent = `mesh = jax.make_mesh((2, 4), ('data', 'model'))\nX = jax.device_put(X, NamedSharding(mesh, ${P(st.X)}))\nW = jax.device_put(W, NamedSharding(mesh, ${P(st.W)}))\nY = jax.jit(lambda X, W: X @ W)(X, W)   # XLA insère les communications nécessaires`;
+      const wShards = (st.W[0] ? 4 : 1) * (st.W[1] ? 4 : 1);
+      $('k1').textContent = fmtRate((D * H * 4) / wShards, 'o');
+      $('k2').textContent = st.fwdBytes ? `${st.fwd} : ${fmtRate(st.fwdBytes, 'o')} par appareil` : st.fwd;
+      $('k3').textContent = st.gradBytes ? `${st.grad} : ${fmtRate(st.gradBytes, 'o')}` : st.grad;
+      $('note').textContent = st.note;
+    }
+    draw();
+  });
+</script>
+
+<style is:global>
+  .shard .seg { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  .shard .seg button { font-size: 13px; padding: 4px 12px; }
+  .shard .grid { display: grid; grid-template-columns: 190px 1fr; gap: 20px; margin-top: 8px; }
+  .shard .ft { font-size: 13px; font-weight: 500; margin: 4px 0; }
+  .shard .ft span { font-weight: 400; color: var(--text-2); }
+  .shard svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .shard svg text.ax.v { fill: var(--text); font-weight: 600; font-size: 13px; }
+  .shard svg text.ax.hl { fill: var(--hl-text); }
+  .shard svg text.lab { font: 600 12px var(--font); fill: #fff; }
+  .shard svg text.op { font: 20px var(--font); fill: var(--text-2); }
+  .shard pre.code { background: var(--surface-2); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; line-height: 1.5; margin: 10px 0 4px; overflow-x: auto; }
+  .shard .note { font-size: 14px; line-height: 1.5; margin: 8px 0 0; min-height: 3em; }
+  @media (max-width: 600px) { .shard .grid { grid-template-columns: 1fr; } }
+</style>

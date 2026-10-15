@@ -1,0 +1,58 @@
+---
+num: 4
+title: "Plusieurs appareils : découper les tableaux"
+summary: "Sharding avec une grille d'appareils : parallélisme de données, de modèle par colonnes ou par lignes, et les communications qu'ils imposent."
+status: en-cours
+---
+import Reveal from '@/components/shared/Reveal.astro';
+import Quiz from '@/components/shared/Quiz.astro';
+import Refs from '@/components/shared/Refs.astro';
+import Sharding from '@/components/hpc/04-sharding/Sharding.astro';
+
+Avec JAX, on ne programme pas les communications : on dit **comment chaque tableau est découpé** sur une grille d'appareils, et le compilateur insère les échanges nécessaires. Le vocabulaire :
+
+- **Mesh** : la grille d'appareils, avec des axes nommés, ici $2 \times 4$ (`'data'`, `'model'`).
+- **`PartitionSpec`** : pour chaque dimension d'un tableau, l'axe du mesh qui la découpe (`None` : répliquée).
+- **`NamedSharding(mesh, spec)`** : l'association des deux, passée à `jax.device_put` ou imposée dans `jit`.
+
+<Sharding />
+
+## Lire le produit $Y = XW$ découpé
+
+- **Dimension non contractée découpée** ($B$ ou $H$) : chaque appareil calcule son bloc de $Y$ seul, sans communication en avant.
+- **Dimension contractée découpée** ($D$, lignes de $W$) : chaque appareil n'a qu'une partie de la somme $\sum_d X_{bd} W_{dh}$. Il faut additionner les sommes partielles : **all-reduce** (tous reçoivent le total) ou **reduce-scatter** (chacun reçoit sa part).
+- **Gradients** : en parallélisme de données, chaque groupe calcule $\nabla W$ sur sa part du lot ; il faut les additionner entre groupes. C'est l'all-reduce de chaque pas d'entraînement.
+- **Coût d'un all-reduce en anneau** : chaque appareil envoie $2\frac{p-1}{p}$ fois la taille du tableau. Il se compare au temps de calcul : sur NVLink (900 Go/s au total par GPU H100, les deux sens comptés), 32 Mo partent en quelques dizaines de µs ; sur un réseau entre machines, 10 à 100 fois plus lentement.
+
+<div class="retain">
+
+**À retenir**
+
+- On décrit le découpage (`Mesh`, `PartitionSpec`, `NamedSharding`) ; XLA en déduit les communications.
+- Découper une dimension non contractée : pas de communication en avant. Découper la dimension contractée : sommes partielles, donc all-reduce ou reduce-scatter.
+- Parallélisme de données : poids répliqués, all-reduce des gradients. Parallélisme de modèle : poids découpés, mémoire divisée, communications sur les activations.
+- All-reduce en anneau : $2\frac{p-1}{p}$ fois la taille du tableau envoyée par appareil.
+
+</div>
+
+<Refs items={[["Distributed arrays and automatic parallelization", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/parallel.html"], ["Megatron-LM: training multi-billion parameter language models using model parallelism", "Shoeybi et al.", 2019, "1909.08053"]]} />
+
+<Quiz>
+
+**Q1.** 8 appareils en parallélisme de données pur, $W$ de 64 Mo. Combien d'octets chaque appareil envoie-t-il pour l'all-reduce des gradients ?
+
+<Reveal>
+
+$2 \times \frac{7}{8} \times 64 = 112$ Mo par appareil et par pas d'entraînement.
+
+</Reveal>
+
+**Q2.** Dans un MLP à deux couches, Megatron découpe la première couche par colonnes et la seconde par lignes. Pourquoi cet ordre ?
+
+<Reveal>
+
+Par colonnes, la première couche donne une sortie découpée sur $H$, sans communication ; l'activation s'applique élément par élément sur chaque morceau. La seconde, découpée par lignes, contracte justement sur cette dimension découpée : un seul all-reduce à la fin du bloc, au lieu d'un après chaque couche.
+
+</Reveal>
+
+</Quiz>

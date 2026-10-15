@@ -1,0 +1,142 @@
+---
+// Chapitre HPC 2 : radiographie de jit. Python → jaxpr (primitives) → noyaux après fusion par XLA.
+// Le découpage en noyaux est typique d'XLA sur GPU, pas garanti : il dépend de la version, du matériel et des formes.
+---
+<div class="widget xray hp" data-widget="xray">
+  <div class="row"><span>Fonction :</span><span class="seg" data-ref="ex"></span></div>
+  <div class="cols">
+    <div>
+      <div class="ft">1. Python</div>
+      <pre class="code py" data-ref="py"></pre>
+      <div class="ft">3. Noyaux après XLA <span>(clique pour voir leurs primitives)</span></div>
+      <div class="kern" data-ref="kern"></div>
+    </div>
+    <div>
+      <div class="ft">2. jaxpr <span>(simplifié : broadcasts omis)</span></div>
+      <pre class="code jx" data-ref="jx"></pre>
+    </div>
+  </div>
+  <div class="kpis">
+    <div><span>NumPy : appels et passes mémoire</span><b data-ref="k1"></b></div>
+    <div><span>jit : noyaux lancés</span><b data-ref="k2"></b></div>
+  </div>
+  <p class="note" data-ref="note"></p>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="xray"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    type K = { name: string; kind: string; ops: number[]; io: string };
+    type E = { id: string; label: string; py: string; jx: string[]; kernels: K[]; numpy: string; note: string };
+    const EX: E[] = [
+      {
+        id: 'gelu', label: 'couche dense + GELU',
+        py: 'def f(x, W, b):\n    return jax.nn.gelu(x @ W + b)',
+        jx: [
+          'a = dot_general x W        # (B,D)·(D,H)',
+          'c = add a b',
+          'd = integer_pow[y=3] c',
+          'e = mul d 0.044715',
+          'f = add c e',
+          'g = mul f 0.7978846',
+          'h = tanh g',
+          'i = add h 1.0',
+          'j = mul c 0.5',
+          'k = mul j i',
+        ],
+        kernels: [
+          { name: 'GEMM', kind: 'lib', ops: [0], io: 'lit x, W ; écrit a (B×H)' },
+          { name: 'fusion élément par élément', kind: 'loop', ops: [1, 2, 3, 4, 5, 6, 7, 8, 9], io: 'lit a et b une fois ; écrit k (B×H)' },
+        ],
+        numpy: '10 appels, 10 passes, 9 temporaires B×H',
+        note: 'Le produit matriciel part dans une bibliothèque (cuBLAS sur GPU) ; les 9 opérations élément par élément deviennent un seul noyau. XLA peut parfois intégrer biais et activation à la fin du GEMM (épilogue) : un seul noyau.',
+      },
+      {
+        id: 'softmax', label: 'softmax sur la dernière dimension',
+        py: 'def f(x):\n    return jax.nn.softmax(x, axis=-1)',
+        jx: [
+          'm = reduce_max[axes=(1,)] x',
+          'm = stop_gradient m',
+          'z = sub x m',
+          'e = exp z',
+          's = reduce_sum[axes=(1,)] e',
+          'y = div e s',
+        ],
+        kernels: [
+          { name: 'réduction : max par ligne', kind: 'red', ops: [0, 1], io: 'lit x ; écrit m (B)' },
+          { name: 'réduction : somme des exp', kind: 'red', ops: [2, 3, 4], io: 'lit x et m ; écrit s (B)' },
+          { name: 'fusion : exp recalculée, division', kind: 'loop', ops: [2, 3, 5], io: 'lit x, m, s ; écrit y (B×N)' },
+        ],
+        numpy: '5 appels, 5 passes, 4 temporaires',
+        note: 'Découpage classique en 3 noyaux : XLA recalcule exp(x − m) plutôt que de l’écrire en mémoire (une lecture de x coûte plus cher qu’une exponentielle). Des versions récentes d’XLA sur GPU peuvent tout fusionner en un seul noyau.',
+      },
+      {
+        id: 'rnn', label: 'un pas de RNN',
+        py: 'def step(h, x, Wx, Wh, b):\n    return jnp.tanh(x @ Wx + h @ Wh + b)',
+        jx: [
+          'u = dot_general x Wx       # (B,D)·(D,H)',
+          'v = dot_general h Wh       # (B,H)·(H,H)',
+          'a = add u v',
+          'a = add a b',
+          'h2 = tanh a',
+        ],
+        kernels: [
+          { name: 'GEMM x·Wx', kind: 'lib', ops: [0], io: 'lit x, Wx ; écrit u' },
+          { name: 'GEMM h·Wh', kind: 'lib', ops: [1], io: 'lit h, Wh ; écrit v' },
+          { name: 'fusion : add, add, tanh', kind: 'loop', ops: [2, 3, 4], io: 'lit u, v, b ; écrit h2' },
+        ],
+        numpy: '5 appels, 5 passes, 4 temporaires',
+        note: 'Les deux produits restent des appels de bibliothèque ; l’addition, le biais et tanh deviennent un noyau. Sous scan, ce pas est répété T fois dans la même boucle compilée.',
+      },
+    ];
+    const KC: Record<string, string> = { lib: 'var(--h-calc)', loop: 'var(--h-exec)', red: 'var(--p-mel)' };
+    let ex = EX[0], selK = -1;
+    EX.forEach((e) => {
+      const b = document.createElement('button');
+      b.textContent = e.label; b.dataset.v = e.id;
+      b.addEventListener('click', () => { ex = e; selK = -1; draw(); });
+      $('ex').appendChild(b);
+    });
+    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    function draw() {
+      $('ex').querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.v === ex.id));
+      $('py').textContent = ex.py;
+      const owner = (i: number) => ex.kernels.map((k, j) => (k.ops.includes(i) ? j : -1)).filter((j) => j >= 0);
+      $('jx').innerHTML = ex.jx.map((l, i) => {
+        const ks = owner(i);
+        const on = selK >= 0 && ks.includes(selK);
+        const marks = ks.map((j) => `<i style="background:${KC[ex.kernels[j].kind]}"></i>`).join('');
+        return `<span class="ln${on ? ' on' : ''}${selK >= 0 && !on ? ' dim' : ''}">${marks}${esc(l)}</span>`;
+      }).join('');
+      $('kern').innerHTML = ex.kernels.map((k, j) => `<button data-k="${j}" class="${j === selK ? 'active' : ''}"><i style="background:${KC[k.kind]}"></i><b>noyau ${j + 1}</b> ${k.name}<small>${k.io}</small></button>`).join('');
+      $('k1').textContent = ex.numpy;
+      $('k2').textContent = `${ex.kernels.length}`;
+      $('note').textContent = ex.note;
+    }
+    root.addEventListener('click', (ev) => {
+      const k = (ev.target as Element).closest('[data-k]')?.getAttribute('data-k');
+      if (k != null) { selK = +k === selK ? -1 : +k; draw(); }
+    });
+    draw();
+  });
+</script>
+
+<style is:global>
+  .xray .seg { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  .xray .seg button { font-size: 13px; padding: 4px 12px; }
+  .xray .cols { display: grid; grid-template-columns: 1fr 1.2fr; gap: 18px; margin-top: 8px; }
+  .xray .ft { font-size: 13px; font-weight: 500; margin: 8px 0 4px; }
+  .xray .ft span { font-weight: 400; color: var(--text-2); }
+  .xray pre.code { background: var(--surface-2); border-radius: 8px; padding: 8px 0; margin: 0; font-size: 12.5px; line-height: 1.6; overflow-x: auto; }
+  .xray pre.py { padding: 8px 12px; }
+  .xray pre.jx .ln { display: block; padding: 0 10px; white-space: pre; transition: opacity 0.15s; }
+  .xray pre.jx .ln i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+  .xray pre.jx .ln.on { background: var(--hl-bg); color: var(--hl-text); }
+  .xray pre.jx .ln.dim { opacity: 0.35; }
+  .xray .kern { display: grid; gap: 6px; }
+  .xray .kern button { text-align: left; font-size: 13px; padding: 6px 10px; display: block; }
+  .xray .kern button i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .xray .kern button small { display: block; color: var(--text-2); font-size: 12px; margin-top: 2px; }
+  .xray .note { font-size: 14px; line-height: 1.5; margin: 8px 0 0; min-height: 3em; }
+  @media (max-width: 700px) { .xray .cols { grid-template-columns: 1fr; } }
+</style>

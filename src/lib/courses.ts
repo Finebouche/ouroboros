@@ -19,9 +19,9 @@ export const COURSES = {
   hpc: {
     title: 'HPC',
     unit: 'Chapitre',
-    tagline: 'Calcul haute performance : compiler, vectoriser, répartir. Premier cours : JAX.',
+    tagline: 'Calcul haute performance, vu par JAX contre NumPy : matériel, compilation, transformations, plusieurs appareils.',
     intro:
-      "Un cours visuel sur le calcul haute performance, à partir de JAX : ce que coûte un programme numérique, ce que le compilateur change, et ce qui reste à mesurer. Chapitre 1 : JAX sur un réseau récurrent. Chapitre 2 : lecture d'un vrai code.",
+      "Ce qui coûte vraiment dans un calcul numérique (déplacer les données), et ce que JAX change par rapport à NumPy : compilation et fusion, exécution asynchrone sur l'appareil, transformations (vmap, scan, grad) et découpage sur plusieurs appareils. Chapitre 5 : un vrai code lu avec ces outils.",
   },
 } as const;
 

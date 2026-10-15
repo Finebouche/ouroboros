@@ -1,0 +1,93 @@
+---
+// Chapitre HPC 3 : vmap et la réutilisation des données. B produits W @ s : boucle (B GEMV) contre vmap (un GEMM).
+// La carte de chaleur compte combien de fois chaque coefficient de W est lu depuis la mémoire principale.
+---
+<div class="widget vreuse hp" data-widget="vreuse">
+  <div class="row"><span>Exécution :</span><span class="seg" data-ref="md"></span></div>
+  <label class="posl"><span>Vecteurs B</span><input type="range" data-ref="b" min="1" max="64" step="1" value="16" /><b data-ref="b-out"></b></label>
+  <div class="cols">
+    <div>
+      <div class="ft">Lectures de chaque coefficient de W</div>
+      <svg data-ref="heat" width="100%" role="img" aria-label="Nombre de lectures de chaque coefficient de W"></svg>
+      <p class="scale"><span>1</span><i class="ramp"></i><span data-ref="maxr"></span> lectures</p>
+    </div>
+    <div>
+      <div class="ft">La primitive, vue par vmap</div>
+      <pre class="code" data-ref="code"></pre>
+      <div class="ft">Intensité contre équilibre d'un H100 (FP32 : 20 FLOP/o)</div>
+      <svg data-ref="bar" width="100%" role="img" aria-label="Intensité arithmétique comparée au point d'équilibre"></svg>
+    </div>
+  </div>
+  <div class="kpis">
+    <div><span>Octets lus pour W (N = 4096, float32)</span><b data-ref="k1"></b></div>
+    <div><span>Intensité</span><b data-ref="k2"></b></div>
+    <div><span>Limité par</span><b data-ref="k3"></b></div>
+  </div>
+</div>
+
+<script>
+  import { fmtRate } from '../hw';
+  document.querySelectorAll<HTMLElement>('[data-widget="vreuse"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const bIn = $('b') as HTMLInputElement;
+    const fr = (v: number, d = 2) => v.toLocaleString('fr-FR', { maximumFractionDigits: d });
+    let vm = true;
+    [['boucle Python : B fois W @ s', 0], ['vmap : un seul (B × N) @ Wᵀ', 1]].forEach(([l, v]) => {
+      const b = document.createElement('button');
+      b.textContent = String(l); b.dataset.v = String(v);
+      b.addEventListener('click', () => { vm = v === 1; draw(); });
+      $('md').appendChild(b);
+    });
+    const N = 4096, G = 14;
+    function draw() {
+      $('md').querySelectorAll('button').forEach((b) => b.classList.toggle('active', (b.dataset.v === '1') === vm));
+      const B = +bIn.value;
+      $('b-out').textContent = String(B);
+      const reads = vm ? 1 : B;
+      // carte de chaleur : intensité de couleur selon le nombre de lectures (échelle sur 64)
+      const cs = 15;
+      let g = '';
+      for (let i = 0; i < G; i++) for (let j = 0; j < G; j++) {
+        const op = 0.15 + 0.85 * Math.log(reads) / Math.log(64);
+        g += `<rect x="${j * cs}" y="${i * cs}" width="${cs - 1.5}" height="${cs - 1.5}" rx="2" fill="${reads > 1 ? 'var(--text)' : 'var(--h-calc)'}" opacity="${reads > 1 ? op : 0.5}"/>`;
+      }
+      const h = $('heat') as unknown as SVGSVGElement;
+      h.setAttribute('viewBox', `0 0 ${G * cs} ${G * cs}`);
+      h.innerHTML = g;
+      $('maxr').textContent = String(reads);
+      $('code').textContent = vm
+        ? `# vmap ajoute un axe de lot à chaque primitive\ndot_general  s:(B=${B}, N) · Wᵀ:(N, N)  → (B, N)\n# un GEMM : W lu une fois pour ${B} vecteurs`
+        : `for b in range(${B}):\n    dot_general  s:(N,) · W:(N, N) → (N,)\n# ${B} GEMV : W relu ${B} fois`;
+      const bytes = 4 * N * N * reads;
+      const flops = 2 * B * N * N;
+      const ai = flops / (bytes + 8 * B * N);
+      const W = 300, X = (v: number) => (Math.log2(v) + 2) / 9 * W; // 1/4 … 128
+      let s = `<rect x="0" y="6" width="${Math.max(2, X(ai))}" height="16" rx="3" fill="${ai < 20 ? 'var(--text-2)' : 'var(--h-calc)'}" opacity="0.85"/>`;
+      s += `<line x1="${X(20)}" y1="0" x2="${X(20)}" y2="28" stroke="var(--hl-stroke)" stroke-dasharray="3 3"/><text x="${X(20) + 4}" y="40" class="ax hl">équilibre 20</text><text x="${Math.min(W - 40, X(ai) + 4)}" y="18" class="ax v">${fr(ai, 1)}</text>`;
+      const bar = $('bar') as unknown as SVGSVGElement;
+      bar.setAttribute('viewBox', `0 0 ${W} 44`);
+      bar.innerHTML = s;
+      $('k1').textContent = fmtRate(bytes, 'o');
+      $('k2').textContent = `${fr(ai, 2)} FLOP/o`;
+      $('k3').textContent = ai < 20 ? 'la mémoire' : 'le calcul';
+    }
+    bIn.addEventListener('input', draw);
+    draw();
+  });
+</script>
+
+<style is:global>
+  .vreuse .seg { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  .vreuse .seg button { font-size: 13px; padding: 4px 12px; }
+  .vreuse .posl { display: grid; grid-template-columns: 100px 1fr 40px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); margin: 8px 0; }
+  .vreuse .posl b { text-align: right; color: var(--text); font-weight: 500; }
+  .vreuse .cols { display: grid; grid-template-columns: 220px 1fr; gap: 20px; }
+  .vreuse .ft { font-size: 13px; font-weight: 500; margin: 6px 0 4px; }
+  .vreuse .scale { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); margin: 4px 0 0; }
+  .vreuse .ramp { display: inline-block; width: 80px; height: 8px; border-radius: 3px; background: linear-gradient(to right, var(--surface-2), var(--text)); }
+  .vreuse pre.code { background: var(--surface-2); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; line-height: 1.55; margin: 0; white-space: pre-wrap; }
+  .vreuse svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .vreuse svg text.ax.v { fill: var(--text); }
+  .vreuse svg text.ax.hl { fill: var(--hl-text); }
+  @media (max-width: 600px) { .vreuse .cols { grid-template-columns: 1fr; } }
+</style>

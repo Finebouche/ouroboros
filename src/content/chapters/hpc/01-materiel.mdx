@@ -1,0 +1,94 @@
+---
+num: 1
+title: "Le matériel : où va le temps"
+summary: "Latences et débits, voies de calcul CPU et GPU, modèle roofline : de quoi dépend la vitesse d'un calcul numérique."
+status: en-cours
+---
+import Reveal from '@/components/shared/Reveal.astro';
+import Quiz from '@/components/shared/Quiz.astro';
+import Refs from '@/components/shared/Refs.astro';
+import Legend from '@/components/hpc/Legend.astro';
+import MemoryLadder from '@/components/hpc/01-materiel/MemoryLadder.astro';
+import LaneGrid from '@/components/hpc/01-materiel/LaneGrid.astro';
+import Roofline from '@/components/hpc/01-materiel/Roofline.astro';
+
+Avant de comparer NumPy et JAX, il faut savoir ce qui coûte. Réponse courte : **rarement le calcul, presque toujours le déplacement des données**. Ce chapitre donne les trois outils du reste du cours : l'échelle des délais, le nombre de voies de calcul, et le modèle roofline.
+
+Code couleur du cours, réservé au type de travail :
+
+<Legend />
+
+## 1. Délais et débits
+
+<MemoryLadder />
+
+- **Latence** : le délai avant la première donnée. Un accès DRAM (≈ 90 ns) vaut environ 300 cycles : sur un H100, c'est le temps de 6 millions d'opérations flottantes.
+- **Débit** : le volume par seconde une fois le flux établi. C'est lui qui compte pour les gros tableaux. La HBM d'un GPU débite environ 10 fois plus qu'une DRAM de serveur, et 100 fois plus que le PCIe qui la relie à l'hôte.
+- **Le logiciel est sur la même échelle** : un appel NumPy (≈ 1 µs) ou un lancement de noyau GPU (≈ 5 µs) coûte autant que des dizaines d'accès mémoire. Pour un petit tableau, ce coût fixe domine tout le reste.
+- Les latences affichées sont des ordres de grandeur typiques ; elles varient d'un facteur 2 selon la machine.
+
+## 2. Combien de voies de calcul
+
+Une **voie FMA** fait une multiplication-addition par cycle. Le CPU en a quelques centaines (cœurs × unités SIMD), le GPU des dizaines de milliers (SM × voies FP32). Chaque point ci-dessous est une voie :
+
+<LaneGrid />
+
+- **Crête** $= \text{voies} \times 2 \times f$. On retrouve exactement les fiches constructeur : $6912 \times 2 \times 1{,}41$ GHz $= 19{,}5$ TFLOP/s pour l'A100.
+- **La mémoire ne suit pas** : 0,1 à 0,2 octet par voie et par cycle, sur les quatre machines. Une valeur float32 fait 4 octets : sans réutilisation, chaque voie attendrait 20 à 40 cycles par valeur. Toute performance vient de la **réutilisation** des données (registres, caches, mémoire partagée).
+- Les **unités matricielles** (Tensor Cores, MXU des TPU) font de petites multiplications de matrices entières par cycle : environ 15 fois la crête FP32 sur H100 en BF16. Elles ne servent qu'aux produits matriciels, et réclament encore plus de réutilisation.
+
+## 3. Le modèle roofline
+
+**Intensité arithmétique** $I$ : FLOPs par octet échangé avec la mémoire principale. Performance atteignable :
+
+$$
+P = \min\big(P_{\text{crête}},\ I \times \text{débit}\big), \qquad I_{\text{équilibre}} = \frac{P_{\text{crête}}}{\text{débit}}
+$$
+
+<Roofline />
+
+- **À gauche de l'équilibre, la mémoire limite** : élément par élément ($I \approx 0{,}1$), réductions, GEMV ($I \approx 0{,}5$). Sur un H100, ces noyaux utilisent quelques pour cent de la crête au mieux.
+- **À droite, le calcul limite** : seul le GEMM y arrive vraiment, avec $I \approx n/6$ en float32 (tuiles idéales : $2n^3$ FLOPs pour $3n^2$ valeurs).
+- **Ce que JAX peut changer** (flèches) : la **fusion** fait d'une chaîne de $k$ opérations une seule passe, donc $I$ est multiplié par $k$ ; **vmap** transforme $B$ GEMV en un GEMM, donc $I$ est multiplié par environ $B$. Ni l'un ni l'autre ne change le nombre de FLOPs.
+- **Les unités matricielles déplacent l'équilibre** : en FP32, il est à 20 FLOP/o sur H100, 9,6 sur A100, 17 sur le serveur CPU ; en BF16 sur les Tensor Cores du H100, il monte à 295. Plus la crête est haute, plus un noyau limité par la mémoire en laisse inutilisée.
+
+<div class="retain">
+
+**À retenir**
+
+- Le coût dominant est le déplacement : DRAM ≈ 300 cycles, PCIe ≈ 100 fois plus lent que la HBM, un appel Python ≈ des dizaines d'accès mémoire.
+- Crête = voies × 2 × fréquence ; la mémoire ne fournit que 0,1 à 0,2 octet par voie et par cycle, d'où l'obligation de réutiliser les données.
+- Roofline : $P = \min(P_{\text{crête}}, I \times \text{débit})$. Élément par élément et GEMV sont limités par la mémoire ; seul le GEMM atteint la crête.
+- La fusion et le regroupement (vmap) déplacent un calcul vers la droite du roofline, sans changer ses FLOPs.
+
+</div>
+
+<Refs items={[["Roofline: an insightful visual performance model for multicore architectures", "Williams, Waterman & Patterson", 2009, "10.1145/1498765.1498785"], ["NVIDIA H100 Tensor Core GPU (fiche technique)", "NVIDIA", 2023, "https://www.nvidia.com/en-us/data-center/h100/"], ["Cloud TPU v5e", "Google Cloud", 2025, "https://cloud.google.com/tpu/docs/v5e"]]} />
+
+<Quiz>
+
+**Q1.** Un serveur à 5,1 TFLOP/s et 307 Go/s : quelle intensité d'équilibre ? Un noyau élément par élément ($I = 1/8$) y atteint quelle part de la crête ?
+
+<Reveal>
+
+$5{,}12 \cdot 10^{12} / 3{,}07 \cdot 10^{11} \approx 17$ FLOP/octet. $P = 0{,}125 \times 307 \approx 38$ GFLOP/s, soit $\approx 0{,}75$ % de la crête.
+
+</Reveal>
+
+**Q2.** Un GEMM float32 $n \times n \times n$ : à partir de quel $n$ dépasse-t-il l'équilibre d'un H100 (20 FLOP/o) ?
+
+<Reveal>
+
+$I = n/6 > 20$ dès $n > 120$. En BF16 sur les Tensor Cores ($I = n/3$, équilibre ≈ 295), il faut $n > 885$ environ : il faut de grandes matrices pour nourrir les unités matricielles.
+
+</Reveal>
+
+**Q3.** Pourquoi la fusion de 8 opérations élément par élément peut-elle aller 8 fois plus vite, alors qu'elle fait autant de FLOPs ?
+
+<Reveal>
+
+Ces opérations sont limitées par la mémoire : le temps est proportionnel aux octets déplacés. Séparées, elles font 8 passes (lecture et écriture d'un temporaire chacune) ; fusionnées, une seule. Les FLOPs, eux, étaient déjà négligeables.
+
+</Reveal>
+
+</Quiz>

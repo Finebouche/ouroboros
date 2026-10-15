@@ -1,0 +1,100 @@
+---
+// Chapitre HPC 2 : la fusion vue comme un film de la mémoire. NumPy fait une passe par opération et écrit des temporaires ;
+// jit fait une seule passe, les résultats intermédiaires restent dans les registres. Les deux films vont à la même vitesse
+// (même débit mémoire), donc leur durée est proportionnelle aux octets déplacés.
+---
+<div class="widget ftape hp" data-widget="ftape">
+  <div class="sl"><label><span>Opérations dans la chaîne k</span><input type="range" data-ref="k" min="2" max="8" step="1" value="5" /><b data-ref="k-out"></b></label></div>
+  <div class="row"><button data-ref="play">▶ Lancer</button><code data-ref="expr"></code></div>
+  <p class="hlegend"><span><i class="sq rd"></i>lecture en cours</span><span><i class="sq calc"></i>écrit en mémoire</span><span><i class="sq gh"></i>jamais écrit (reste dans les registres)</span></p>
+  <div class="ft">NumPy : une passe par opération <span data-ref="c0"></span></div>
+  <svg data-ref="a" width="100%" role="img" aria-label="Mémoire pendant l'exécution NumPy"></svg>
+  <div class="ft">JAX jit : une seule passe fusionnée <span data-ref="c1"></span></div>
+  <svg data-ref="b" width="100%" role="img" aria-label="Mémoire pendant l'exécution fusionnée"></svg>
+  <div class="kpis">
+    <div><span>Octets par valeur, NumPy</span><b data-ref="k1"></b></div>
+    <div><span>Octets par valeur, fusionné</span><b data-ref="k2"></b></div>
+    <div><span>Gain si la mémoire limite</span><b data-ref="k3"></b></div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="ftape"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const kIn = $('k') as HTMLInputElement;
+    const OPS = ['a·x', '+ b', 'tanh', '· c', '+ d', 'exp', '· e', '+ f'];
+    const M = 40; // cases dessinées par tableau
+    let prog = 1; // 0 → 1 : avancement du film NumPy ; le film fusionné va k fois plus vite
+    let raf = 0;
+
+    function strip(svgKey: string, k: number, fused: boolean, p: number) {
+      // p : position en « passes » (0 … k pour NumPy, 0 … 1 pour fusionné)
+      const W = 640, ox = 64, cw = (W - ox - 6) / M, rowH = 14;
+      const rows = ['x', ...Array.from({ length: k - 1 }, (_, i) => `t${i + 1}`), 'y'];
+      let g = '';
+      rows.forEach((name, r) => {
+        const y = r * (rowH + 4);
+        g += `<text x="${ox - 8}" y="${y + 11}" text-anchor="end" class="ax">${name}</text>`;
+        const ghost = fused && r > 0 && r < rows.length - 1;
+        for (let c = 0; c < M; c++) {
+          const x = ox + c * cw;
+          let fill = 'var(--surface-2)', stroke = 'none', op = 1;
+          if (r === 0) fill = 'var(--h-calc)', op = 0.45; // entrée déjà en mémoire
+          if (ghost) { fill = 'none'; stroke = 'var(--border)'; }
+          else if (r > 0) {
+            // ligne r écrite pendant la passe r (NumPy) ou pendant la passe unique (fusionné, dernière ligne)
+            const pass = fused ? 1 : r;
+            const pos = fused ? p : p - (pass - 1); // avancement de cette passe, entre 0 et 1
+            if (pos >= (c + 1) / M) { fill = 'var(--h-calc)'; op = 0.9; }
+          }
+          // tête de lecture
+          const readRow = fused ? 0 : Math.min(k, Math.floor(p) + 1) - 1;
+          const pos = fused ? p : p - Math.floor(p);
+          const head = Math.floor(pos * M);
+          if (p > 0 && p < (fused ? 1 : k) && r === readRow && c === head) { stroke = 'var(--hl-stroke)'; fill = 'var(--hl-bg)'; op = 1; }
+          g += `<rect x="${x + 0.5}" y="${y}" width="${cw - 1}" height="${rowH}" rx="2" fill="${fill}" fill-opacity="${op}" stroke="${stroke}" ${ghost ? 'stroke-dasharray="2 2"' : ''}/>`;
+        }
+        if (ghost && r === 1) g += `<text x="${ox + (W - ox) / 2}" y="${y + rowH + 2}" text-anchor="middle" class="ax">t1 … t${k - 1} : jamais écrits</text>`;
+      });
+      const s = $(svgKey) as unknown as SVGSVGElement;
+      s.setAttribute('viewBox', `0 0 ${W} ${rows.length * (rowH + 4)}`);
+      s.innerHTML = g;
+    }
+
+    function draw() {
+      const k = +kIn.value;
+      $('k-out').textContent = String(k);
+      $('expr').textContent = `y = ${OPS.slice(0, k).reduce((acc, o, i) => (i === 0 ? o : o === 'tanh' || o === 'exp' ? `${o}(${acc})` : `(${acc}) ${o}`), '')}`;
+      const pNp = prog * k, pJ = Math.min(1, prog * k); // même vitesse de défilement des octets
+      strip('a', k, false, pNp);
+      strip('b', k, true, pJ);
+      $('c0').textContent = `(${Math.min(k, Math.ceil(pNp - 1e-9))} / ${k} passes)`;
+      $('c1').textContent = pJ >= 1 ? '(terminé)' : '';
+      $('k1').textContent = `${8 * k} octets`;
+      $('k2').textContent = '8 octets';
+      $('k3').textContent = `× ${k}`;
+    }
+    $('play').addEventListener('click', () => {
+      cancelAnimationFrame(raf);
+      const t0 = performance.now(), dur = 900 * +kIn.value;
+      const tick = (now: number) => { prog = Math.min(1, (now - t0) / dur); draw(); if (prog < 1) raf = requestAnimationFrame(tick); };
+      raf = requestAnimationFrame(tick);
+    });
+    kIn.addEventListener('input', () => { prog = 1; draw(); });
+    draw();
+  });
+</script>
+
+<style is:global>
+  .ftape .sl label { display: grid; grid-template-columns: 220px 1fr 40px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); }
+  .ftape .sl b { text-align: right; color: var(--text); font-weight: 500; }
+  .ftape .row { display: flex; align-items: center; gap: 12px; margin: 8px 0; }
+  .ftape .row button { font-size: 13px; padding: 4px 12px; }
+  .ftape .row code { font-size: 13px; }
+  .ftape .hlegend .sq.rd { background: var(--hl-bg); border: 1px solid var(--hl-stroke); }
+  .ftape .hlegend .sq.gh { border: 1px dashed var(--border); background: none; }
+  .ftape .ft { font-size: 13px; font-weight: 500; margin: 10px 0 4px; }
+  .ftape .ft span { font-weight: 400; color: var(--text-2); }
+  .ftape svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  @media (max-width: 600px) { .ftape .sl label { grid-template-columns: 1fr; } }
+</style>

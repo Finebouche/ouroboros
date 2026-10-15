@@ -1,0 +1,151 @@
+---
+// Chapitre HPC 2 : NumPy, JAX opération par opération, JAX jit. Deux voies : l'hôte (Python) et l'appareil.
+// Modèle simple : une chaîne de k opérations élément par élément sur N valeurs float32 (8 octets lus/écrits par valeur et par passe).
+// Les coûts fixes sont des ordres de grandeur, modifiables dans « Hypothèses ».
+---
+<div class="widget disp hp" data-widget="disp">
+  <div class="row"><span>JAX tourne sur :</span><span class="seg" data-ref="dev"></span><label class="chk"><input type="checkbox" data-ref="first" /> premier appel (compilation)</label><label class="chk"><input type="checkbox" data-ref="host" /> données sur l'hôte (transfert)</label></div>
+  <div class="sl">
+    <label><span>Opérations dans la chaîne k</span><input type="range" data-ref="k" min="1" max="16" step="1" value="6" /><b data-ref="k-out"></b></label>
+    <label><span>Taille du tableau N</span><input type="range" data-ref="n" min="2" max="9" step="0.25" value="4" /><b data-ref="n-out"></b></label>
+  </div>
+  <p class="hlegend"><span><i class="sq py"></i>Python / dispatch</span><span><i class="sq calc"></i>noyau (une opération)</span><span><i class="sq comp"></i>compilation</span><span><i class="sq exec"></i>noyau fusionné (exécutable)</span><span><i class="sq tr"></i>transfert hôte ↔ appareil</span></p>
+  <svg data-ref="gantt" width="100%" role="img" aria-label="Chronologie hôte et appareil pour trois façons d'exécuter la chaîne"></svg>
+  <div class="ft">Temps total selon N <span>(échelle log-log ; le trait vertical est le N choisi)</span></div>
+  <svg data-ref="curve" width="100%" role="img" aria-label="Temps total en fonction de la taille du tableau"></svg>
+  <details class="hyp">
+    <summary>Hypothèses (modifiables)</summary>
+    <div class="sl">
+      <label><span>Appel d'une opération NumPy (µs)</span><input type="range" data-ref="onp" min="0.2" max="5" step="0.1" value="1" /><b data-ref="onp-out"></b></label>
+      <label><span>Dispatch d'une opération JAX hors jit (µs)</span><input type="range" data-ref="oeg" min="1" max="50" step="1" value="10" /><b data-ref="oeg-out"></b></label>
+      <label><span>Appel d'une fonction jit (µs)</span><input type="range" data-ref="ojt" min="1" max="50" step="1" value="8" /><b data-ref="ojt-out"></b></label>
+      <label><span>Lancement d'un noyau GPU (µs)</span><input type="range" data-ref="lch" min="1" max="20" step="1" value="5" /><b data-ref="lch-out"></b></label>
+      <label><span>Débit d'un cœur CPU (Go/s)</span><input type="range" data-ref="bw1" min="5" max="40" step="1" value="15" /><b data-ref="bw1-out"></b></label>
+      <label><span>Compilation (ms)</span><input type="range" data-ref="cmp" min="5" max="500" step="5" value="50" /><b data-ref="cmp-out"></b></label>
+    </div>
+    <p class="note">NumPy exécute une opération élément par élément sur un seul cœur. Ici, JAX sur CPU utilise le même débit (hypothèse prudente) ; sur GPU, le débit est celui de la HBM du H100 (3,35 To/s) et le PCIe vaut 25 Go/s. Pour mesurer chez toi : <code>%timeit f(x).block_until_ready()</code>.</p>
+  </details>
+</div>
+
+<script>
+  import { fmtTime } from '../hw';
+  document.querySelectorAll<HTMLElement>('[data-widget="disp"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const inp = (r: string) => $(r) as HTMLInputElement;
+    let gpu = true;
+    [['CPU (même cœur)', 0], ['GPU H100', 1]].forEach(([l, v]) => {
+      const b = document.createElement('button');
+      b.textContent = String(l); b.dataset.v = String(v);
+      b.addEventListener('click', () => { gpu = v === 1; draw(); });
+      $('dev').appendChild(b);
+    });
+    type Blk = { lane: number; t0: number; t1: number; kind: string };
+    type Run = { name: string; blocks: Blk[]; total: number; lanes: string[] };
+
+    function model(N: number) {
+      const k = +inp('k').value;
+      const oNp = +inp('onp').value * 1e-6, oEg = +inp('oeg').value * 1e-6, oJt = +inp('ojt').value * 1e-6;
+      const lch = gpu ? +inp('lch').value * 1e-6 : 0, bw1 = +inp('bw1').value * 1e9, cmp = +inp('cmp').value * 1e-3;
+      const bwD = gpu ? 3.35e12 : bw1, pcie = 25e9;
+      const pass = (8 * N) / bwD, passNp = (8 * N) / bw1;
+      const first = inp('first').checked, onHost = gpu && inp('host').checked;
+      const xfer = onHost ? (4 * N) / pcie : 0;
+      // NumPy : l'hôte fait tout, opération après opération
+      const np: Run = { name: 'NumPy', lanes: ['CPU'], blocks: [], total: 0 };
+      let t = 0;
+      for (let i = 0; i < k; i++) { np.blocks.push({ lane: 0, t0: t, t1: t + oNp, kind: 'py' }); t += oNp; np.blocks.push({ lane: 0, t0: t, t1: t + passNp, kind: 'calc' }); t += passNp; }
+      np.total = t;
+      // JAX opération par opération : dispatch asynchrone
+      const eg: Run = { name: 'JAX, op. par op.', lanes: ['hôte', 'appareil'], blocks: [], total: 0 };
+      let h = 0, d = 0;
+      if (xfer) { eg.blocks.push({ lane: 1, t0: 0, t1: xfer, kind: 'tr' }); d = xfer; }
+      for (let i = 0; i < k; i++) {
+        eg.blocks.push({ lane: 0, t0: h, t1: h + oEg, kind: 'py' }); h += oEg;
+        const s = Math.max(h, d); eg.blocks.push({ lane: 1, t0: s, t1: s + lch + pass, kind: 'calc' }); d = s + lch + pass;
+      }
+      if (xfer) { eg.blocks.push({ lane: 1, t0: d, t1: d + xfer, kind: 'tr' }); d += xfer; }
+      eg.total = Math.max(h, d);
+      // JAX jit : un appel, un noyau fusionné
+      const jt: Run = { name: 'JAX, jit', lanes: ['hôte', 'appareil'], blocks: [], total: 0 };
+      h = 0; d = 0;
+      if (first) { jt.blocks.push({ lane: 0, t0: 0, t1: cmp, kind: 'comp' }); h = cmp; }
+      jt.blocks.push({ lane: 0, t0: h, t1: h + oJt, kind: 'py' }); h += oJt;
+      if (xfer) { jt.blocks.push({ lane: 1, t0: 0, t1: xfer, kind: 'tr' }); d = xfer; }
+      const s0 = Math.max(h, d); jt.blocks.push({ lane: 1, t0: s0, t1: s0 + lch + pass, kind: 'exec' }); d = s0 + lch + pass;
+      if (xfer) { jt.blocks.push({ lane: 1, t0: d, t1: d + xfer, kind: 'tr' }); d += xfer; }
+      jt.total = Math.max(h, d);
+      return [np, eg, jt];
+    }
+    const COL: Record<string, string> = { py: 'var(--h-py)', calc: 'var(--h-calc)', comp: 'var(--h-comp)', exec: 'var(--h-exec)', tr: 'var(--text-2)' };
+
+    function draw() {
+      $('dev').querySelectorAll('button').forEach((b) => b.classList.toggle('active', (b.dataset.v === '1') === gpu));
+      inp('host').disabled = !gpu;
+      ['onp', 'oeg', 'ojt', 'lch', 'bw1', 'cmp'].forEach((r) => ($(r + '-out').textContent = inp(r).value));
+      $('k-out').textContent = inp('k').value;
+      const N = Math.round(10 ** +inp('n').value);
+      $('n-out').textContent = N >= 1e6 ? `${(N / 1e6).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} M` : N >= 1e3 ? `${(N / 1e3).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} k` : String(N);
+      const runs = model(N);
+
+      // --- chronologies : une échelle par mode ---
+      const W = 640, ox = 150, wpx = W - ox - 90, laneH = 16;
+      let g = '', y = 4;
+      runs.forEach((r) => {
+        const X = (t: number) => ox + (t / r.total) * wpx;
+        g += `<text x="0" y="${y + 12}" class="ax v">${r.name}</text>`;
+        r.lanes.forEach((ln, li) => {
+          const yy = y + li * (laneH + 3);
+          g += `<text x="${ox - 6}" y="${yy + 12}" text-anchor="end" class="ax">${ln}</text><rect x="${ox}" y="${yy}" width="${wpx}" height="${laneH}" fill="var(--surface-2)"/>`;
+          r.blocks.filter((b) => b.lane === li).forEach((b) => { g += `<rect x="${X(b.t0)}" y="${yy}" width="${Math.max(0.8, X(b.t1) - X(b.t0) - 0.4)}" height="${laneH}" fill="${COL[b.kind]}" opacity="0.92"/>`; });
+        });
+        g += `<text x="${ox + wpx + 8}" y="${y + 12}" class="ax v">${fmtTime(r.total)}</text>`;
+        y += r.lanes.length * (laneH + 3) + 14;
+      });
+      const a = $('gantt') as unknown as SVGSVGElement;
+      a.setAttribute('viewBox', `0 0 ${W} ${y}`);
+      a.innerHTML = g;
+
+      // --- temps total en fonction de N ---
+      const cw = 640, cox = 60, cpw = cw - cox - 110, ch = 170, cy0 = 8, cph = ch - 32;
+      const Ns: number[] = []; for (let e = 2; e <= 9.001; e += 0.125) Ns.push(10 ** e);
+      const series = runs.map((_, i) => Ns.map((n) => model(n)[i].total));
+      const all = series.flat(), tl = Math.floor(Math.log10(Math.min(...all))), th = Math.ceil(Math.log10(Math.max(...all)));
+      const CX = (n: number) => cox + ((Math.log10(n) - 2) / 7) * cpw, CY = (t: number) => cy0 + (1 - (Math.log10(t) - tl) / (th - tl)) * cph;
+      let c = '';
+      for (let e = 2; e <= 9; e++) c += `<line x1="${CX(10 ** e)}" y1="${cy0}" x2="${CX(10 ** e)}" y2="${cy0 + cph}" stroke="var(--border)" stroke-width="0.5"/><text x="${CX(10 ** e)}" y="${ch - 12}" text-anchor="middle" class="ax">10${'⁰¹²³⁴⁵⁶⁷⁸⁹'[e]}</text>`;
+      for (let e = tl; e <= th; e++) c += `<line x1="${cox}" y1="${CY(10 ** e)}" x2="${cox + cpw}" y2="${CY(10 ** e)}" stroke="var(--border)" stroke-width="0.5"/><text x="${cox - 6}" y="${CY(10 ** e) + 3.5}" text-anchor="end" class="ax">${fmtTime(10 ** e)}</text>`;
+      const sty = [['var(--text-2)', ''], ['var(--text-2)', '5 4'], ['var(--h-exec)', '']];
+      series.forEach((sv, i) => {
+        c += `<polyline points="${sv.map((t, j) => `${CX(Ns[j]).toFixed(1)},${CY(t).toFixed(1)}`).join(' ')}" fill="none" stroke="${sty[i][0]}" stroke-width="2" stroke-dasharray="${sty[i][1]}"/>`;
+        c += `<text x="${cox + cpw + 6}" y="${CY(sv[sv.length - 1]) + 4}" class="ax v">${runs[i].name}</text>`;
+      });
+      c += `<line x1="${CX(N)}" y1="${cy0}" x2="${CX(N)}" y2="${cy0 + cph}" stroke="var(--hl-stroke)" stroke-width="1.5"/>`;
+      c += `<text x="${cox + cpw / 2}" y="${ch - 1}" text-anchor="middle" class="ax">N (nombre de valeurs float32)</text>`;
+      const b = $('curve') as unknown as SVGSVGElement;
+      b.setAttribute('viewBox', `0 0 ${cw} ${ch}`);
+      b.innerHTML = c;
+    }
+    ['k', 'n', 'onp', 'oeg', 'ojt', 'lch', 'bw1', 'cmp'].forEach((r) => inp(r).addEventListener('input', draw));
+    ['first', 'host'].forEach((r) => inp(r).addEventListener('change', draw));
+    draw();
+  });
+</script>
+
+<style is:global>
+  .disp .row { margin-bottom: 4px; }
+  .disp .seg { display: inline-flex; gap: 6px; }
+  .disp .seg button { font-size: 13px; padding: 4px 12px; }
+  .disp .chk { margin-left: 12px; font-size: 13px; color: var(--text-2); cursor: pointer; }
+  .disp .sl { display: grid; gap: 4px; margin: 8px 0; }
+  .disp .sl label { display: grid; grid-template-columns: 280px 1fr 50px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); }
+  .disp .sl b { text-align: right; color: var(--text); font-weight: 500; }
+  .disp .hlegend .sq.tr { background: var(--text-2); }
+  .disp .ft { font-size: 13px; font-weight: 500; margin: 12px 0 4px; }
+  .disp .ft span { font-weight: 400; color: var(--text-2); }
+  .disp svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .disp svg text.ax.v { fill: var(--text); font-weight: 500; }
+  .disp details.hyp { margin-top: 8px; font-size: 14px; }
+  .disp details.hyp summary { cursor: pointer; color: var(--text-2); font-size: 13px; }
+  .disp .note { font-size: 13px; color: var(--text-2); line-height: 1.5; }
+  @media (max-width: 600px) { .disp .sl label { grid-template-columns: 1fr; } }
+</style>
