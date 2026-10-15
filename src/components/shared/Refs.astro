@@ -1,14 +1,16 @@
 ---
-// Articles liés à une partie du cours : [titre, auteurs, année, identifiant arXiv].
+// Références liées à une partie du cours : [titre, auteurs, année, identifiant].
+// L'identifiant est un numéro arXiv (2502.05171), un DOI (10.1109/…) ou une URL complète (https://…).
 interface Props { items: [string, string, number, string][] }
 const { items } = Astro.props;
+const href = (id: string) => (id.startsWith('http') ? id : id.startsWith('10.') ? `https://doi.org/${id}` : `https://arxiv.org/abs/${id}`);
 ---
 <p class="refs">
-  <span class="rl">Articles</span>
+  <span class="rl">Références</span>
   {items.map(([title, authors, year, id], i) => (
     <>
       {i > 0 && <span class="sep">·</span>}
-      <a href={`https://arxiv.org/abs/${id}`} target="_blank" rel="noopener">{title}</a> <span class="ra">({authors}, {year})</span>
+      <a href={href(id)} target="_blank" rel="noopener">{title}</a> <span class="ra">({authors}, {year})</span>
     </>
   ))}
 </p>

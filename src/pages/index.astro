@@ -1,31 +1,30 @@
 ---
-import { getCollection } from 'astro:content';
 import Base from '../layouts/Base.astro';
+import { COURSES, courseIds, chaptersOf } from '../lib/courses';
 
-const modules = (await getCollection('modules')).sort((a, b) => a.data.num - b.data.num);
-const labels = { 'a-venir': 'à venir', 'en-cours': 'en cours', termine: 'terminé' } as const;
+const courses = await Promise.all(
+  courseIds.map(async (id) => {
+    const chapters = await chaptersOf(id);
+    return { id, ...COURSES[id], total: chapters.length, done: chapters.filter((c) => c.data.status === 'termine').length, current: chapters.filter((c) => c.data.status === 'en-cours').length };
+  }),
+);
 ---
-<Base title="Carte de progression">
-  <h1>Comprendre Ouroboros</h1>
-  <p>
-    Un cours visuel pour comprendre comment une récurrence en profondeur (un bloc bouclé T fois)
-    et une récurrence dans le temps (un état transporté d'un token au suivant) peuvent coexister,
-    et pourquoi certains couplages gardent l'entraînement parallèle.
-  </p>
-  <h2>Carte de progression</h2>
-  <ol class="modules">
-    {modules.map((m) => (
+<Base title="Mes cours">
+  <h1>Mes cours</h1>
+  <ul class="courses">
+    {courses.map((c) => (
       <li>
-        <a href={`/modules/${m.id}/`}>Module {m.data.num} · {m.data.title}</a>
-        <span class={`badge ${m.data.status}`}>{labels[m.data.status]}</span>
-        <div class="sum">{m.data.summary}</div>
+        <a class="ct" href={`/${c.id}/`}>{c.title}</a>
+        <div class="sum">{c.tagline}</div>
+        <div class="meta">{c.total} {c.unit.toLowerCase()}{c.total > 1 ? 's' : ''} · {c.done} terminé{c.done > 1 ? 's' : ''}{c.current > 0 && ` · ${c.current} en cours`}</div>
       </li>
     ))}
-  </ol>
+  </ul>
 </Base>
 <style>
-  .modules { list-style: none; padding: 0; }
-  .modules li { border-bottom: 1px solid var(--border); padding: 0.8rem 0; }
-  .modules a { font-weight: 500; margin-right: 0.6rem; }
-  .sum { color: var(--text-2); font-size: 15px; }
+  .courses { list-style: none; padding: 0; }
+  .courses li { border-bottom: 1px solid var(--border); padding: 1rem 0; }
+  .ct { font-size: 20px; font-weight: 500; }
+  .sum { color: var(--text-2); margin-top: 0.2rem; }
+  .meta { color: var(--text-2); font-size: 14px; margin-top: 0.3rem; }
 </style>

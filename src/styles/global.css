@@ -30,6 +30,10 @@
   --c-model-classic: #77756f;
   --c-model-loop: #a0703f;
   --c-reach-soft: #e4dfd6;
+  /* cours Preprocessing : signal et trames (le surlignage de la trame en cours utilise --hl-*) */
+  --p-wave: #5b6b7e;
+  --p-frame-a: #c9d3df;
+  --p-frame-b: #dfe5ec;
   --warn: #ef9f27;
   --bad: #e24b4a;
   --hl-bg: #faeeda;
@@ -63,6 +67,9 @@
     --c-h2: #adbfe4;
     --c-h3: #6b85bd;
     --c-h4: #4f6aa6;
+    --p-wave: #9fb0c4;
+    --p-frame-a: #44505f;
+    --p-frame-b: #343d49;
   }
 }
 * { box-sizing: border-box; }
@@ -91,6 +98,8 @@ button.active { border-color: var(--accent); color: var(--accent); }
 .site-header { border-bottom: 1px solid var(--border); margin-bottom: 2rem; }
 .site-header .shell { display: flex; align-items: baseline; gap: 1.5rem; padding-bottom: 0; }
 .site-header a.brand { font-weight: 500; text-decoration: none; color: var(--text); padding: 1rem 0; }
+.site-header .crumb { color: var(--text-2); }
+.site-header .crumb a { text-decoration: none; color: var(--text-2); }
 .callout { background: var(--surface-2); border-radius: var(--radius); padding: 0.75rem 1rem; margin: 1.5rem 0; }
 .callout > :first-child { margin-top: 0; }
 .callout > :last-child { margin-bottom: 0; }

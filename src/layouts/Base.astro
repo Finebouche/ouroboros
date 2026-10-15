@@ -1,20 +1,23 @@
 ---
 import '../styles/global.css';
 import 'katex/dist/katex.min.css';
-interface Props { title: string; wide?: boolean }
-const { title, wide = false } = Astro.props;
+import { COURSES, type CourseId } from '../lib/courses';
+interface Props { title: string; wide?: boolean; course?: CourseId }
+const { title, wide = false, course } = Astro.props;
+const courseTitle = course ? COURSES[course].title : 'Cours';
 ---
 <!doctype html>
 <html lang="fr">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{title} · Ouroboros, le cours</title>
+    <title>{title} · {courseTitle}</title>
   </head>
   <body>
     <header class="site-header">
       <div class:list={["shell", { wide }]}>
-        <a class="brand" href="/">Ouroboros, le cours</a>
+        <a class="brand" href="/">Cours</a>
+        {course && <span class="crumb"><span aria-hidden="true">/ </span><a href={`/${course}/`}>{courseTitle}</a></span>}
       </div>
     </header>
     <main class:list={["shell", { wide }]}>
