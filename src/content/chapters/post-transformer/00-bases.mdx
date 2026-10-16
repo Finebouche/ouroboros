@@ -30,10 +30,9 @@ $$
 A \;=\; \mathrm{softmax}\!\left(\frac{Q\,K^{\top}}{\sqrt{d_k}} \;+\; M\right) V
 $$
 
-- $Q$, $K$, $V$ : les matrices de la section 2, une ligne par token.
-- $Q\,K^{\top}$ : la grille $s \times s$ de scores.
-- $M$ : le masque, $0$ dans le triangle, $-\infty$ au-dessus (donc poids exactement $0$ après le softmax).
-- $\sqrt{d_k}$ : normalisation, avec $d_k$ la dimension des clés ; elle évite que les scores grossissent avec $d_k$.
+- $Q$, $K$, $V$ : les matrices de requêtes, clés et valeurs, une ligne par token.
+- $M$ : le masque, ($0$ dans le triangle, $-\infty$ au-dessus donc poids exactement $0$ après le softmax).
+- $\sqrt{d_k}$ : normalisation, avec $d_k$ la dimension d'une tête de l'attention.
 
 <Refs items={[["Attention Is All You Need", "Vaswani et al.", 2017, "1706.03762"]]} />
 
@@ -45,7 +44,6 @@ $$
 
 ## 1. Un bloc de transformer, étape par étape
 
-Clique sur les étapes : le schéma de gauche montre où on est.
 
 <AttentionSteps />
 
@@ -55,7 +53,7 @@ Clique sur les étapes : le schéma de gauche montre où on est.
 
 ## 2. Rappel : d'où viennent Q, K et V ?
 
-Un token n'est d'abord qu'un numéro. Une table d'*embeddings* le remplace par un vecteur de $d_{\text{model}}$ nombres, noté $x_i$ : c'est tout ce que le modèle sait de ce token à l'entrée de l'attention (en pratique après un RMSNorm, et enrichi par les couches précédentes).
+Un token n'est d'abord qu'un numéro. Une table d'*embeddings* le remplace par un vecteur de $d_{\text{model}}$ nombres, noté $x_i$ : c'est tout ce que le modèle sait de ce token à l'entrée de l'attention.
 
 Dans l'attention, on projette ce vecteur trois fois, avec trois matrices apprises $W_Q$, $W_K$ et $W_V$. Ce sont trois projections linéaires du même vecteur $x_i$, et ce que chacune finit par encoder est décidé par l'entraînement. Les trois résultats s'appellent la requête $q_i$ (*query*), la clé $k_i$ (*key*) et la valeur $v_i$ (*value*).
 

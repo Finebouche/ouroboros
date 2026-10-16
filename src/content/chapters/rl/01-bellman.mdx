@@ -8,7 +8,7 @@ import Reveal from '@/components/shared/Reveal.astro';
 import Quiz from '@/components/shared/Quiz.astro';
 import Refs from '@/components/shared/Refs.astro';
 import Loop from '@/components/rl/01-bellman/Loop.astro';
-import CreditSlider from '@/components/rl/01-bellman/CreditSlider.astro';
+import RunWidget from '@/components/rl/01-bellman/RunWidget.astro';
 import ValueIter from '@/components/rl/01-bellman/ValueIter.astro';
 import Corridor from '@/components/rl/01-bellman/Corridor.astro';
 import Tree from '@/components/rl/01-bellman/Tree.astro';
@@ -24,7 +24,7 @@ Un **agent** observe un **état** $s$, choisit une **action** $a$ ; l'**environn
 - Les **règles de l'environnement** sont la probabilité de transition $P(s'|s,a)$ et la récompense $r(s,a,s')$. L'agent ne les connaît généralement pas.
 - Un tel problème s'appelle un **processus de décision markovien** (MDP) : l'état suivant ne dépend que de l'état et de l'action courants, pas de tout le passé.
 
-## 2. Le retour : additionner les récompenses futures
+## 2. Le retour, et le problème du crédit
 
 À partir d'un instant $t$, le **retour** est la somme des récompenses suivantes, chacune réduite d'un facteur $\gamma$ par pas de retard :
 
@@ -32,24 +32,24 @@ $$
 G_t = r_{t+1} + \gamma\, r_{t+2} + \gamma^2\, r_{t+3} + \dots
 $$
 
-$\gamma \in [0, 1[$ est le **facteur d'actualisation**. Il dit à quel point le futur compte : avec $\gamma = 0$ seule la récompense immédiate compte ; avec $\gamma$ proche de 1, l'agent est patient. Il garantit aussi que la somme reste finie.
+$\gamma \in [0, 1[$ est le **facteur d'actualisation** : avec $\gamma = 0$ seule la récompense immédiate compte, avec $\gamma$ proche de 1 l'agent est patient (et la somme reste finie).
 
-<Corridor view="disc" />
-
-Exemple : récompenses $0, 0, 1$ puis plus rien, avec $\gamma = 0{,}9$ : $G = 0 + 0{,}9 \times 0 + 0{,}9^2 \times 1 = 0{,}81$. Une récompense reçue deux pas plus tard ne vaut déjà plus que 81 % d'une récompense immédiate.
-
-## 3. Le vrai problème : à qui attribuer le crédit ?
+$\gamma$ appartient à la **définition de l'objectif** (quel retour on maximise), pas à Bellman en particulier : $\gamma = 1$ est possible quand les épisodes sont finis. Il apparaît ensuite dans les cibles de Bellman de FQI et LSPI, dans l'estimation des avantages (GAE) de PPO et NAC, tandis qu'OpenAI-ES n'a besoin que du retour d'un épisode (actualisé ou non) et que BC n'utilise aucune récompense.
 
 Dans la plupart des tâches, la récompense arrive **tard** : on gagne une partie, on atteint un but. Parmi les dizaines d'actions passées, lesquelles ont mérité ce crédit, lesquelles sont fautives ? C'est le problème de l'**attribution du crédit** : le cœur du RL, et la raison d'être de ce qui suit. Deux façons d'y répondre :
 
-- **Le retour complet** (méthode de Monte-Carlo) : attendre la fin de l'épisode, puis donner à chaque action le retour qui la suit. C'est simple et sans biais, mais bruité (tout le hasard de la suite entre dans le crédit) et il faut des épisodes entiers.
+- **Le retour complet** (méthode de Monte-Carlo) : attendre la fin de l'épisode, puis donner à chaque action le retour $G_t$ qui la suit. C'est simple et sans biais, mais bruité (tout le hasard de la suite entre dans le crédit) et il faut des épisodes entiers.
 - **Bellman** : chaque état hérite de l'estimation de l'état suivant : « ce que je vaux = ma récompense + $\gamma$ × ce que vaut la suite ». Le crédit remonte alors d'**un pas à chaque mise à jour**, sans attendre la fin, et peut même se recombiner entre épisodes différents.
 
-<CreditSlider />
+<RunWidget />
+
+**Il ne faut pas confondre le principe et ses algorithmes.** Le **principe de Bellman** est une relation : la valeur d'un état doit valoir la récompense plus $\gamma$ fois la valeur de l'état suivant. Elle ne dit pas comment apprendre ; plusieurs algorithmes s'en servent (itération de valeur, TD(0), FQI, LSPI). Ce qu'ils partagent, et que Monte-Carlo n'a pas, c'est le **bootstrapping** : la cible contient leur propre estimation de l'état suivant, au lieu du retour réellement observé.
+
+La mise à jour pas à pas du widget s'appelle **TD(0)** (*temporal difference*, différence temporelle) : la quantité $r + \gamma V(s') - V(s)$, l'écart entre la valeur actuelle de la case et ce que la transition vient de suggérer, est l'**erreur TD**.
 
 Le reste du chapitre construit la seconde réponse. Les algorithmes du cours seront à chaque fois comparés sur cette question : comment attribuent-ils le crédit ?
 
-## 4. La valeur : ce que le retour vaut en moyenne
+## 3. La valeur : ce que le retour vaut en moyenne
 
 Le retour dépend de la politique et du hasard. La **valeur** d'un état est le retour qu'on peut en attendre en moyenne en suivant $\pi$ :
 
@@ -63,27 +63,43 @@ Prenons un couloir de quatre cases dont la sortie rapporte $+1$, avec une politi
 
 La valeur de chaque case s'exprime avec celle de la suivante. C'est l'idée centrale du chapitre.
 
-## 5. L'équation de Bellman
+## 4. L'équation de Bellman
 
-Séparons le retour en « première récompense » et « tout le reste » : $G_t = r_{t+1} + \gamma\, G_{t+1}$. En prenant la moyenne, on obtient une relation entre la valeur d'un état et celle des états suivants :
+Séparons le retour en « première récompense » et « tout le reste » : $G_t = r_{t+1} + \gamma\, G_{t+1}$. En prenant la moyenne, la valeur d'un état s'exprime avec celle de l'état suivant. On le construit en trois étapes, de la plus simple à la plus générale.
+
+**1. Tout est déterministe** (le couloir) : un seul état suivant $s'$.
 
 $$
 V^\pi(s) = r + \gamma\, V^\pi(s')
 $$
 
-dans le couloir, où tout est déterministe. Quand l'action est tirée au hasard et que l'environnement l'est aussi, on **moyenne** sur les actions et sur les états suivants :
+**2. L'environnement a du hasard** : plusieurs états suivants sont possibles, avec des probabilités $P(s'|s,a)$ ; on prend la moyenne pondérée.
 
 $$
-V^\pi(s) = \sum_a \pi(a|s) \sum_{s'} P(s'|s,a)\,\big[\, r + \gamma\, V^\pi(s') \,\big]
+V(s) = \sum_{s'} P(s'|s,a)\,\big[\, r + \gamma\, V(s') \,\big]
 $$
 
-C'est l'**équation de Bellman** pour une politique. Le diagramme ci-dessous la lit de bas en haut : les valeurs des états suivants (en bas) donnent, par moyenne et par $\gamma$, la valeur de chaque action, puis celle de l'état.
+**3. La politique a du hasard** : plusieurs actions sont possibles, avec des probabilités $\pi(a|s)$ ; on moyenne aussi sur les actions. On appelle **valeur d'une action** $Q^\pi(s,a)$ ce qu'elle vaut une fois choisie, c'est-à-dire la somme de l'étape 2 :
+
+$$
+Q^\pi(s,a) = \sum_{s'} P(s'|s,a)\,\big[\, r + \gamma\, V^\pi(s') \,\big], \qquad V^\pi(s) = \sum_a \pi(a|s)\, Q^\pi(s,a)
+$$
+
+Mis bout à bout, c'est l'**équation de Bellman** pour une politique : la valeur d'un état est la moyenne des valeurs de ses actions, et celle d'une action est la moyenne des valeurs des états suivants, avec $\gamma$ et la récompense. Le diagramme la lit de bas en haut :
 
 <Tree />
 
-On appelle **valeur d'une action** $Q^\pi(s,a)$ le terme intérieur : $Q^\pi(s,a) = \sum_{s'} P(s'|s,a)\,[\, r + \gamma V^\pi(s') \,]$. Ainsi $V^\pi(s) = \sum_a \pi(a|s)\, Q^\pi(s,a)$ : la valeur d'un état est la moyenne des valeurs de ses actions.
+### Et sans Bellman ?
 
-## 6. Optimiser : remplacer la moyenne par un maximum
+On peut faire de l'apprentissage par renforcement sans cette récurrence : jouer des épisodes entiers et juger chaque action par le retour obtenu (Monte-Carlo), ou juger une politique entière par son retour total (OpenAI-ES). Bellman apporte trois choses :
+
+- **Apprendre d'une transition isolée** $(s, a, r, s')$, sans attendre la fin de l'épisode.
+- **Recombiner des morceaux d'épisodes** et réutiliser des données produites par un autre comportement.
+- **Un crédit moins bruité** quand le hasard est fort (voir le widget de la partie 2).
+
+Le prix : Bellman suppose que l'état résume tout ce qui compte pour la suite (la propriété de Markov), et il s'appuie sur ses propres estimations, donc ses cibles sont fausses au départ. Quand l'observation est partielle (les tâches de mémoire de POPGym du tableau du cours), la valeur d'une observation n'est plus bien définie et les cibles de Bellman deviennent peu fiables : les méthodes qui n'utilisent que le retour complet y sont moins fragiles.
+
+## 5. Optimiser : remplacer la moyenne par un maximum
 
 Chercher la meilleure politique revient à chercher les meilleures valeurs $V^\star$. Une politique optimale choisit dans chaque état l'action de plus grande valeur, donc la moyenne sur les actions devient un **maximum** (panneau de droite du diagramme) :
 
@@ -99,9 +115,9 @@ C'est l'**équation de Bellman d'optimalité**. Elle ne se résout pas d'un coup
 
 - À chaque itération, l'information du but remonte d'une case. Les valeurs ne changent plus quand elles ont atteint la case la plus éloignée.
 - À la fin, on lit la **politique optimale** : dans chaque case, l'action qui maximise « récompense + $\gamma$ × valeur de la case atteinte ». Elle évite le piège.
-- La convergence est garantie : chaque itération rapproche $V$ de $V^\star$ d'un facteur $\gamma$ au moins (sur le pire écart entre états), donc l'erreur diminue au moins comme $\gamma^k$.
+- La convergence est garantie : chaque itération réduit l'écart avec $V^\star$ au moins d'un facteur $\gamma$, donc après $k$ itérations l'écart est au plus $\gamma^k$ fois l'écart de départ.
 
-## 7. Ce qui reste à résoudre
+## 6. Ce qui reste à résoudre
 
 L'itération de valeur suppose qu'on connaît $P$ et $r$, et qu'on peut écrire une valeur pour chaque état. En pratique, l'environnement est une boîte noire qu'on ne peut que simuler, et les états sont trop nombreux pour une table. Les algorithmes du cours (BC, FQI, LSPI, NAC, OpenAI-ES, PPO) répondent à cela de six façons différentes : en remplaçant les moyennes par des échantillons observés, et la table des valeurs ou la politique par une fonction paramétrée.
 
@@ -136,7 +152,7 @@ $V(s_3) = 1$, $V(s_2) = 0{,}9$, $V(s_1) = 0{,}81$, $V(s_0) = 0{,}729$ : chaque c
 
 </Reveal>
 
-**Q3.** Dans le diagramme de la section 5, que change-t-on pour passer de $V^\pi$ à $V^\star$ ?
+**Q3.** Dans le diagramme de la section 4, que change-t-on pour passer de $V^\pi$ à $V^\star$ ?
 
 <Reveal>
 

@@ -28,14 +28,6 @@
     let showNums = false;
     const nums = root.querySelector<HTMLInputElement>('[data-ref="nums"]')!;
 
-    const tableNums = (rows: readonly (readonly number[])[], hl: number | null, labels: string[] | undefined, dec: number) =>
-      `<table class="m">${rows
-        .map(
-          (r, i) =>
-            `<tr class="${i === hl ? 'sel' : ''}">${labels ? `<th>${labels[i]}</th>` : ''}${r.map((x) => `<td>${fx(x, dec)}</td>`).join('')}</tr>`,
-        )
-        .join('')}</table>`;
-
     const tableDots = (
       rows: readonly (readonly number[])[],
       hl: number | null,
@@ -53,6 +45,10 @@
         if (labels) g += `<text x="${lw - 6}" y="${cy + 4}" text-anchor="end" class="ml">${labels[i]}</text>`;
         r.forEach((v, j) => {
           const cx = lw + j * CELL + CELL / 2;
+          if (showNums) {
+            g += `<text x="${cx}" y="${cy + 3}" text-anchor="middle" class="mn${i === hl ? ' hl' : ''}">${fx(v, 1).replace(/^-(0\.0)$/, '$1').replace('-', '−')}</text>`;
+            return;
+          }
           const r_ = Math.abs(v) < 1e-9 ? 1.5 : R * Math.sqrt(Math.abs(v) / vmax);
           const style = v < 0 ? `fill="none" stroke="${color}" stroke-width="2"` : `fill="${color}"`;
           g += `<circle cx="${cx}" cy="${cy}" r="${r_.toFixed(2)}" ${style}><title>${fx(v, dec)}</title></circle>`;
@@ -67,28 +63,27 @@
       labels: string[] | undefined,
       color: string,
       dec: number,
-    ) => (showNums ? tableNums(rows, hl, labels, dec) : tableDots(rows, hl, labels, color, dec));
+    ) => tableDots(rows, hl, labels, color, dec);
 
     function draw() {
       const words = WORDS.slice(0, NW);
       const Xs = X.slice(0, NW);
       const x = Xs[sel];
       const w = words[sel];
-      let h = `<div class="blk"><div class="cap">Embeddings <b>X</b> : une ligne par mot, ${D_MODEL} nombres chacun</div>${table(Xs, sel, words, 'var(--text-2)', 2)}</div>`;
-      h += '<div class="cards">';
-      for (const k of kinds) {
-        const k_ = k.toLowerCase();
-        const Mk = W[k];
-        const out = Xs.map((row) => mul(row, Mk));
-        h += `<div class="card" style="border-top-color:${COLORS[k]}">
-          <div class="cap"><b>${k} = X · W<sub>${k}</sub></b></div>
-          <div class="cap">W<sub>${k}</sub> (${D_MODEL} × ${D_K}), la même pour tous les mots</div>
-          ${table(Mk, null, undefined, COLORS[k], 1)}
-          <div class="calc">${k_}<sub>${w}</sub> = x<sub>${w}</sub> · W<sub>${k}</sub><br /><b>[${out[sel].map((v) => fx(v, 2)).join(' ')}]</b></div>
-          <div class="cap">Matrice ${k} (${NW} × ${D_K})</div>
-          ${table(out, sel, words, COLORS[k], 2)}
+      // Schéma de Falk : W en haut à droite, X en bas à gauche, le produit en bas à droite (les lignes de X alignées avec celles de Q, K, V)
+      const outs = kinds.map((k) => Xs.map((row) => mul(row, W[k])));
+      let h = `<div class="qgrid"><div class="eqs">${kinds.map((k) => `<div style="color:${COLORS[k]}"><b>${k}</b> = X · W<sub>${k}</sub></div>`).join('')}</div>`;
+      kinds.forEach((k, ki) => {
+        h += `<div class="card top" style="border-top-color:${COLORS[k]}">
+          <div class="cap capt"><span>W<sub>${k}</sub> : ${D_MODEL} × ${D_K}</span></div>
+          ${table(W[k], null, undefined, COLORS[k], 1)}
+          <div class="calc">${k.toLowerCase()}<sub>${w}</sub> = x<sub>${w}</sub> · W<sub>${k}</sub><br /><b>[${outs[ki][sel].map((v) => fx(v, 2)).join(' ')}]</b></div>
         </div>`;
-      }
+      });
+      h += `<div class="blk"><div class="cap">Embeddings <b>X</b> : ${NW} × ${D_MODEL}</div>${table(Xs, sel, words, 'var(--text-2)', 2)}</div>`;
+      kinds.forEach((k, ki) => {
+        h += `<div class="card bot"><div class="cap">${k} : ${NW} × ${D_K}</div>${table(outs[ki], sel, undefined, COLORS[k], 2)}</div>`;
+      });
       h += '</div>';
       body.innerHTML = h;
     }
@@ -118,14 +113,19 @@
   .qkv .row .nums { margin-left: auto; font-size: 13px; cursor: pointer; }
   .qkv svg.md { display: block; }
   .qkv svg.md text.ml { font: 12px var(--font); fill: var(--text-2); }
+  .qkv svg.md text.mn { font: 10.5px var(--font); fill: var(--text); font-variant-numeric: tabular-nums; }
+  .qkv svg.md text.mn.hl { fill: var(--hl-text); }
   .qkv .blk { margin-bottom: 14px; }
-  .qkv .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
-  .qkv .card { background: var(--surface-2); border-radius: var(--radius); border-top: 3px solid; padding: 0.6rem 0.75rem; }
+  .qkv .qgrid { display: grid; grid-template-columns: auto repeat(3, minmax(0, 1fr)); column-gap: 8px; row-gap: 0; align-items: stretch; }
+  .qkv .qgrid .blk { margin: 0 6px 0 0; align-self: start; }
+  .qkv .eqs { align-self: end; font-size: 13px; line-height: 1.7; padding: 0 6px 8px 0; }
+  .qkv .card { background: var(--surface-2); padding: 0.45rem 0.4rem; }
+  .qkv .card.top { border-radius: var(--radius) var(--radius) 0 0; border-top: 3px solid; }
+  .qkv .card.bot { border-radius: 0 0 var(--radius) var(--radius); padding-top: 0; }
+  .qkv .card .calc { font-size: 11px; }
+  @media (max-width: 700px) { .qkv .qgrid { display: block; } .qkv .qgrid > div { margin-bottom: 8px; } }
   .qkv .cap { font-size: 12px; color: var(--text-2); margin: 6px 0 3px; }
+  .qkv .capt { display: flex; justify-content: flex-start; align-items: baseline; gap: 8px; }
   .qkv .calc { font: 13px/1.6 var(--mono); margin: 8px 0; overflow-wrap: anywhere; }
-  .qkv table.m { border-collapse: separate; border-spacing: 2px; font-variant-numeric: tabular-nums; }
-  .qkv table.m td { background: var(--surface); border-radius: 4px; font-size: 13px; padding: 2px 6px; text-align: center; min-width: 26px; }
-  .qkv table.m th { font: 12px var(--font); color: var(--text-2); text-align: right; padding-right: 6px; font-weight: 400; }
-  .qkv table.m tr.sel td { background: var(--hl-bg); color: var(--hl-text); }
   .qkv .note { font-size: 12px; color: var(--text-2); margin: 10px 0 0; }
 </style>

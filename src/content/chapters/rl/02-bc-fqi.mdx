@@ -9,6 +9,7 @@ import Quiz from '@/components/shared/Quiz.astro';
 import Refs from '@/components/shared/Refs.astro';
 import Offline from '@/components/rl/02-bc-fqi/Offline.astro';
 import BCWidget from '@/components/rl/02-bc-fqi/BCWidget.astro';
+import FQITable from '@/components/rl/02-bc-fqi/FQITable.astro';
 import FitWidget from '@/components/rl/02-bc-fqi/FitWidget.astro';
 
 ## 1. Le cadre : des données, pas d'environnement
@@ -38,48 +39,64 @@ Pour des actions continues, on minimise l'écart quadratique $\lVert \pi_\theta(
 
 ## 3. FQI : itérer Bellman par régression
 
-**FQI** (*fitted Q iteration*) apprend la valeur des actions $Q(s,a)$. Il part de l'équation d'optimalité du chapitre 1 :
+**FQI** (*fitted Q iteration*) apprend la valeur des actions $Q(s,a)$. Il part de l'équation d'optimalité du chapitre 1, qui dit ce que doit valoir une action :
 
 $$
 Q^\star(s,a) = \mathbb{E}\Big[\, r + \gamma \max_{a'} Q^\star(s', a') \,\Big]
 $$
 
-Le chapitre 1 calculait cette moyenne avec $P$. Ici, chaque transition enregistrée $(s, a, r, s')$ est **un échantillon** de la quantité entre crochets. En supposant un $Q_k$ déjà estimé, la transition fournit une **cible** :
+### Étape 1 : une transition donne une cible
+
+Le chapitre 1 calculait cette moyenne avec $P$. Ici, chaque transition enregistrée $(s, a, r, s')$ est **un échantillon** de la quantité entre crochets. Si on connaît déjà une estimation $Q_k$, la transition fournit une **cible** :
 
 $$
 y = r + \gamma \max_{a'} Q_k(s', a')
 $$
 
-L'algorithme est donc une itération de valeur où chaque mise à jour est un problème de régression :
+Par exemple, une transition de récompense $0$ qui arrive dans une case dont la meilleure action vaut déjà $1$ donne $y = 0 + 0{,}9 \times 1 = 0{,}9$.
+
+### Étape 2 : itérer
 
 1. Partir de $Q_0 = 0$.
 2. Pour chaque transition, calculer la cible $y_i = r_i + \gamma \max_{a'} Q_k(s'_i, a')$.
-3. Ajuster $Q_{k+1}$ par régression : $Q_{k+1} \approx \arg\min_Q \sum_i \big(Q(s_i, a_i) - y_i\big)^2$.
+3. Ajuster $Q_{k+1}$ pour qu'il colle à ces cibles : $Q_{k+1} \approx \arg\min_Q \sum_i \big(Q(s_i, a_i) - y_i\big)^2$. C'est une **régression**.
 4. Recommencer ; à la fin, jouer $\arg\max_a Q(s,a)$.
 
-Avec un tableau (une valeur par couple case-action), la régression se réduit à mettre chaque cible dans sa case. Sur les six transitions de la section 1 :
+Avec un tableau (une valeur par couple case-action), la régression se réduit à écrire chaque cible dans sa case. Voici les six transitions de la section 1, itération après itération :
 
-<Offline view="tab" />
+<FQITable />
 
-La récompense du but se transmet d'une transition à la précédente à chaque itération, exactement comme l'information remontait d'une case par itération au chapitre 1. Les cases colorées sont celles dont la cible vient de changer.
+La valeur du but remonte d'une transition à chaque itération, exactement comme elle remontait d'une case par itération au chapitre 1.
 
-Quand l'espace d'états est grand ou continu, aucun état ne se répète exactement : un tableau ne servirait à rien, et c'est **la régression** qui permet de généraliser d'un état à ses voisins. Voici un couloir continu : les points sont les cibles, la courbe est la fonction $Q_k$ ajustée.
+### Étape 3 : pourquoi une régression ?
+
+Quand l'espace d'états est grand ou continu, aucun état ne se répète exactement : un tableau ne servirait à rien. La régression généralise d'un état à ses voisins. Voici un couloir continu : les points sont les cibles, la courbe est la fonction $Q_k$ ajustée.
 
 <FitWidget />
 
-La valeur du but remonte vers la gauche à chaque itération, et la courbe lisse entre les points (au prix d'un léger écart avec le $Q$ optimal en pointillé, dû au degré 4 du polynôme).
+La valeur du but remonte vers la gauche à chaque itération, et la courbe lisse entre les points.
+
+### Limites
 
 - **Hors politique** : le $\max_{a'}$ évalue la meilleure action en $s'$, pas celle que les données ont choisie. Les données peuvent donc venir d'un comportement quelconque, même aléatoire, à condition de **couvrir** les situations utiles.
 - **Cible mouvante** : $y$ dépend de $Q_k$, qui vient elle-même d'une régression : une erreur à l'itération $k$ est recopiée dans les cibles suivantes. La convergence n'est garantie que pour des régresseurs sages ; Ernst et al. ont introduit la méthode avec des arbres de régression.
 - **Couverture** : une action jamais essayée dans un état n'a pas de cible. Le $\max_{a'}$ peut alors choisir une valeur imaginée par le régresseur, trop optimiste.
 
-## 4. BC ou FQI ?
+## 4. Qui attribue le crédit ?
+
+C'est la question du chapitre 1 : quelle action mérite la récompense d'une suite lointaine ?
+
+- **BC** n'attribue rien : l'expert l'a déjà fait en choisissant ses actions. Sans lui, BC ne sait rien de la récompense.
+- **FQI** l'attribue par la cible de Bellman, comme la méthode pas à pas (TD(0)) du chapitre 1, mais sur un lot de transitions rejouées : à chaque itération, toutes les cibles sont recalculées, et le crédit remonte d'un pas **partout à la fois**. Il faut donc autant d'itérations que la distance au but, mais aucun épisode complet n'est nécessaire, et des morceaux de trajectoires différentes se recombinent.
+
+## 5. BC ou FQI ?
 
 | | BC | FQI |
 |---|---|---|
 | Données | démonstrations (état, action de l'expert) | transitions (état, action, récompense, état suivant) |
 | Récompense | inutile | indispensable |
 | Ce qu'on apprend | la politique, directement | la valeur $Q$ ; la politique est le $\arg\max$ |
+| Attribution du crédit | aucune (l'expert l'a déjà faite) | par la cible de Bellman, un pas par itération |
 | Peut dépasser les données ? | non : au mieux l'expert | oui, si les données contiennent des alternatives |
 | Piège | états jamais vus, erreurs cumulées | cibles mouvantes, actions peu couvertes |
 

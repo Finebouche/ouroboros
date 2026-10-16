@@ -1,0 +1,61 @@
+---
+// Cours RL, chapitre 2 : les cibles de FQI, itération par itération, sur les six transitions enregistrées (version tabulaire :
+// Q est un tableau et la « régression » met simplement chaque cible dans sa case). Q₀ = 0, γ = 0,9.
+---
+<div class="widget rlw fqit" data-widget="fqit">
+  <div class="row"><span class="seg" data-ref="ctl"></span><span data-ref="kk" class="hint"></span></div>
+  <table class="ftab">
+    <thead><tr><th>#</th><th>transition (s, a, r, s′)</th><th data-ref="h3"></th><th>cible y = r + 0,9 × (cette valeur)</th></tr></thead>
+    <tbody data-ref="body"></tbody>
+  </table>
+  <p class="upd" data-ref="upd"></p>
+</div>
+
+<script>
+  import { DIRS, terminal, step } from '../world';
+  document.querySelectorAll<HTMLElement>('[data-widget="fqit"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const g = 0.9, K = 5;
+    const DATA: [number, number, number][] = [[0, 2, 1], [0, 1, 1], [0, 0, 1], [1, 2, 0], [2, 2, 0], [1, 2, 1]];
+    const trans = DATA.map(([r, c, a]) => { const [nr, nc, rew] = step(r, c, a); return { r, c, a, nr, nc, rew }; });
+    const lab = (r: number, c: number) => `(${r + 1}, ${c + 1})`;
+    const key = (r: number, c: number, a: number) => `${r},${c},${a}`;
+    const fm = (v: number) => (v === 0 ? '0' : v.toFixed(2).replace('.', ','));
+    // iter[k] = { best[i], y[i] } pour k = 1..K
+    const iter: { best: number[]; y: number[] }[] = [];
+    let Q: Record<string, number> = {};
+    for (let k = 1; k <= K; k++) {
+      const best = trans.map((t) => (terminal(t.nr, t.nc) ? 0 : Math.max(0, ...[0, 1, 2, 3].map((a) => Q[key(t.nr, t.nc, a)] ?? 0))));
+      const y = trans.map((t, i) => t.rew + g * best[i]);
+      iter.push({ best, y });
+      Q = {}; trans.forEach((t, i) => (Q[key(t.r, t.c, t.a)] = y[i]));
+    }
+    let k = 1;
+    const mk = (label: string, f: () => void) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', f); $('ctl').appendChild(b); return b; };
+    mk('← itération précédente', () => { k = Math.max(1, k - 1); draw(); });
+    mk('itération suivante →', () => { k = Math.min(K, k + 1); draw(); });
+    mk('recommencer', () => { k = 1; draw(); });
+    function draw() {
+      const cur = iter[k - 1], prev = k > 1 ? iter[k - 2] : null;
+      $('kk').textContent = `Itération ${k} : on calcule les cibles avec Q${'₀₁₂₃₄₅'[k - 1]}, puis Q${'₀₁₂₃₄₅'[k]} prend ces valeurs`;
+      $('h3').textContent = k === 1 ? 'meilleure valeur connue en s′ (Q₀ = 0 partout)' : `meilleure valeur connue en s′ (Q${'₀₁₂₃₄₅'[k - 1]})`;
+      $('body').innerHTML = trans.map((t, i) => {
+        const changed = (prev ? Math.abs(cur.y[i] - prev.y[i]) > 1e-9 : cur.y[i] !== 0);
+        const goal = terminal(t.nr, t.nc);
+        return `<tr><td>${i + 1}</td><td>s = ${lab(t.r, t.c)}, a = ${DIRS[t.a][3]}, r = ${t.rew > 0 ? '+1' : t.rew < 0 ? '−1' : '0'}, s′ = ${goal ? (t.rew > 0 ? 'but' : 'piège') : lab(t.nr, t.nc)}</td><td class="${cur.best[i] > 0 ? 'on' : 'off'}">${goal ? '0 (fin)' : fm(cur.best[i])}</td><td class="${changed ? 'new' : cur.y[i] !== 0 ? 'on' : 'off'}">${t.rew} + 0,9 × ${goal ? '0' : fm(cur.best[i])} = <b>${fm(cur.y[i])}</b></td></tr>`;
+      }).join('');
+      const ch = trans.map((_, i) => i).filter((i) => (prev ? Math.abs(cur.y[i] - prev.y[i]) > 1e-9 : cur.y[i] !== 0));
+      $('upd').textContent = ch.length ? `Cibles qui viennent de changer : transition${ch.length > 1 ? 's' : ''} ${ch.map((i) => i + 1).join(', ')}. ${k === 1 ? 'Seules les transitions qui touchent le but ou le piège ont une cible non nulle.' : 'Elles empruntent la valeur que l\'itération précédente venait d\'apprendre : le crédit a remonté d\'une transition.'}` : 'Plus aucune cible ne change : FQI a convergé sur ces six transitions.';
+    }
+    draw();
+  });
+</script>
+
+<style is:global>
+  .fqit .ftab { border-collapse: collapse; width: 100%; font-size: 13.5px; margin: 6px 0; }
+  .fqit .ftab th, .fqit .ftab td { padding: 6px 10px; border-bottom: 1px solid var(--border); text-align: left; }
+  .fqit .ftab th { color: var(--text-2); font-weight: 500; }
+  .fqit .ftab td.off { color: var(--text-2); }
+  .fqit .ftab td.new { background: color-mix(in srgb, var(--a-fqi) 24%, transparent); }
+  .fqit .upd { font: 13px/1.5 var(--font); color: var(--text); background: var(--surface-2); border-radius: 8px; padding: 6px 10px; margin: 4px 0 0; }
+</style>
