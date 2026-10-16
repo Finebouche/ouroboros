@@ -56,7 +56,7 @@
       LAT.forEach(([l, s, k], i) => {
         const y = i * rowH + 3;
         g += `<text x="${ox - 8}" y="${y + 12}" text-anchor="end" class="ax">${l}</text>`;
-        g += `<rect x="${ox}" y="${y}" width="${Math.max(2, X(s) - ox)}" height="15" rx="3" fill="${COL[k]}" opacity="0.85"/>`;
+        g += `<rect x="${ox}" y="${y}" width="${Math.max(2, X(s) - ox)}" height="15" rx="3" fill="${COL[k]}"/>`;
         g += `<text x="${X(s) + 6}" y="${y + 12}" class="ax v">${fmtTime(s)}</text>`;
       });
       const a = $('lat') as unknown as SVGSVGElement;
@@ -76,7 +76,7 @@
         const y = i * rowH + 3, t = 1e9 / b, done = Math.min(1, (frac * tmax) / t);
         g += `<text x="${ox - 8}" y="${y + 12}" text-anchor="end" class="ax">${l}</text>`;
         g += `<rect x="${ox}" y="${y}" width="${wpx}" height="15" rx="3" fill="var(--surface-2)" stroke="var(--border)"/>`;
-        g += `<rect x="${ox}" y="${y}" width="${wpx * done}" height="15" rx="3" fill="var(--text-2)" opacity="0.75"/>`;
+        g += `<rect x="${ox}" y="${y}" width="${wpx * done}" height="15" rx="3" fill="var(--text-2)"/>`;
         g += `<text x="${ox + wpx + 6}" y="${y + 12}" class="ax v">${fmtTime(t)}</text>`;
       });
       const s = $('bw') as unknown as SVGSVGElement;

@@ -23,14 +23,6 @@ import Cmvn from '@/components/preprocessing/01-mfcc/Cmvn.astro';
 
 Les **MFCC** (*Mel-Frequency Cepstral Coefficients*) résument la forme du spectre d'un court extrait de son en une dizaine de nombres. On les calcule sur chaque **trame** du signal : on obtient une suite de petits vecteurs, qu'on donne à un classifieur ou à un modèle.
 
-Le schéma de gauche montre ces 5 étapes ; dans le détail d'une étape, il la déplie en ses sous-étapes. Le chapitre les prend dans l'ordre :
-
-1. **Trames** : (en option, relever les aigus par la pré-accentuation, puis) découper le signal en petits morceaux qui se chevauchent.
-2. **Fenêtre et spectre** : pour chaque trame, adoucir les bords puis calculer les fréquences présentes.
-3. **Échelle de Mel** : regrouper les fréquences comme l'oreille le fait.
-4. **Log et DCT** : compresser, puis ne garder que la forme générale du spectre.
-5. **Deltas et normalisation** : ajouter la variation dans le temps, retirer l'effet du micro.
-
 <Refs items={[["Comparison of parametric representations for monosyllabic word recognition in continuously spoken sentences", "Davis & Mermelstein", 1980, "10.1109/TASSP.1980.1163420"]]} />
 
 <ArchMarker parts="signal preemph" label="Le signal, avec une pré-accentuation optionnelle" />

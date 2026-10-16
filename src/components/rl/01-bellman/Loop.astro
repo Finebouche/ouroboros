@@ -1,0 +1,88 @@
+---
+// Cours RL, chapitre 1 : la boucle agent–environnement, animée en boucle (pause possible) ; figure complète sans script ou si l'animation est désactivée.
+const W = 600, H = 232;
+const items = ['s₀', 'a₀', 'r₁', 's₁', 'a₁', 'r₂', 's₂', '…'];
+---
+<figure class="rlf rlf-loop" data-widget="loop">
+  <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Boucle agent–environnement : l'agent choisit une action, l'environnement renvoie un nouvel état et une récompense">
+    <defs><marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--text-2)" /></marker></defs>
+    <rect data-ref="agent" class="box" x="20" y="40" width="170" height="80" rx="10" fill="var(--a-fqi)" fill-opacity="0.18" stroke="var(--a-fqi)" />
+    <text x="105" y="72" text-anchor="middle" class="t">Agent</text>
+    <text x="105" y="92" text-anchor="middle" class="s">choisit une action</text>
+    <text x="105" y="108" text-anchor="middle" class="s">selon sa politique π</text>
+    <rect data-ref="env" class="box" x="410" y="40" width="170" height="80" rx="10" fill="var(--text-2)" fill-opacity="0.14" stroke="var(--text-2)" />
+    <text x="495" y="72" text-anchor="middle" class="t">Environnement</text>
+    <text x="495" y="92" text-anchor="middle" class="s">change d'état (règles P)</text>
+    <text x="495" y="108" text-anchor="middle" class="s">et donne une récompense</text>
+    <line x1="192" y1="62" x2="408" y2="62" stroke="var(--text-2)" stroke-width="1.6" marker-end="url(#ah)" />
+    <text x="300" y="54" text-anchor="middle" class="l">action aₜ</text>
+    <line x1="408" y1="100" x2="192" y2="100" stroke="var(--text-2)" stroke-width="1.6" marker-end="url(#ah)" />
+    <text x="300" y="118" text-anchor="middle" class="l">état sₜ₊₁, récompense rₜ₊₁</text>
+    <g data-ref="token" class="token" style="opacity:0">
+      <rect x="-30" y="-11" width="60" height="22" rx="11" fill="var(--bg)" stroke="var(--text)" stroke-width="1.2" />
+      <text data-ref="tlabel" x="0" y="4" text-anchor="middle" class="l">a₀</text>
+    </g>
+    <text x="30" y="172" class="s">trajectoire :</text>
+    {items.map((x, i) => (
+      <text data-i={i} x={118 + i * 58} y="172" class={x[0] === 'a' ? 'l act it' : x[0] === 'r' ? 'l rew it' : 'l it'} text-anchor="middle">{x}</text>
+    ))}
+    <text x="30" y="204" class="s">un épisode = une trajectoire jusqu'à un état terminal (ou un nombre de pas fixé)</text>
+  </svg>
+  <button class="lp" data-ref="pp" type="button" aria-label="Mettre l'animation en pause">⏸ pause</button>
+</figure>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="loop"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<SVGElement>(`[data-ref="${r}"]`)!;
+    const btn = root.querySelector<HTMLButtonElement>('[data-ref="pp"]')!;
+    const items = [...root.querySelectorAll<SVGElement>('.it')];
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) { btn.remove(); return; }
+    root.classList.add('anim');
+    const token = $('token') as unknown as SVGGElement, tl = $('tlabel');
+    const A = $('agent'), E = $('env');
+    const place = (x: number, y: number, anim: boolean) => { token.style.transition = anim ? 'transform 1.3s ease-in-out' : 'none'; token.style.transform = `translate(${x}px, ${y}px)`; };
+    // séquence : [élément révélé, action]
+    const seq: { reveal: number; act: () => void }[] = [
+      { reveal: 0, act: () => { A.classList.add('glow'); E.classList.remove('glow'); token.style.opacity = '0'; } },
+      { reveal: 1, act: () => { tl.textContent = 'a₀'; place(200, 62, false); token.style.opacity = '1'; setTimeout(() => place(400, 62, true), 40); } },
+      { reveal: 2, act: () => { A.classList.remove('glow'); E.classList.add('glow'); tl.textContent = 'r₁, s₁'; place(400, 100, false); setTimeout(() => place(200, 100, true), 40); } },
+      { reveal: 3, act: () => { E.classList.remove('glow'); A.classList.add('glow'); token.style.opacity = '0'; } },
+      { reveal: 4, act: () => { tl.textContent = 'a₁'; place(200, 62, false); token.style.opacity = '1'; setTimeout(() => place(400, 62, true), 40); } },
+      { reveal: 5, act: () => { A.classList.remove('glow'); E.classList.add('glow'); tl.textContent = 'r₂, s₂'; place(400, 100, false); setTimeout(() => place(200, 100, true), 40); } },
+      { reveal: 6, act: () => { E.classList.remove('glow'); A.classList.add('glow'); token.style.opacity = '0'; } },
+      { reveal: 7, act: () => { A.classList.remove('glow'); } },
+    ];
+    let i = 0, timer: number | null = null, paused = false;
+    const tick = () => {
+      if (i === 0) items.forEach((it) => it.classList.remove('on'));
+      if (i < seq.length) { items[seq[i].reveal]?.classList.add('on'); seq[i].act(); } else token.style.opacity = '0';
+      i = (i + 1) % (seq.length + 1);
+    };
+    const loop = () => { tick(); timer = window.setTimeout(loop, i === 0 ? 2400 : 1800); };
+    loop();
+    btn.addEventListener('click', () => {
+      paused = !paused;
+      if (paused) { if (timer) clearTimeout(timer); btn.textContent = '▶ lecture'; btn.setAttribute('aria-label', 'Relancer l\'animation'); }
+      else { btn.textContent = '⏸ pause'; btn.setAttribute('aria-label', 'Mettre l\'animation en pause'); loop(); }
+    });
+  });
+</script>
+
+<style is:global>
+  .rlf { margin: 1.2rem 0; }
+  .rlf svg { width: 100%; height: auto; display: block; margin: 0 auto; }
+  .rlf-loop svg { max-width: 600px; }
+  .rlf svg .t { font: 600 14px var(--font); fill: var(--text); }
+  .rlf svg .s { font: 12px var(--font); fill: var(--text-2); }
+  .rlf svg .l { font: 13px var(--font); fill: var(--text); }
+  .rlf svg .l.act { fill: var(--a-fqi); font-weight: 600; }
+  .rlf svg .l.rew { fill: var(--hl-stroke); font-weight: 600; }
+  .rlf figcaption { font-size: 13px; color: var(--text-2); line-height: 1.5; margin-top: 6px; }
+  .rlf-loop { position: relative; }
+  .rlf-loop .lp { display: block; margin: 2px auto 0; font-size: 12.5px; padding: 3px 12px; }
+  .rlf-loop.anim .it { opacity: 0.22; transition: opacity .5s; }
+  .rlf-loop.anim .it.on { opacity: 1; }
+  .rlf-loop .box { transition: fill-opacity .5s, stroke-width .5s; }
+  .rlf-loop .box.glow { fill-opacity: 0.4; stroke-width: 2.6; }
+  .rlf-loop .token { transform: translate(200px, 62px); }
+</style>

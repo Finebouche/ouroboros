@@ -1,0 +1,50 @@
+---
+// Chapitre HPC 6 : résoudre un système triangulaire inférieur L y = c, ligne par ligne (substitution avant), n = 4.
+const N = 4, cell = 14, gap = 34;
+const pw = N * cell + 18 + cell + 18 + cell; // L × y = c
+const W = 4 * pw + 3 * gap + 8, top = 14;
+const panels = Array.from({ length: N }, (_, i) => {
+  const x0 = 4 + i * (pw + gap);
+  return { i, x0, xL: x0, xY: x0 + N * cell + 18, xC: x0 + N * cell + 18 + cell + 18 };
+});
+const H = top + N * cell + 34;
+const label = ['1ʳᵉ ligne : y₁', '2ᵉ ligne : y₂', '3ᵉ ligne : y₃', '4ᵉ ligne : y₄'];
+---
+<figure class="tri">
+  <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Substitution avant sur un système triangulaire inférieur : chaque ligne ajoute une inconnue">
+    {panels.map((p) => (
+      <g>
+        {Array.from({ length: N }, (_, r) => Array.from({ length: N }, (_, c) => c <= r && (
+          <rect x={p.xL + c * cell + 0.5} y={top + r * cell + 0.5} width={cell - 1} height={cell - 1} rx="1.5" fill="var(--text-2)" fill-opacity={r === p.i ? 0.8 : 0.4} />
+        )))}
+        {Array.from({ length: N }, (_, r) => (
+          <g>
+            <rect x={p.xY + 0.5} y={top + r * cell + 0.5} width={cell - 1} height={cell - 1} rx="1.5"
+              fill={r < p.i ? 'var(--hl-stroke)' : r === p.i ? 'var(--text)' : 'none'}
+              stroke={r > p.i ? 'var(--text-2)' : 'none'} stroke-dasharray={r > p.i ? '2 2' : ''} />
+            <rect x={p.xC + 0.5} y={top + r * cell + 0.5} width={cell - 1} height={cell - 1} rx="1.5" fill="var(--text-2)" fill-opacity={r === p.i ? 0.8 : 0.4} />
+          </g>
+        ))}
+        <rect x={p.xL - 1.5} y={top + p.i * cell - 1.5} width={N * cell + 3} height={cell + 3} rx="3" fill="none" stroke="var(--text)" stroke-width="1.2" />
+        <rect x={p.xY - 1.5} y={top + p.i * cell - 1.5} width={cell + 3} height={cell + 3} rx="3" fill="none" stroke="var(--text)" stroke-width="1.2" />
+        <rect x={p.xC - 1.5} y={top + p.i * cell - 1.5} width={cell + 3} height={cell + 3} rx="3" fill="none" stroke="var(--text)" stroke-width="1.2" />
+        <text x={p.xL + N * cell + 9} y={top + (N * cell) / 2 + 6} text-anchor="middle" class="op">×</text>
+        <text x={p.xY + cell + 9} y={top + (N * cell) / 2 + 6} text-anchor="middle" class="op">=</text>
+        <text x={p.xL + N * cell / 2} y={top + N * cell + 14} text-anchor="middle" class="lb">L</text>
+        <text x={p.xY + cell / 2} y={top + N * cell + 14} text-anchor="middle" class="lb">y</text>
+        <text x={p.xC + cell / 2} y={top + N * cell + 14} text-anchor="middle" class="lb">c</text>
+        <text x={p.x0 + pw / 2} y={top + N * cell + 29} text-anchor="middle" class="sb">{label[p.i]}</text>
+      </g>
+    ))}
+  </svg>
+  <figcaption>Gris : <i>L</i> et <i>c</i> (connus) ; noir : l'inconnue de la ligne ; ambre : déjà calculée ; pointillés : pas encore. À chaque ligne, une seule inconnue.</figcaption>
+</figure>
+
+<style is:global>
+  .tri { margin: 1.2rem 0; }
+  .tri svg { width: 100%; max-width: 760px; height: auto; display: block; margin: 0 auto; }
+  .tri svg .lb { font: 12px var(--font); fill: var(--text); }
+  .tri svg .sb { font: 10.5px var(--font); fill: var(--text-2); }
+  .tri svg .op { font: 17px var(--font); fill: var(--text-2); }
+  .tri figcaption { font-size: 13px; color: var(--text-2); line-height: 1.5; margin-top: 6px; }
+</style>

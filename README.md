@@ -6,7 +6,8 @@ Site personnel de cours : des fiches de révision visuelles. Il héberge plusieu
 |---|---|---|---|
 | Post-Transformer | `post-transformer` | Module | le transformer et ses successeurs récurrents : récurrence en profondeur, dans le temps, leur couplage (projet de recherche Ouroboros) |
 | Preprocessing | `preprocessing` | Chapitre | prétraitement des données ; chapitre 1 : MFCC |
-| HPC | `hpc` | Chapitre | calcul haute performance : matériel et roofline, NumPy contre JAX, transformations, sharding, étude de cas `run_batched` |
+| HPC | `hpc` | Chapitre | calcul haute performance : matériel et roofline, NumPy contre JAX, transformations, sharding, étude de cas `run_batched`, moindres carrés (Cholesky, QR, SVD, LSQR) |
+| RL | `rl` | Chapitre | apprentissage par renforcement : mécanismes mathématiques (Bellman), algorithmes (BC, FQI, LSPI, NAC, OpenAI-ES, PPO), benchmarks (POPGym, LunarLander) |
 
 ## Lancer
 

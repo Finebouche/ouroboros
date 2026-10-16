@@ -4,7 +4,6 @@
 <div class="widget atsteps" data-widget="att-steps">
   <div class="chips" data-ref="chips"></div>
   <div class="stage" data-ref="stage"></div>
-  <p class="scap" data-ref="cap"></p>
 </div>
 
 <script>
@@ -138,21 +137,18 @@
     }
 
     // --- les étapes ---
-    type Step = { chip: string; parts: string; cap: string; view: () => string };
+    type Step = { chip: string; parts: string; view: () => string };
     const STEPS: Step[] = [
       {
         chip: 'Embeddings', parts: 'embed',
-        cap: 'Chaque mot devient une ligne de 8 nombres.',
         view: () => op('mots →') + mat('Embeddings E', En, { cell: 24, rows: w, shape: '4 mots × 8' }),
       },
       {
         chip: 'RMSNorm', parts: 'norm1',
-        cap: 'Chaque ligne est remise à la même échelle : les disques d’une ligne gardent leurs proportions, mais toutes les lignes ont maintenant la même taille globale.',
         view: () => mat('E', En, { cell: 24, rows: w, shape: '4 × 8' }) + op('RMSNorm →') + mat('X', Xn, { cell: 24, shape: '4 × 8' }),
       },
       {
         chip: 'Q, K, V', parts: 'qkv',
-        cap: 'La même matrice X est multipliée par trois matrices apprises : on obtient Q, K et V, 4 nombres par mot.',
         view: () =>
           mat('X', Xn, { cell: 22, rows: w, shape: '4 × 8' }) + op('→') +
           mat('Q = X·W<sub>Q</sub>', Q, { cell: 22, color: C.q, shape: '4 × 4' }) +
@@ -161,7 +157,6 @@
       },
       {
         chip: 'Scores', parts: 'attn',
-        cap: 'Chaque ligne de Q est comparée à chaque ligne de K (produit scalaire), puis divisée par √4 = 2. Case (i, j) = score du mot i pour le mot j.',
         view: () =>
           mat('Q', Q, { cell: 26, rows: w, color: C.q, shape: '4 × 4' }) + op('×') +
           mat('Kᵀ', KT, { cell: 26, cols: w, color: C.k, shape: '4 × 4' }) + op('÷ 2 =') +
@@ -169,21 +164,18 @@
       },
       {
         chip: 'Masque', parts: 'attn',
-        cap: 'On interdit de regarder le futur : les cases au-dessus de la diagonale sont masquées, c’est-à-dire que leur score est remplacé par −∞. Au softmax suivant, elles vaudront exactement 0.',
         view: () =>
           mat('S', S, { cell: 26, rows: w, cols: w, shape: '4 × 4' }) + op('masque →') +
           mat('S masqué', S, { cell: 26, cols: w, mask: true, shape: '4 × 4' }),
       },
       {
         chip: 'Softmax', parts: 'attn',
-        cap: 'Chaque ligne de softmax(S masqué) est positive et somme à 100 % : ce sont les disques de la matrice causale plus bas.',
         view: () =>
           mat('S masqué', S, { cell: 26, rows: w, cols: w, mask: true, shape: '4 × 4' }) + op('softmax par ligne →') +
           mat('softmax(S masqué)', P, { cell: 26, cols: w, mask: true, color: C.p, vmax: 1, shape: '4 × 4, lignes = 100 %' }),
       },
       {
         chip: 'softmax(S masqué) × V', parts: 'attn',
-        cap: 'Chaque ligne de softmax(S masqué) mélange les lignes de V : la ligne i du résultat est, colonne par colonne, la somme de softmax(S masqué) × V.',
         view: () =>
           mat('softmax(S masqué)', P, { cell: 26, rows: w, cols: w, mask: true, color: C.p, vmax: 1, hl: zoom, shape: '4 × 4' }) + op('×') +
           mat('V', Vm, { cell: 26, color: C.v, shape: '4 × 4' }) + op('=') +
@@ -192,7 +184,6 @@
       },
       {
         chip: '× W<sub>O</sub>', parts: 'wo',
-        cap: 'Une dernière matrice ramène chaque ligne à 8 nombres (avec plusieurs têtes, on met d’abord leurs sorties bout à bout).',
         view: () =>
           mat('Sortie de la tête', O, { cell: 22, rows: w, color: C.v, shape: '4 × 4' }) + op('×') +
           mat('W<sub>O</sub>', WO, { cell: 22, shape: '4 × 8' }) + op('=') +
@@ -200,7 +191,6 @@
       },
       {
         chip: '+ résidu', parts: 'add1',
-        cap: 'On ajoute le résultat au vecteur d’entrée du bloc. Fin de la partie attention ; la suite est le MLP.',
         view: () =>
           mat('E (entrée)', En, { cell: 22, rows: w, shape: '4 × 8' }) + op('+') +
           mat('Sortie de l’attention', A, { cell: 22, shape: '4 × 8' }) + op('=') +
@@ -208,31 +198,26 @@
       },
       {
         chip: 'RMSNorm', parts: 'norm2',
-        cap: 'Avant le MLP, chaque ligne est de nouveau remise à la même échelle.',
         view: () => mat('H', H, { cell: 22, rows: w, shape: '4 × 8' }) + op('RMSNorm →') + mat('H normalisé', Hn, { cell: 22, shape: '4 × 8' }),
       },
       {
         chip: 'MLP : monter', parts: 'mlp',
-        cap: 'Chaque ligne passe par une première matrice qui l’agrandit : de 8 à 32 nombres par mot. Chaque mot est traité seul, sans regarder les autres.',
         view: () =>
           mat('H normalisé', Hn, { cell: 18, rows: w, shape: '4 × 8' }) + op('× W<sub>1</sub> (8 × 32) =') + br +
           mat('Z', Z, { cell: 18, rows: w, shape: '4 × 32' }),
       },
       {
         chip: 'Activation', parts: 'mlp',
-        cap: 'Une fonction non linéaire (ici GELU) s’applique à chaque nombre : les valeurs négatives sont presque effacées, les positives passent.',
         view: () => mat('Z', Z, { cell: 18, rows: w, shape: '4 × 32' }) + br + op('↓ GELU') + br + mat('GELU(Z)', Ga, { cell: 18, rows: w, shape: '4 × 32' }),
       },
       {
         chip: 'MLP : redescendre', parts: 'mlp',
-        cap: 'Une seconde matrice ramène chaque ligne à 8 nombres.',
         view: () =>
           mat('GELU(Z)', Ga, { cell: 18, rows: w, shape: '4 × 32' }) + br + op('× W<sub>2</sub> (32 × 8) =') +
           mat('Sortie du MLP', Mo, { cell: 18, rows: w, shape: '4 × 8' }),
       },
       {
         chip: '+ résidu', parts: 'add2',
-        cap: 'On ajoute la sortie du MLP au vecteur. C’est la sortie de la couche, qui devient l’entrée de la couche suivante (le bloc est répété N fois).',
         view: () =>
           mat('H', H, { cell: 22, rows: w, shape: '4 × 8' }) + op('+') +
           mat('Sortie du MLP', Mo, { cell: 22, shape: '4 × 8' }) + op('=') +
@@ -240,7 +225,6 @@
       },
       {
         chip: 'Sortie du modèle', parts: 'norm-final head',
-        cap: `Après la dernière couche (ici une seule), on prend la ligne du dernier mot, « ${WORDS[N - 1]} », on la normalise, puis une matrice donne un score par mot du vocabulaire, et un softmax les transforme en probabilités du mot suivant.`,
         view: () =>
           mat(`ligne « ${WORDS[N - 1]} »`, [last], { cell: 18, shape: '1 × 8' }) + op('× W<sub>vocab</sub>, softmax →') +
           mat('probabilités du mot suivant', [probs], { cell: 34, cols: VOCAB, color: 'var(--c-neutral)', vmax: 1, shape: `1 × ${VOCAB.length}, somme = 100 %` }),
@@ -278,7 +262,6 @@
       const st = STEPS[cur];
       chips.forEach((b, j) => b.classList.toggle('active', j === cur));
       $('stage').innerHTML = st.view();
-      $('cap').innerHTML = `<b>${cur + 1}. ${st.chip}</b> : ${st.cap}`;
       const label = `Étape ${cur + 1} : ${st.chip.replace(/<[^>]+>/g, '')}`;
       root.dataset.archParts = st.parts;
       root.dataset.archLabel = label;
@@ -310,7 +293,6 @@
   .atsteps .br { flex-basis: 100%; height: 0; }
   .atsteps .op { font-size: 15px; color: var(--text-2); white-space: nowrap; }
   .atsteps svg text { font: 10px var(--font); fill: var(--text-2); }
-  .atsteps .scap { font-size: 14px; line-height: 1.5; margin: 12px 0 8px; }
   .atsteps .zoom { flex-basis: 100%; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
   .atsteps .zt { font-size: 13px; color: var(--text-2); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; }
   .atsteps .zt button { font-size: 13px; padding: 2px 8px; }

@@ -40,6 +40,17 @@
   --h-py: #b0605a;
   --h-comp: #c3a04d;
   --h-exec: #5f8f6e;
+  /* cours HPC, moindres carrés : une couleur par solveur */
+  --m-chol: #a0703f;
+  --m-qr: #3f7f8c;
+  --m-svd: #5d66a8;
+  /* cours RL : une couleur par algorithme */
+  --a-bc: #9a8a3c;
+  --a-fqi: #3f7f8c;
+  --a-lspi: #5d66a8;
+  --a-nac: #a0703f;
+  --a-ppo: #b05a6e;
+  --a-es: #4f8a5b;
   --warn: #ef9f27;
   --bad: #e24b4a;
   --hl-bg: #faeeda;
@@ -81,6 +92,15 @@
     --h-py: #d49a94;
     --h-comp: #e0c276;
     --h-exec: #8fbf9e;
+    --m-chol: #d1a06a;
+    --m-qr: #7fbac6;
+    --m-svd: #9aa3dc;
+    --a-bc: #cdbf6e;
+    --a-fqi: #7fbac6;
+    --a-lspi: #9aa3dc;
+    --a-nac: #d1a06a;
+    --a-ppo: #dc9aa9;
+    --a-es: #8fc79c;
   }
 }
 * { box-sizing: border-box; }
@@ -172,3 +192,44 @@ article thead th { background: var(--surface-2); font-weight: 500; font-size: 14
 .hcode { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 0.7rem 1rem; margin: 1.5rem 0; }
 .hcode .hcl { font-size: 13px; font-weight: 500; }
 .hcode .hlegend { margin: 0; font-size: 13px; }
+
+/* Note courte sous un tableau, en petit */
+.tnote { font-size: 13px; color: var(--text-2); margin: -0.4rem 0 1.2rem; }
+.tnote p { margin: 0; }
+
+/* Tableau récapitulatif des solveurs (HPC ch. 6) : en-têtes aux couleurs des méthodes */
+.solvers th:nth-child(2) { color: var(--m-chol); }
+.solvers th:nth-child(3) { color: var(--m-qr); }
+.solvers th:nth-child(4) { color: var(--m-svd); }
+.solvers th:nth-child(5) { color: var(--text); }
+.solvers td:first-child { color: var(--text-2); white-space: nowrap; }
+
+/* Tableau comparatif des six algorithmes (cours RL) : en-têtes aux couleurs des méthodes */
+.algos th:nth-child(2) { color: var(--a-bc); }
+.algos th:nth-child(3) { color: var(--a-fqi); }
+.algos th:nth-child(4) { color: var(--a-lspi); }
+.algos th:nth-child(5) { color: var(--a-nac); }
+.algos th:nth-child(6) { color: var(--a-ppo); }
+.algos th:nth-child(7) { color: var(--a-es); }
+.algos td:first-child { color: var(--text-2); white-space: nowrap; }
+.algos table { font-size: 13.5px; }
+
+/* widgets du cours RL */
+.rlw .sl { display: grid; grid-template-columns: 200px 1fr 56px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); margin: 4px 0; }
+.rlw .sl b { text-align: right; color: var(--text); font-weight: 500; }
+.rlw .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.rlw .seg button { font-size: 13px; padding: 4px 12px; }
+.rlw .hint { font-size: 12.5px; color: var(--text-2); }
+.rlw .note { font-size: 13px; color: var(--text-2); line-height: 1.5; margin: 8px 0 0; }
+.rlw .kpis { display: flex; flex-wrap: wrap; gap: 4px 22px; margin-top: 10px; }
+.rlw .kpis > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 6px; }
+.rlw .kpis span { font-size: 13px; color: var(--text-2); }
+.rlw .kpis b { font-size: 15px; font-weight: 500; }
+.rlw svg { width: 100%; height: auto; display: block; margin: 8px auto; }
+.rlw svg.clk { max-width: 420px; cursor: pointer; }
+.rlw svg text.gv { font: 600 13px var(--font); fill: var(--text); }
+.rlw svg text.vs { font: 10.5px var(--font); fill: var(--text-2); }
+.rlw svg text.ar { font: 600 24px var(--font); fill: var(--text); }
+.rlw svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+.rlw svg text.l { font: 12.5px var(--font); fill: var(--text); }
+@media (max-width: 600px) { .rlw .sl { grid-template-columns: 1fr; } }

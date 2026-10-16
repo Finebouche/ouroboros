@@ -1,0 +1,83 @@
+---
+// Chapitre HPC 6 : vérification. Erreur relative de chaque solveur en fonction du conditionnement κ(A), calculée en direct
+// (solveurs écrits à la main dans lsq.ts, précision émulée). Problème : 60 × 20, valeurs singulières géométriques de 1 à 1/κ.
+---
+<div class="widget pcliff hp" data-widget="pcliff">
+  <div class="row"><span>Précision :</span><span class="seg" data-ref="pr"></span></div>
+  <p class="lg"><span><i style="background:var(--m-chol)"></i>Cholesky (équations normales)</span><span><i style="background:var(--m-qr)"></i>QR de Householder</span><span><i style="background:var(--m-svd)"></i>SVD (seuil rcond)</span><span class="ref">pointillé : κ·u et κ²·u</span></p>
+  <svg data-ref="svg" width="100%" role="img" aria-label="Erreur relative en fonction du conditionnement pour quatre solveurs"></svg>
+  <div class="kpis" data-ref="kp"></div>
+  <p class="note" data-ref="note"></p>
+</div>
+
+<script>
+  import { makeProblem, quantize, cholSolve, qrSolve, svdSolve, rel, rounder, unitRoundoff, type Prec, pow10 } from './lsq';
+  document.querySelectorAll<HTMLElement>('[data-widget="pcliff"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    let prec: Prec = 'f64';
+    const mk = (key: string, items: [string, string][], set: (v: string) => void) => items.forEach(([l, v]) => {
+      const b = document.createElement('button');
+      b.textContent = l; b.dataset.v = v;
+      b.addEventListener('click', () => { set(v); draw(); });
+      $(key).appendChild(b);
+    });
+    mk('pr', [['float64', 'f64'], ['float32', 'f32']], (v) => (prec = v as Prec));
+    const M = 60, N = 20, EX = Array.from({ length: 17 }, (_, i) => i);
+    const NAMES = ['Cholesky', 'QR', 'SVD'];
+    const COL = ['var(--m-chol)', 'var(--m-qr)', 'var(--m-svd)'];
+
+    function draw() {
+      $('pr').querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.v === prec));
+      const r = rounder(prec), u = unitRoundoff(prec);
+      const err: number[][] = [[], [], []];
+      EX.forEach((e) => {
+        const P = makeProblem(M, N, 10 ** e, 0, 5);
+        const [A, b] = quantize(P.A, P.b, r);
+        err[0].push(rel(cholSolve(A, b, r), P.xt));
+        err[1].push(rel(qrSolve(A, b, r), P.xt));
+        err[2].push(rel(svdSolve(A, b, r, u), P.xt));
+      });
+      const W = 640, ox = 52, oy = 8, pw = W - ox - 10, ph = 250;
+      const ylo = -16, yhi = 1;
+      const X = (e: number) => ox + (e / 16) * pw, Y = (v: number) => oy + (1 - (Math.log10(Math.max(1e-17, Math.min(10, v))) - ylo) / (yhi - ylo)) * ph;
+      let g = '';
+      for (let e = 0; e <= 16; e += 2) g += `<line x1="${X(e)}" y1="${oy}" x2="${X(e)}" y2="${oy + ph}" stroke="var(--border)" stroke-width="0.5"/><text x="${X(e)}" y="${oy + ph + 14}" text-anchor="middle" class="ax">${e === 0 ? '1' : `${pow10(e)}`}</text>`;
+      for (let y = ylo; y <= yhi; y += 3) g += `<line x1="${ox}" y1="${Y(10 ** y)}" x2="${ox + pw}" y2="${Y(10 ** y)}" stroke="var(--border)" stroke-width="0.5"/><text x="${ox - 6}" y="${Y(10 ** y) + 3.5}" text-anchor="end" class="ax">${y === 0 ? '1' : `${pow10(y)}`}</text>`;
+      g += `<line x1="${ox}" y1="${Y(1)}" x2="${ox + pw}" y2="${Y(1)}" stroke="var(--hl-stroke)" stroke-width="1" stroke-dasharray="2 3"/><text x="${ox + pw - 2}" y="${Y(1) - 4}" text-anchor="end" class="ax hl">100 % d'erreur</text>`;
+      g += `<text x="${ox + pw / 2}" y="${oy + ph + 30}" text-anchor="middle" class="ax">conditionnement κ(A) = σ₁ / σₙ</text><text x="12" y="${oy + ph / 2}" transform="rotate(-90 12 ${oy + ph / 2})" text-anchor="middle" class="ax">erreur relative sur x</text>`;
+      const ref = (f: (k: number) => number, dash: string) => { let p = ''; for (let e = 0; e <= 16; e += 0.5) p += `${X(e).toFixed(1)},${Y(f(10 ** e)).toFixed(1)} `; return `<polyline points="${p}" fill="none" stroke="var(--text-2)" stroke-width="1" stroke-dasharray="${dash}" opacity="0.6"/>`; };
+      g += ref((k) => k * u, '1 3') + ref((k) => k * k * u, '1 3');
+      const mark = (e: number, label: string) => `<line x1="${X(e)}" y1="${oy}" x2="${X(e)}" y2="${oy + ph}" stroke="var(--hl-stroke)" stroke-width="1" stroke-dasharray="4 3"/><text x="${X(e) - 3}" y="${oy + ph - 5}" text-anchor="end" class="ax hl">${label}</text>`;
+      g += mark(-Math.log10(u) / 2, 'κ = u<tspan baseline-shift="super" font-size="8">−1/2</tspan>') + mark(-Math.log10(u), 'κ = 1/u');
+      err.forEach((vals, i) => {
+        let p = '';
+        vals.forEach((v, j) => { p += `${X(j).toFixed(1)},${Y(Number.isFinite(v) ? v : 10).toFixed(1)} `; });
+        g += `<polyline points="${p}" fill="none" stroke="${COL[i]}" stroke-width="2.2" stroke-linejoin="round"/>`;
+        vals.forEach((v, j) => { if (!Number.isFinite(v)) g += `<text x="${X(j)}" y="${Y(10) + 4}" text-anchor="middle" class="x" fill="${COL[i]}">×</text>`; });
+      });
+      const s = $('svg') as unknown as SVGSVGElement;
+      s.setAttribute('viewBox', `0 0 ${W} ${oy + ph + 38}`);
+      s.innerHTML = g;
+
+      $('kp').innerHTML = NAMES.map((n, i) => {
+        const j = err[i].findIndex((v) => !Number.isFinite(v) || v > 0.01);
+        return `<div><span><i class="dot" style="background:${COL[i]}"></i>${n} : erreur > 1 % dès</span><b>${j < 0 ? 'jamais (≤ 10¹⁶)' : j === 0 ? 'κ = 1' : `κ ≈ 10${j > 9 ? '¹' : ''}${'⁰¹²³⁴⁵⁶⁷⁸⁹'[j % 10]}`}</b></div>`;
+      }).join('');
+      $('note').textContent = `u = ${u.toExponential(1).replace('e-', ' · 10^−').replace('.', ',')} : Cholesky perd ≈ 2·log₁₀κ chiffres (erreur ≈ κ²u), QR et SVD ≈ log₁₀κ (erreur ≈ κu). « × » : la factorisation de AᵀA échoue (pivot ≤ 0).`;
+    }
+    draw();
+  });
+</script>
+
+<style is:global>
+  .pcliff .row { margin-bottom: 4px; }
+  .pcliff .seg { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  .pcliff .seg button { font-size: 13px; padding: 4px 12px; }
+  .pcliff .lg { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--text-2); margin: 4px 0; }
+  .pcliff .lg i { display: inline-block; width: 14px; height: 4px; margin-right: 5px; vertical-align: 3px; border-radius: 2px; }
+  .pcliff svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .pcliff svg text.ax.hl { fill: var(--hl-text); }
+  .pcliff svg text.x { font: 700 13px var(--font); }
+  .pcliff .kpis .dot { display: inline-block; width: 9px; height: 9px; border-radius: 5px; margin-right: 5px; }
+  .pcliff .note { font-size: 13px; color: var(--text-2); line-height: 1.5; margin: 8px 0 0; }
+</style>

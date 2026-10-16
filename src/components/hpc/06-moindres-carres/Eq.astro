@@ -1,0 +1,139 @@
+---
+// Chapitre HPC 6 : chaque méthode écrite comme des produits de matrices colorées, à l'échelle (m = 4n).
+// Gris : données (A, b) ; noir : la solution x ; brun : Cholesky ; vert-bleu : QR ; indigo : SVD.
+interface Props { view: 'prob' | 'chol' | 'qr' | 'svd' | 'lsqr' }
+const { view } = Astro.props;
+const n = 20, m = 4 * n, v = 7;
+const GREY = 'var(--text-2)', XC = 'var(--text)', CH = 'var(--m-chol)', QR = 'var(--m-qr)', SV = 'var(--m-svd)';
+type M = { k: 'm'; l: string; w: number; h: number; c: string; sub?: string; tri?: 'u' | 'l'; diag?: boolean; dots?: boolean };
+type O = { k: 'o'; t: string };
+type It = M | O;
+const mat = (l: string, w: number, h: number, c: string, sub?: string, o: Partial<M> = {}): M => ({ k: 'm', l, w, h, c, sub, ...o });
+const op = (t: string): O => ({ k: 'o', t });
+type Row = { title?: string; color?: string; items: It[] };
+const T = 'Aᵀ';
+const A = () => mat('A', n, m, GREY, 'm × n');
+const At = () => mat(T, m, n, GREY, 'n × m');
+const b = () => mat('b', v, m, GREY, 'm');
+const x = () => mat('x', v, n, XC, 'n');
+
+let rows: Row[] = [];
+let caption = '';
+let aria = '';
+if (view === 'prob') {
+  rows = [
+    { title: 'le problème (m équations)', color: 'var(--text)', items: [A(), op('×'), x(), op('≈'), b()] },
+    { title: 'normales (n équations)', color: CH, items: [At(), op('×'), A(), op('×'), x(), op('='), At(), op('×'), b()] },
+  ];
+  caption = 'm ≫ n : en général aucun x ne satisfait toutes les équations, on cherche celui qui rend Ax le plus proche de b. Multiplier par Aᵀ ramène le système à n équations.';
+  aria = 'Le problème Ax ≈ b et les équations normales AᵀA x = Aᵀb';
+}
+if (view === 'chol') {
+  rows = [
+    { title: '1. former', color: CH, items: [At(), op('×'), A(), op('='), mat('AᵀA', n, n, CH, 'n × n')] },
+    { title: '2. factoriser', color: CH, items: [mat('AᵀA', n, n, CH), op('='), mat('Rᵀ', n, n, CH, undefined, { tri: 'l' }), op('×'), mat('R', n, n, CH, undefined, { tri: 'u' })] },
+    { title: '3. trouver y', color: CH, items: [mat('Rᵀ', n, n, CH, undefined, { tri: 'l' }), op('×'), mat('y', v, n, XC), op('='), mat('Aᵀb', v, n, CH)] },
+    { title: '4. trouver x', color: CH, items: [mat('R', n, n, CH, undefined, { tri: 'u' }), op('×'), x(), op('='), mat('y', v, n, CH)] },
+  ];
+  caption = 'Noir : l\'inconnue de l\'étape. Comme RᵀR x = Aᵀb, on pose y = R x : l\'étape 3 donne y (substitution avant, Rᵀ est triangulaire inférieure), l\'étape 4 donne x (substitution arrière). Le gros produit est l\'étape 1 (≈ mn² opérations) ; ensuite tout se passe en taille n.';
+  aria = 'Cholesky : former AᵀA, la factoriser en RᵀR, résoudre deux systèmes triangulaires';
+}
+if (view === 'qr') {
+  rows = [
+    { title: '1. factoriser', color: QR, items: [A(), op('='), mat('Q', n, m, QR, 'm × n'), op('×'), mat('R', n, n, QR, 'n × n', { tri: 'u' })] },
+    { title: '2. résoudre : un seul système triangulaire', color: QR, items: [mat('R', n, n, QR, undefined, { tri: 'u' }), op('×'), x(), op('='), mat('Qᵀ', m, n, QR, 'n × m'), op('×'), b(), op('='), mat('Qᵀb', v, n, QR, 'n')] },
+  ];
+  caption = 'Q a des colonnes orthonormées : QᵀQ = I. Le produit Qᵀb ramène b de m à n composantes ; ce qui reste de b (le résidu) est ignoré.';
+  aria = 'QR : factoriser A en QR, puis résoudre Rx = Qᵀb';
+}
+if (view === 'svd') {
+  rows = [
+    { title: '1. factoriser', color: SV, items: [A(), op('='), mat('U', n, m, SV, 'm × n'), op('×'), mat('Σ', n, n, SV, 'diagonale', { diag: true }), op('×'), mat('Vᵀ', n, n, SV, 'n × n')] },
+    { title: '2. résoudre : trois produits, aucun système', color: SV, items: [x(), op('='), mat('V', n, n, SV), op('×'), mat('Σ⁺', n, n, SV, '1/σᵢ', { diag: true }), op('×'), mat('Uᵀ', m, n, SV, 'n × m'), op('×'), b()] },
+  ];
+  caption = 'Σ ne contient que des valeurs singulières σᵢ (la diagonale) ; la résolution les inverse : Σ⁺ porte les 1/σᵢ, et met 0 à la place de ceux sous un seuil (rcond).';
+  aria = 'SVD : factoriser A en UΣVᵀ, puis x = VΣ⁺Uᵀb';
+}
+if (view === 'lsqr') {
+  rows = [
+    { title: 'répéter', color: 'var(--text)', items: [mat('u', v, m, GREY, 'm'), op('←'), mat('A', n, m, GREY, 'jamais factorisée', { dots: true }), op('×'), mat('v', v, n, GREY, 'n'), op('et'), mat('v', v, n, GREY, 'n'), op('←'), mat('Aᵀ', m, n, GREY, undefined, { dots: true }), op('×'), mat('u', v, m, GREY, 'm')] },
+  ];
+  caption = 'Seulement des produits matrice-vecteur : A reste telle quelle (souvent creuse), et ne coûte qu\'un passage en lecture par produit. Les vecteurs u et v sont recombinés pour former l\'itéré xₖ.';
+  aria = 'LSQR : produits matrice-vecteur par A et Aᵀ';
+}
+
+// points « non nuls » répartis au hasard (graine fixe), à distance minimale les uns des autres ; densité fixe par aire
+const scatter = (w: number, h: number): [number, number][] => {
+  let sd = 12345; const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+  const pts: [number, number][] = [], want = Math.round((w * h) / 70);
+  for (let t = 0; t < 2000 && pts.length < want; t++) {
+    const q: [number, number] = [4 + rnd() * (w - 8), 4 + rnd() * (h - 8)];
+    if (pts.every((r) => Math.hypot(r[0] - q[0], r[1] - q[1]) > 7)) pts.push(q);
+  }
+  return pts;
+};
+const OPW = (t: string) => (t.length > 1 ? 14 + t.length * 6 : 20);
+const rowW = (r: Row) => Math.max(r.items.reduce((s, i) => s + (i.k === 'm' ? i.w : OPW(i.t)) + 8, 0), (r.title?.length ?? 0) * 6.4);
+const MAXW = 560, GAPX = 40;
+// les étapes se rangent côte à côte, deux par ligne au plus, tant que la ligne tient dans MAXW
+const lines: Row[][] = [];
+rows.forEach((r) => {
+  const last = lines[lines.length - 1];
+  if (last && last.length < 2 && last.reduce((s, q) => s + rowW(q) + GAPX, 0) + rowW(r) <= MAXW) last.push(r); else lines.push([r]);
+});
+type Placed = { m: M; x: number; y: number } | { o: O; x: number; y: number };
+const placed: { title?: string; color?: string; tx: number; ty: number; items: Placed[] }[] = [];
+let y = 4, W = 0;
+lines.forEach((line) => {
+  const H = Math.max(...line.flatMap((r) => r.items.map((i) => (i.k === 'm' ? i.h : 0))));
+  const top = y + (line.some((r) => r.title) ? 20 : 4);
+  let ox = 4;
+  line.forEach((r) => {
+    let cx = ox;
+    const items: Placed[] = r.items.map((i) => {
+      if (i.k === 'm') { const p = { m: i, x: cx, y: top + (H - i.h) / 2 }; cx += i.w + 8; return p; }
+      const w = OPW(i.t), p = { o: i, x: cx + w / 2, y: top + H / 2 }; cx += w + 8; return p;
+    });
+    placed.push({ title: r.title, color: r.color, tx: ox, ty: y, items });
+    ox += rowW(r) + GAPX;
+  });
+  W = Math.max(W, ox - GAPX + 4);
+  y = top + H + 40;
+});
+const Ht = y - 6;
+---
+<figure class="eq">
+  <svg viewBox={`0 0 ${Math.round(W)} ${Math.round(Ht)}`} role="img" aria-label={aria} style={`max-width:${Math.round(W * 1.6)}px`}>
+    {placed.map((r) => (
+      <g>
+        {r.title && <text x={r.tx} y={r.ty + 12} class="gt" style={`fill:${r.color}`}>{r.title}</text>}
+        {r.items.map((p) => 'm' in p ? (
+          <g>
+            {p.m.tri === 'u' && <polygon points={`${p.x},${p.y} ${p.x + p.m.w},${p.y} ${p.x + p.m.w},${p.y + p.m.h}`} fill={p.m.c} fill-opacity="0.8" />}
+            {p.m.tri === 'l' && <polygon points={`${p.x},${p.y} ${p.x},${p.y + p.m.h} ${p.x + p.m.w},${p.y + p.m.h}`} fill={p.m.c} fill-opacity="0.8" />}
+            {p.m.tri && <rect x={p.x} y={p.y} width={p.m.w} height={p.m.h} fill="none" stroke={p.m.c} />}
+            {p.m.diag && <rect x={p.x} y={p.y} width={p.m.w} height={p.m.h} rx="2" fill="none" stroke={p.m.c} />}
+            {p.m.diag && <line x1={p.x + 2} y1={p.y + 2} x2={p.x + p.m.w - 2} y2={p.y + p.m.h - 2} stroke={p.m.c} stroke-width="3.5" stroke-linecap="round" />}
+            {p.m.dots && <rect x={p.x} y={p.y} width={p.m.w} height={p.m.h} fill="none" stroke={p.m.c} />}
+            {p.m.dots && scatter(p.m.w, p.m.h).map(([dx, dy]) => <circle cx={p.x + dx} cy={p.y + dy} r="1.3" fill={p.m.c} />)}
+            {!p.m.tri && !p.m.diag && !p.m.dots && <rect x={p.x} y={p.y} width={p.m.w} height={p.m.h} rx="2" fill={p.m.c} fill-opacity="0.75" />}
+            <text x={p.x + p.m.w / 2} y={p.y + p.m.h + 13} text-anchor="middle" class="lb">{p.m.l}</text>
+            {p.m.sub && <text x={p.x + p.m.w / 2} y={p.y + p.m.h + 25} text-anchor="middle" class="sb">{p.m.sub}</text>}
+          </g>
+        ) : <text x={p.x} y={p.y + 6} text-anchor="middle" class={p.o.t.length > 1 ? 'op w' : 'op'}>{p.o.t}</text>)}
+      </g>
+    ))}
+  </svg>
+  <figcaption>{caption}</figcaption>
+</figure>
+
+<style is:global>
+  .eq { margin: 1.2rem 0; }
+  .eq svg { width: 100%; height: auto; display: block; margin: 0 auto; }
+  .eq svg .gt { font: 600 12.5px var(--font); }
+  .eq svg .lb { font: 12px var(--font); fill: var(--text); }
+  .eq svg .sb { font: 10px var(--font); fill: var(--text-2); }
+  .eq svg .op { font: 20px var(--font); fill: var(--text-2); }
+  .eq svg .op.w { font: 12px var(--font); }
+  .eq figcaption { font-size: 13px; color: var(--text-2); line-height: 1.5; margin-top: 6px; }
+</style>

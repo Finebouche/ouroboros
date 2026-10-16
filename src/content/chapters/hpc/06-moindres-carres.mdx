@@ -1,0 +1,197 @@
+---
+num: 6
+title: "Moindres carrés : Cholesky, QR, SVD, LSQR"
+summary: "Quatre façons de résoudre min ‖Ax − b‖ : coût, conditionnement, rang, parallélisme, matrices creuses. Expériences numériques en direct."
+status: en-cours
+---
+import Reveal from '@/components/shared/Reveal.astro';
+import Quiz from '@/components/shared/Quiz.astro';
+import Refs from '@/components/shared/Refs.astro';
+import Tri from '@/components/hpc/06-moindres-carres/Tri.astro';
+import Eq from '@/components/hpc/06-moindres-carres/Eq.astro';
+import PrecisionCliff from '@/components/hpc/06-moindres-carres/PrecisionCliff.astro';
+import Stop from '@/components/hpc/06-moindres-carres/Stop.astro';
+import Reach from '@/components/hpc/06-moindres-carres/Reach.astro';
+
+Ce chapitre est indépendant de JAX. Un seul problème, quatre algorithmes : trouver $x \in \mathbb{R}^n$ qui minimise $\lVert Ax - b \rVert_2$, avec $A \in \mathbb{R}^{m \times n}$ et $m \ge n$.
+
+<Eq view="prob" />
+
+Les **équations normales** $A^\top A\, x = A^\top b$ donnent exactement le $x$ cherché, avec $n$ équations au lieu de $m$. Cholesky les résout telles quelles ; QR, SVD et LSQR les évitent, et la suite montre pourquoi.
+
+**Outil commun : résoudre un système triangulaire.** Si $L$ est triangulaire inférieure, $Ly = c$ se résout ligne par ligne : la 1ʳᵉ équation ne contient que $y_1$, la 2ᵉ que $y_1$ (déjà connu) et $y_2$, etc.
+
+<Tri />
+
+$$
+y_i = \frac{c_i - \sum_{j<i} L_{ij}\, y_j}{L_{ii}}
+$$
+
+C'est la **substitution avant**. Pour une matrice triangulaire supérieure, on part de la dernière ligne et on remonte : **substitution arrière**. Coût : $n^2$ opérations, négligeable devant les $mn^2$ d'un produit $A^\top A$. Cholesky et QR finissent tous deux par là.
+
+## 1. Les produits de matrices de chaque méthode
+
+### Cholesky : se ramener à $n \times n$
+
+On forme $A^\top A$ (le seul produit coûteux), on la factorise en $R^\top R$ avec $R$ triangulaire supérieure, puis on résout $R^\top R\, x = A^\top b$ en deux temps : $R^\top y = A^\top b$ donne un vecteur intermédiaire $y = Rx$, puis $Rx = y$ donne $x$. Chaque système est triangulaire : voir ci-dessus.
+
+<Eq view="chol" />
+
+Le défaut de la méthode tient au **conditionnement** $\kappa(A)$, le rapport entre la plus grande et la plus petite valeur singulière de $A$ : $\kappa(A) = \sigma_1 / \sigma_n$. Plus il est grand, plus la solution est sensible aux erreurs d'arrondi : on perd environ $\log_{10} \kappa$ chiffres. Les valeurs singulières sont les éléments de $\Sigma$ dans la SVD de $A$ (voir plus bas), et $A^\top A = V \Sigma^2 V^\top$ a pour valeurs singulières les $\sigma_i^2$ :
+
+$$
+\kappa(A^\top A) = \kappa(A)^2
+$$
+
+Former $A^\top A$ **élève donc le conditionnement au carré**. Un $\sigma_n$ relatif de $10^{-4}$ devient $10^{-8}$, et ajouté à $\sigma_1^2 = 1$ en float32 ($u \approx 6 \cdot 10^{-8}$), il disparaît. Cholesky perd deux fois plus de chiffres que les autres méthodes.
+
+### QR : factoriser $A$ elle-même
+
+$A = QR$, où $Q$ ($m \times n$) a des colonnes orthonormées, $Q^\top Q = I_n$, et $R$ ($n \times n$) est triangulaire supérieure. Comme $Q$ ne change pas les longueurs, $\lVert Ax - b \rVert$ se ramène à $\lVert Rx - Q^\top b \rVert$ plus un terme constant (le résidu).
+
+<Eq view="qr" />
+
+- **Résoudre.** Le produit $Q^\top b$ ramène $b$ de $m$ à $n$ composantes, et il reste $Rx = Q^\top b$, par remontée : la dernière ligne ne contient que $x_n$.
+- **Construire $Q$ et $R$.** En pratique, par $n$ réflexions de Householder $H_k$ appliquées à $A$. Une réflexion vérifie $H^\top H = I$, donc $H^\top = H^{-1}$ : la défaire revient à la transposer. Pour la matrice carrée $Q = H_1 \cdots H_n$, $Q^\top = Q^{-1}$ ; la $Q$ « fine » $m \times n$ vérifie seulement $Q^\top Q = I_n$.
+- **Même $R$ que Cholesky** (au signe près), car $A^\top A = R^\top Q^\top Q R = R^\top R$. La QR l'obtient sans jamais former $A^\top A$, donc sans élever $\kappa$ au carré.
+
+### SVD : trois matrices simples
+
+$A = U \Sigma V^\top$ : $U$ ($m \times n$) et $V$ ($n \times n$) ont des colonnes orthonormées, $\Sigma$ est diagonale, et ses éléments sont les valeurs singulières $\sigma_1 \ge \dots \ge \sigma_n$. Le conditionnement $\kappa(A) = \sigma_1 / \sigma_n$ se lit directement dessus.
+
+<Eq view="svd" />
+
+Résoudre n'exige aucun système : trois produits suffisent, $x^\star = V \Sigma^{+} U^\top b = \sum_i \frac{u_i^\top b}{\sigma_i}\, v_i$. Un $\sigma_i$ minuscule divise une petite composante de $b$, bruit compris, par presque rien : $\Sigma^{+}$ remplace $1/\sigma_i$ par 0 sous un seuil (`rcond`), et c'est la seule méthode qui traite proprement un rang déficient.
+
+### LSQR : sans rien factoriser
+
+LSQR n'utilise $A$ qu'à travers deux produits matrice-vecteur, $v \mapsto Av$ et $u \mapsto A^\top u$. À l'itération $k$, il cherche le meilleur $x$ parmi les combinaisons de $A^\top b,\ (A^\top A) A^\top b, \dots$ (espace de Krylov).
+
+<Eq view="lsqr" />
+
+- En arithmétique exacte, la solution est atteinte en au plus $n$ itérations. En pratique on s'arrête bien avant, quand le résidu ne baisse plus assez.
+- Le nombre d'itérations utiles croît comme $\kappa$ : plus $A$ est mal conditionnée, plus il en faut.
+- Aucun facteur n'est stocké : adapté à une $A$ creuse, ou connue seulement comme un opérateur.
+
+### En résumé
+
+<div class="solvers">
+
+| | Cholesky | QR | SVD | LSQR |
+|---|---|---|---|---|
+| **Factorise** | $A^\top A = R^\top R$ | $A = QR$ | $A = U \Sigma V^\top$ | rien |
+| **Résout par** | 2 systèmes triangulaires | $Rx = Q^\top b$ | $x = V \Sigma^{+} U^\top b$ | produits $Av$ et $A^\top u$ |
+| **Coût** ($m \gg n$) | $\approx mn^2$ | $\approx 2mn^2$ | $\approx 2$ à $4\,mn^2$ *(selon l'algorithme)* | $\approx 4k \cdot \mathrm{nnz}$ |
+| **Mémoire** | $n^2$ | $mn + n^2$ | $mn + n^2$ | $m + n$ |
+| **Erreur** | $\kappa(A)^2\, u$ | $\kappa(A)\, u$ | $\kappa(A)\, u$ | dépend de $k$ |
+| **Rang déficient** | échoue | avec pivot | oui | oui |
+| **À choisir si** | dense, bien conditionnée, il faut aller vite | dense, cas général | rang incertain, régularisation | creuse ou énorme |
+
+</div>
+
+<div class="tnote">
+
+$u$ est l'arrondi unitaire : $2^{-53} \approx 1{,}1 \cdot 10^{-16}$ en float64, $2^{-24} \approx 6 \cdot 10^{-8}$ en float32.
+
+</div>
+
+## 2. Les méthodes face au mauvais conditionnement
+
+Le tableau prédit l'erreur de chaque méthode. Pour la mesurer, on résout un petit problème dont la solution exacte est connue, en faisant varier $\kappa$ de 1 à $10^{16}$.
+
+<PrecisionCliff />
+
+- **Cholesky** suit la droite $\kappa^2 u$ : en float64, plus aucun chiffre sûr vers $\kappa \approx 10^8$, puis la factorisation **échoue** (croix) quand un pivot de $A^\top A$ devient négatif ou nul.
+- **QR et SVD** suivent $\kappa u$ : ils tiennent jusqu'à $\kappa \approx 1/u$.
+- **La SVD** applique le seuil `rcond` $= u \cdot \max(m,n)$, comme `numpy.linalg.lstsq` : au-delà, les petites valeurs singulières sont ignorées, ce qui donne une erreur bornée plutôt qu'un échec. C'est visible en float32.
+
+## 3. LSQR : arrêter tôt
+
+Quand $b$ est bruité et $A$ mal conditionnée, le meilleur $x$ n'est pas le dernier itéré. LSQR retrouve d'abord les composantes importantes de la solution (grandes valeurs singulières), puis il se met à ajuster le bruit, que les petites valeurs singulières amplifient. L'erreur baisse, puis remonte : **arrêter tôt régularise**.
+
+<Stop />
+
+- C'est l'équivalent de la **SVD tronquée**, qui ignore les petites valeurs singulières. L'option `damp` de LSQR ajoute en plus une régularisation de Tikhonov.
+- Le bon $k$ se choisit par validation croisée ou par le principe de discordance (s'arrêter quand le résidu atteint le niveau du bruit).
+
+## 4. Matériel : vitesse contre robustesse
+
+Une factorisation dense par blocs fait des produits matriciels et approche la crête de calcul tandis que LSQR ne fait que des produits matrice-vecteur, donc il est limité par la bande passante mémoire (intensité $\approx 1/4$ FLOP/octet en CSR float32 avec indices sur 4 octets : $4\,\mathrm{nnz}$ FLOPs pour $16\,\mathrm{nnz}$ octets).
+
+<Reach />
+
+- **Dense, $m \gg n$** (premier graphe) : Cholesky (6 ms) est le plus rapide, puis QR (19 ms), puis SVD (100 ms). LSQR n'est pas compétitif ici : ses 100 itérations (120 ms) relisent chacune toute $A$. Mais seules QR et SVD résistent à un mauvais conditionnement (troisième graphe).
+- **Creux** (deuxième graphe) : QR et SVD stockent un facteur $m \times n$ dense, 1,2 To, qui ne tient pas dans la H100 (80 Go). LSQR n'a besoin que de $A$ en CSR et de quelques vecteurs, 0,3 Go ; il gagne dès que $k$ est petit devant $n$.
+- **Conditionnement et itérations** : sans préconditionneur, la borne de pire cas impose $k \approx \tfrac{\kappa}{2}\ln\tfrac{2}{\varepsilon}$. Un bon préconditionneur $P$ remplace $\kappa(A)$ par $\kappa(AP^{-1})$ ; c'est le sujet principal des solveurs itératifs.
+- **Parallélisme distribué** : pour $A$ répartie par blocs de lignes, **TSQR** factorise chaque bloc, puis réduit les petits facteurs $R$ en arbre : même stabilité que Householder avec un nombre minimal de messages (Demmel et al.). **Cholesky-QR** ne fait qu'une réduction (la somme des $A_i^\top A_i$), mais hérite de la perte en $\kappa^2$.
+- **GPU** : les trois factorisations denses passent par des BLAS 3 ou des bibliothèques (cuSOLVER) ; en JAX : `jnp.linalg.cholesky`, `jnp.linalg.qr`, `jnp.linalg.svd`, `jnp.linalg.lstsq` (basé sur la SVD, seuil `rcond`).
+
+## 5. Quel solveur ?
+
+| Situation | Solveur | Appel |
+|---|---|---|
+| Dense, bien conditionnée, il faut aller vite | Cholesky | `jax.scipy.linalg.cho_factor(A.T @ A)` puis `cho_solve` |
+| Dense, plein rang, cas général | QR | `jnp.linalg.qr(A)` puis `jax.scipy.linalg.solve_triangular` |
+| Rang incertain, ou données bruitées | SVD | `numpy.linalg.lstsq(A, b, rcond=…)` |
+| Creuse, ou connue seulement par $v \mapsto Av$ et $u \mapsto A^\top u$ | LSQR | `scipy.sparse.linalg.lsqr(A, b, damp=…)` |
+| Répartie par blocs de lignes | TSQR | QR de chaque bloc, puis QR des $R$ empilés |
+
+- **Cholesky ne convient que si $\kappa(A) \lesssim u^{-1/2}$** : environ $4 \cdot 10^3$ en float32, $10^8$ en float64. Près de $\kappa \approx 1/u$, même la QR perd tous ses chiffres : prendre la SVD.
+- **LSQR** demande un nombre d'itérations proportionnel à $\kappa$ sans préconditionneur. Avec une matrice déficiente et $x_0 = 0$, il renvoie la solution de plus petite norme.
+- **Cholesky-QR** remplace TSQR quand une seule réduction suffit, à condition que $\kappa$ reste sous le même seuil.
+
+<div class="retain">
+
+**À retenir**
+
+- Équations normales : $\kappa(A)^2$. QR et SVD travaillent sur $A$ : $\kappa(A)$. Dès que $\kappa(A)^2 u$ approche 1, Cholesky échoue ; QR tient jusqu'à $\kappa \approx 1/u$.
+- SVD : la seule à traiter proprement le rang déficient et la régularisation explicite (troncature, Tikhonov).
+- LSQR : sans factorisation, adapté au creux ; le nombre d'itérations croît comme $\kappa$ sans préconditionneur, et l'arrêt anticipé régularise.
+
+</div>
+
+<Refs items={[["LSQR: An algorithm for sparse linear equations and sparse least squares (ACM TOMS 8(1), 43–71)", "Paige & Saunders", 1982, "https://web.stanford.edu/group/SOL/software/lsqr/"], ["Communication-optimal parallel and sequential QR and LU factorizations (TSQR, CAQR)", "Demmel, Grigori, Hoemmen & Langou", 2008, "0808.2664"], ["Notes de cours Ma221, leçon 12 : moindres carrés (coût des équations normales, stabilité de Householder)", "Demmel, UC Berkeley", 2009, "https://people.eecs.berkeley.edu/~demmel/ma221_Fall09/Lectures/Lecture_12.html"], ["scipy.sparse.linalg.lsqr (paramètres damp, atol, btol)", "documentation SciPy", 2025, "https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.linalg.lsqr.html"], ["numpy.linalg.lstsq (seuil rcond)", "documentation NumPy", 2025, "https://numpy.org/doc/stable/reference/generated/numpy.linalg.lstsq.html"], ["jax.scipy.linalg.cho_factor (avec cho_solve)", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/_autosummary/jax.scipy.linalg.cho_factor.html"], ["jax.numpy.linalg.lstsq (seuil rcond)", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/_autosummary/jax.numpy.linalg.lstsq.html"], ["Numerical Linear Algebra (SIAM)", "Trefethen & Bau", 1997, "https://people.maths.ox.ac.uk/trefethen/text.html"], ["Matrix Computations, 4e éd. (Johns Hopkins University Press ; coûts de la SVD, tableau des algorithmes)", "Golub & Van Loan", 2013, "https://www.press.jhu.edu/books/title/10678/matrix-computations"]]} />
+
+<Quiz>
+
+**Q1.** $A$ est $10^6 \times 100$ en float32 avec $\kappa(A) = 10^4$. Cholesky sur les équations normales est-il raisonnable ? Quel solveur choisir ?
+
+<Reveal>
+
+Non : $\kappa^2 u = 10^8 \times 6 \cdot 10^{-8} \approx 6$, Cholesky ne donne plus aucun chiffre sûr (ou échoue). QR perd $\log_{10}\kappa = 4$ chiffres sur environ 7 : acceptable. Si le rang est incertain, SVD.
+
+</Reveal>
+
+**Q2.** Pour $A$ de taille $10^6 \times 100$ en float32, quelles sont les tailles de $Q$, de $R$ et de $A^\top A$ dans la QR et dans Cholesky ? Et que fait le produit $Q^\top b$ ?
+
+<Reveal>
+
+$Q$ est $10^6 \times 100$ (400 Mo, comme $A$), $R$ et $A^\top A$ sont $100 \times 100$ (40 Ko). Le produit $Q^\top b$, de $(100 \times 10^6)$ par $(10^6 \times 1)$, ramène $b$ à 100 composantes : il reste à résoudre $Rx = Q^\top b$ en taille $n$.
+
+</Reveal>
+
+**Q3.** Combien d'opérations coûte la résolution de $R^\top y = A^\top b$ pour $n = 100$ ? Pourquoi est-ce négligeable ?
+
+<Reveal>
+
+Environ $n^2 = 10^4$ : chaque ligne utilise les inconnues déjà calculées (substitution avant). Former $A^\top A$ coûte environ $mn^2 = 10^{10}$ pour $m = 10^6$, un million de fois plus.
+
+</Reveal>
+
+**Q4.** $m = 10^6$, $n = 100$, matrice dense en float32. Combien de FLOPs pour QR ? Et pour LSQR avec $k = 50$ itérations ? Lequel est le plus rapide ?
+
+<Reveal>
+
+QR : $2mn^2 - \tfrac23 n^3 \approx 2 \cdot 10^{10}$. LSQR : $k \cdot 4\,\mathrm{nnz} = 50 \cdot 4 \cdot 10^8 = 2 \cdot 10^{10}$, soit la même chose. Mais LSQR est limité par la mémoire (chaque itération relit les 400 Mo de $A$ deux fois) alors que la QR par blocs approche la crête de calcul : sur dense, la QR gagne en temps, malgré les FLOPs égaux.
+
+</Reveal>
+
+**Q5.** $b$ est bruité et $A$ est très mal conditionnée : la solution exacte des moindres carrés est inutilisable. Que faire avec LSQR, sans SVD ?
+
+<Reveal>
+
+Arrêter tôt : le nombre d'itérations est le paramètre de régularisation, car l'erreur baisse puis remonte quand le bruit entre. Ou utiliser `damp` pour résoudre le problème de Tikhonov $\min \lVert Ax - b \rVert^2 + \lambda^2 \lVert x \rVert^2$. Le meilleur $k$ se choisit par validation (garder une partie des données pour comparer les $k$) ou en s'arrêtant quand le résidu atteint le niveau du bruit.
+
+</Reveal>
+
+</Quiz>

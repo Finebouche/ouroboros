@@ -1,0 +1,76 @@
+---
+// Cours RL, chapitre 2 : FQI sur un couloir continu. On règle l'itération k et le degré du polynôme qui sert de régresseur.
+---
+<div class="widget rlw fitw" data-widget="fitw">
+  <div class="row"><span>Régresseur : polynôme de degré</span><span class="seg" data-ref="deg"></span></div>
+  <label class="sl"><span>Itération k</span><input type="range" data-ref="k" min="0" max="40" step="1" value="3" /><b data-ref="k-out"></b></label>
+  <p class="lg"><span><i class="dot" style="background:var(--a-fqi)"></i>cible, « droite »</span><span><i class="dot" style="background:var(--text-2)"></i>cible, « gauche »</span><span><i class="ln" style="background:var(--a-fqi)"></i>Q ajusté, « droite »</span><span><i class="ln" style="background:var(--text-2)"></i>Q ajusté, « gauche »</span><span><i class="ln dash"></i>Q optimal de « droite »</span></p>
+  <svg data-ref="svg" role="img" aria-label="FQI sur un couloir continu : cibles et courbes ajustées à l'itération k"></svg>
+  <div class="kpis">
+    <div><span>Écart moyen de Q « droite » à l'optimal</span><b data-ref="ke"></b></div>
+  </div>
+  <p class="note">Couloir continu x ∈ [0, 1] : l'action « droite » ajoute 0,1 à x, « gauche » le retire ; +1 en atteignant x = 1 ; γ = 0,9. Les 80 points sont des transitions tirées au hasard ; à chaque itération, leur cible r + γ max Q(x′, ·) utilise le Q de l'itération précédente, et le polynôme est ajusté par moindres carrés. Un degré 1 ne peut dessiner qu'une droite ; un degré élevé suit les points de plus près, au risque d'oscillations en bord de couloir.</p>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="fitw"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const kIn = $('k') as HTMLInputElement, g = 0.9, N = 80, KMAX = 40;
+    let deg = 4;
+    [1, 2, 4, 8].forEach((d) => { const b = document.createElement('button'); b.textContent = String(d); b.dataset.v = String(d); b.addEventListener('click', () => { deg = d; draw(); }); $('deg').appendChild(b); });
+    let sd = 424242; const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+    const data = Array.from({ length: N }, () => { const x = rnd(), a = rnd() < 0.5 ? 1 : 0, xn = Math.min(1, Math.max(0, x + (a ? 0.1 : -0.1))); return { x, a, xn, term: xn >= 1, r: xn >= 1 ? 1 : 0 }; });
+    const solve = (A: number[][], b: number[]) => {
+      const n = b.length, M = A.map((row, i) => [...row, b[i]]);
+      for (let c = 0; c < n; c++) { let p = c; for (let i = c + 1; i < n; i++) if (Math.abs(M[i][c]) > Math.abs(M[p][c])) p = i; [M[c], M[p]] = [M[p], M[c]]; for (let i = c + 1; i < n; i++) { const f = M[i][c] / M[c][c]; for (let j = c; j <= n; j++) M[i][j] -= f * M[c][j]; } }
+      const x = new Array(n).fill(0); for (let i = n - 1; i >= 0; i--) x[i] = (M[i][n] - M[i].slice(i + 1, n).reduce((s, v, j) => s + v * x[i + 1 + j], 0)) / M[i][i]; return x;
+    };
+    const qs = (x: number) => g ** (Math.ceil((1 - x) / 0.1 - 1e-9) - 1);
+    const cache: Record<number, { W: number[][]; pts: number[][][] }[]> = {};
+    function run(d: number) {
+      if (cache[d]) return cache[d];
+      const feat = (x: number) => Array.from({ length: d + 1 }, (_, k) => (2 * x - 1) ** k);
+      const fit = (pts: number[][]) => { const m = d + 1, A = Array.from({ length: m }, () => new Array(m).fill(0)), b = new Array(m).fill(0); pts.forEach(([x, y]) => { const f = feat(x); for (let i = 0; i < m; i++) { b[i] += f[i] * y; for (let j = 0; j < m; j++) A[i][j] += f[i] * f[j]; } }); for (let i = 0; i < m; i++) A[i][i] += 1e-6; return solve(A, b); };
+      const ev = (w: number[], x: number) => feat(x).reduce((s, f, i) => s + f * w[i], 0);
+      let W = [new Array(d + 1).fill(0), new Array(d + 1).fill(0)];
+      const out = [{ W, pts: [data.filter((p) => p.a === 0).map((p) => [p.x, 0]), data.filter((p) => p.a === 1).map((p) => [p.x, 0])] }];
+      for (let k = 1; k <= KMAX; k++) {
+        const pts: number[][][] = [[], []];
+        data.forEach((p) => pts[p.a].push([p.x, p.r + (p.term ? 0 : g * Math.max(ev(W[0], p.xn), ev(W[1], p.xn)))]));
+        W = [fit(pts[0]), fit(pts[1])]; out.push({ W, pts });
+      }
+      (out as any).feat = feat; cache[d] = out; return out;
+    }
+    function draw() {
+      $('deg').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.v! === deg));
+      const k = +kIn.value; $('k-out').textContent = String(k);
+      const hist = run(deg), sn = hist[k], feat = (hist as any).feat as (x: number) => number[];
+      const ev = (w: number[], x: number) => feat(x).reduce((s, f, i) => s + f * w[i], 0);
+      const W = 640, H = 300, ox = 44, oy = 10, pw = W - ox - 12, ph = H - oy - 36;
+      const X = (x: number) => ox + x * pw, Y = (v: number) => oy + ph - ((Math.min(1.2, Math.max(-0.1, v)) + 0.1) / 1.3) * ph;
+      let s = '';
+      [0, 0.5, 1].forEach((v) => (s += `<line x1="${ox}" y1="${Y(v)}" x2="${ox + pw}" y2="${Y(v)}" stroke="var(--border)" stroke-width="${v === 0 ? 1 : 0.6}"/><text x="${ox - 6}" y="${Y(v) + 3.5}" text-anchor="end" class="ax">${String(v).replace('.', ',')}</text>`));
+      [0, 0.25, 0.5, 0.75, 1].forEach((x) => (s += `<text x="${X(x)}" y="${oy + ph + 14}" text-anchor="middle" class="ax">${String(x).replace('.', ',')}</text>`));
+      s += `<text x="${ox + pw / 2}" y="${oy + ph + 30}" text-anchor="middle" class="ax">position x dans le couloir</text><text x="12" y="${oy + ph / 2}" transform="rotate(-90 12 ${oy + ph / 2})" text-anchor="middle" class="ax">valeur Q</text>`;
+      const xs = Array.from({ length: 81 }, (_, j) => j / 80);
+      s += `<polyline points="${xs.map((x) => `${X(x).toFixed(1)},${Y(qs(x)).toFixed(1)}`).join(' ')}" fill="none" stroke="var(--text)" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.65"/>`;
+      sn.pts[0].forEach(([x, y]) => (s += `<circle cx="${X(x).toFixed(1)}" cy="${Y(y).toFixed(1)}" r="2.6" fill="var(--text-2)" fill-opacity="0.55"/>`));
+      sn.pts[1].forEach(([x, y]) => (s += `<circle cx="${X(x).toFixed(1)}" cy="${Y(y).toFixed(1)}" r="2.6" fill="var(--a-fqi)" fill-opacity="0.7"/>`));
+      s += `<polyline points="${xs.map((x) => `${X(x).toFixed(1)},${Y(ev(sn.W[0], x)).toFixed(1)}`).join(' ')}" fill="none" stroke="var(--text-2)" stroke-width="2.2"/>`;
+      s += `<polyline points="${xs.map((x) => `${X(x).toFixed(1)},${Y(ev(sn.W[1], x)).toFixed(1)}`).join(' ')}" fill="none" stroke="var(--a-fqi)" stroke-width="2.6"/>`;
+      const svg = $('svg') as unknown as SVGSVGElement; svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.innerHTML = s;
+      const err = xs.reduce((a, x) => a + Math.abs(ev(sn.W[1], x) - qs(x)), 0) / xs.length;
+      $('ke').textContent = err.toFixed(3).replace('.', ',');
+    }
+    kIn.addEventListener('input', draw);
+    draw();
+  });
+</script>
+
+<style is:global>
+  .fitw .lg { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--text-2); margin: 6px 0 0; }
+  .fitw .lg i { display: inline-block; margin-right: 5px; vertical-align: 2px; }
+  .fitw .lg i.dot { width: 8px; height: 8px; border-radius: 4px; }
+  .fitw .lg i.ln { width: 16px; height: 3px; border-radius: 2px; }
+  .fitw .lg i.dash { background: repeating-linear-gradient(90deg, var(--text) 0 4px, transparent 4px 7px); }
+</style>

@@ -1,0 +1,65 @@
+---
+// Cours RL, chapitre 1 : deux figures sur le retour et la valeur.
+// view : 'disc' (poids γᵗ des récompenses futures pour trois γ), 'values' (couloir de 5 cases : la valeur se propage de la sortie vers l'arrière).
+interface Props { view: 'disc' | 'values' }
+const { view } = Astro.props;
+const f1 = (v: number) => v.toFixed(1);
+let body = '', W = 0, H = 0, aria = '', caption = '';
+const txt = (x: number, y: number, s: string, cls = 'l', anchor = 'middle', fill = '') => `<text x="${f1(x)}" y="${f1(y)}" class="${cls}" text-anchor="${anchor}"${fill ? ` style="fill:${fill}"` : ''}>${s}</text>`;
+
+if (view === 'disc') {
+  const gs = [0.5, 0.9, 0.99], T = 12, bw = 30, gap = 6, ox = 70, ph = 70, rowH = 112;
+  gs.forEach((g, gi) => {
+    const y0 = 20 + gi * rowH;
+    body += txt(ox - 12, y0 + ph / 2 + 4, `γ = ${String(g).replace('.', ',')}`, 'l', 'end');
+    for (let t = 0; t < T; t++) {
+      const x = ox + t * (bw + gap), h = ph * g ** t;
+      body += `<rect x="${f1(x)}" y="${f1(y0 + ph - h)}" width="${bw}" height="${f1(Math.max(h, 0.8))}" rx="2" fill="var(--a-es)" fill-opacity="0.75"/>`;
+      body += txt(x + bw / 2, y0 + ph - h - 4, (g ** t).toFixed(2).replace('.', ','), 's');
+      if (gi === gs.length - 1) body += txt(x + bw / 2, y0 + ph + 16, `t = ${t}`, 's');
+    }
+    body += `<line x1="${ox - 4}" y1="${y0 + ph}" x2="${ox + T * (bw + gap)}" y2="${y0 + ph}" stroke="var(--border)"/>`;
+  });
+  W = ox + T * (bw + gap) + 8; H = 20 + gs.length * rowH - 4;
+  aria = 'Poids γ puissance t d\'une récompense reçue t pas plus tard, pour trois valeurs de γ';
+  caption = 'Poids d\'une récompense reçue avec t pas de retard par rapport à la prochaine (t = 0). Avec γ = 0,5 seul le futur immédiat compte ; avec γ = 0,99, une récompense à 11 pas pèse encore 0,90.';
+}
+
+if (view === 'values') {
+  const cw = 96, cell = 76, ox = 16, g = 0.9, V = [g ** 3, g ** 2, g, 1], names = ['s₀', 's₁', 's₂', 's₃'];
+  const y0 = 30, ch = 48, by = 218, bh = 84;
+  body += `<defs><marker id="ahv" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--text-2)"/></marker></defs>`;
+  body += txt(ox, 16, 'la politique avance toujours à droite ; entrer dans la sortie rapporte +1', 's', 'start');
+  for (let i = 0; i < 5; i++) {
+    const x = ox + i * cw, goal = i === 4;
+    body += `<rect x="${x}" y="${y0}" width="${cell}" height="${ch}" rx="8" fill="${goal ? 'var(--hl-stroke)' : 'var(--text-2)'}" fill-opacity="${goal ? 0.28 : 0.12}" stroke="${goal ? 'var(--hl-stroke)' : 'var(--text-2)'}"/>`;
+    body += txt(x + cell / 2, y0 + ch / 2 + 5, goal ? 'sortie' : names[i], 't');
+    if (i < 4) body += `<line x1="${x + cell + 2}" y1="${y0 + ch / 2}" x2="${x + cw - 2}" y2="${y0 + ch / 2}" stroke="var(--text-2)" stroke-width="1.6" marker-end="url(#ahv)"/>`;
+  }
+  body += txt(ox + 4 * cw + cell / 2, y0 + ch + 16, '+1 en y entrant', 's');
+  body += txt(ox, by - bh - 22, 'valeur V de chaque case', 's', 'start');
+  V.forEach((v, i) => {
+    const x = ox + i * cw + 8, h = bh * v;
+    body += `<rect x="${x}" y="${f1(by - h)}" width="${cell - 16}" height="${f1(h)}" rx="3" fill="var(--a-fqi)" fill-opacity="0.75"/>`;
+    body += txt(x + (cell - 16) / 2, by - h - 6, v.toFixed(3).replace('.', ','), 'l');
+    body += txt(x + (cell - 16) / 2, by + 15, names[i], 's');
+  });
+  body += `<line x1="${ox}" y1="${by}" x2="${ox + 3 * cw + cell}" y2="${by}" stroke="var(--border)"/>`;
+  for (let i = 0; i < 3; i++) {
+    const xa = ox + (i + 1) * cw + (cell - 16) / 2 + 8, xb = ox + i * cw + (cell - 16) / 2 + 8;
+    body += `<path d="M ${f1(xa)} ${by + 24} C ${f1(xa - 8)} ${by + 44}, ${f1(xb + 8)} ${by + 44}, ${f1(xb)} ${by + 24}" fill="none" stroke="var(--text-2)" stroke-width="1.4" marker-end="url(#ahv)"/>`;
+    body += txt((xa + xb) / 2, by + 60, '× 0,9', 's');
+  }
+  W = ox + 5 * cw; H = by + 72;
+  aria = 'Couloir de cinq cases : la valeur de chaque case est la valeur de la suivante multipliée par γ';
+  caption = 'La valeur de s₃ est 1 (on reçoit 1 en entrant dans la sortie, puis plus rien) ; celle de chaque case précédente est celle de la suivante multipliée par γ = 0,9.';
+}
+---
+<figure class={`rlf rlf-${view}`}>
+  <svg viewBox={`0 0 ${Math.round(W)} ${Math.round(H)}`} role="img" aria-label={aria} set:html={body} />
+  <figcaption>{caption}</figcaption>
+</figure>
+
+<style is:global>
+  .rlf-disc svg, .rlf-values svg { max-width: 600px; }
+</style>

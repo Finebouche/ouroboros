@@ -1,0 +1,84 @@
+---
+// Cours RL, chapitre 1 : une grille 4 × 4 déterministe (γ = 0,9). Le but (+1) en haut à droite, un piège (−1) en dessous, un mur.
+// view : 'world' (la grille et ses règles), 'vi' (itération de valeur : V après k itérations, puis la politique gloutonne).
+interface Props { view: 'world' | 'vi' | 'policy' }
+const { view } = Astro.props;
+const R = 4, C = 4, g = 0.9;
+const GOAL = [0, 3], PIT = [1, 3], WALL = [1, 1], START = [3, 0];
+const is = (p: number[], r: number, c: number) => p[0] === r && p[1] === c;
+const terminal = (r: number, c: number) => is(GOAL, r, c) || is(PIT, r, c);
+const DIRS: [string, number, number, string][] = [['haut', -1, 0, '↑'], ['droite', 0, 1, '→'], ['bas', 1, 0, '↓'], ['gauche', 0, -1, '←']];
+// transition déterministe : (r, c, a) -> [r', c', récompense]
+const step = (r: number, c: number, a: number): [number, number, number] => {
+  let nr = r + DIRS[a][1], nc = c + DIRS[a][2];
+  if (nr < 0 || nr >= R || nc < 0 || nc >= C || is(WALL, nr, nc)) { nr = r; nc = c; }
+  const rew = is(GOAL, nr, nc) ? 1 : is(PIT, nr, nc) ? -1 : 0;
+  return [nr, nc, rew];
+};
+const sweep = (V: number[][]) => V.map((row, r) => row.map((_, c) => {
+  if (terminal(r, c) || is(WALL, r, c)) return 0;
+  return Math.max(...DIRS.map((_, a) => { const [nr, nc, rew] = step(r, c, a); return rew + g * (terminal(nr, nc) ? 0 : V[nr][nc]); }));
+}));
+const hist: number[][][] = [Array.from({ length: R }, () => new Array(C).fill(0))];
+for (let k = 0; k < 12; k++) hist.push(sweep(hist[hist.length - 1]));
+const f1 = (v: number) => v.toFixed(1);
+const fm = (v: number) => v.toFixed(2).replace('.', ',');
+const cell = (x0: number, y0: number, cs: number, r: number, c: number, V: number[][] | null, arrows: boolean) => {
+  const x = x0 + c * cs, y = y0 + r * cs;
+  let s = '';
+  if (is(WALL, r, c)) return `<rect x="${x}" y="${y}" width="${cs - 2}" height="${cs - 2}" rx="4" fill="var(--text-2)" fill-opacity="0.35"/>`;
+  if (is(GOAL, r, c)) return `<rect x="${x}" y="${y}" width="${cs - 2}" height="${cs - 2}" rx="4" fill="var(--hl-stroke)" fill-opacity="0.35" stroke="var(--hl-stroke)"/><text x="${x + cs / 2 - 1}" y="${y + cs / 2 + 4}" text-anchor="middle" class="v">+1</text>`;
+  if (is(PIT, r, c)) return `<rect x="${x}" y="${y}" width="${cs - 2}" height="${cs - 2}" rx="4" fill="var(--h-py)" fill-opacity="0.35" stroke="var(--h-py)"/><text x="${x + cs / 2 - 1}" y="${y + cs / 2 + 4}" text-anchor="middle" class="v">−1</text>`;
+  const v = V ? V[r][c] : 0;
+  s += `<rect x="${x}" y="${y}" width="${cs - 2}" height="${cs - 2}" rx="4" fill="var(--a-fqi)" fill-opacity="${(0.06 + 0.7 * Math.max(v, 0)).toFixed(2)}" stroke="var(--border)" stroke-width="0.8"/>`;
+  if (V && !arrows) s += `<text x="${x + cs / 2 - 1}" y="${y + cs / 2 + 4}" text-anchor="middle" class="${v > 0 ? 'v' : 'vz'}">${v === 0 ? '0' : fm(v)}</text>`;
+  if (V && arrows) {
+    const q = DIRS.map((_, a) => { const [nr, nc, rew] = step(r, c, a); return rew + g * (terminal(nr, nc) ? 0 : V[nr][nc]); });
+    const best = Math.max(...q);
+    const bests = DIRS.map((d, a) => [d, q[a]] as const).filter(([, qa]) => qa > best - 1e-9).map(([d]) => d);
+    bests.forEach((d) => { const o = bests.length === 1 ? 0 : 15; s += `<text x="${x + cs / 2 - 1 + d[2] * o}" y="${y + cs / 2 + 7 + d[1] * o}" text-anchor="middle" class="ar">${d[3]}</text>`; });
+    s += `<text x="${x + 5}" y="${y + 13}" class="vs">${fm(v)}</text>`;
+  }
+  if (is(START, r, c) && view === 'world') s += `<text x="${x + cs / 2 - 1}" y="${y + cs / 2 + 5}" text-anchor="middle" class="v">départ</text>`;
+  return s;
+};
+let body = '', W = 0, H = 0, aria = '', caption = '';
+if (view === 'world') {
+  const cs = 72;
+  for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) body += cell(8, 8, cs, r, c, null, false);
+  body += `<text x="${8 + C * cs + 16}" y="40" class="l">4 actions : ↑ → ↓ ←</text><text x="${8 + C * cs + 16}" y="62" class="s">une case sans mur,</text><text x="${8 + C * cs + 16}" y="78" class="s">sinon on reste en place</text>`;
+  body += `<text x="${8 + C * cs + 16}" y="112" class="s">+1 en entrant dans le but,</text><text x="${8 + C * cs + 16}" y="128" class="s">−1 dans le piège, 0 ailleurs</text><text x="${8 + C * cs + 16}" y="162" class="s">γ = 0,9</text>`;
+  W = 8 + C * cs + 190; H = 8 + R * cs + 8;
+  aria = 'Grille 4 par 4 avec un but, un piège, un mur et une case de départ'; caption = 'Le monde de l\'exemple : un but qui donne +1 (l\'épisode s\'arrête), un piège à −1 juste en dessous, un mur. Les déplacements sont déterministes.';
+} else if (view === 'policy') {
+  const cs = 76;
+  for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) body += cell(8, 8, cs, r, c, hist[12], true);
+  W = 8 + C * cs + 8; H = 8 + R * cs + 8;
+  aria = 'Valeurs optimales et politique gloutonne sur la grille'; caption = 'Valeurs finales V* (petit nombre) et politique optimale (flèches) : dans chaque case, l\'action qui maximise « récompense + γ × valeur de la case atteinte ». Les flèches mènent au but en évitant le mur et le piège ; deux flèches dans une case signifient deux actions également bonnes.';
+} else {
+  const cs = 44, gx = 36, gy = 40, pw = C * cs, ph = R * cs;
+  const panels = [0, 1, 2, 3, 4, 8];
+  panels.forEach((k, i) => {
+    const px = (i % 3) * (pw + gx), py = Math.floor(i / 3) * (ph + gy);
+    body += `<text x="${px + pw / 2}" y="${py + 12}" text-anchor="middle" class="t">${i === 5 ? 'k = 8 (converge)' : `k = ${k}`}</text>`;
+    for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) body += cell(px, py + 20, cs, r, c, hist[k], false);
+  });
+  W = 3 * pw + 2 * gx; H = 2 * (ph + gy) - 8;
+  aria = 'Itération de valeur sur la grille : la valeur se propage du but vers les cases éloignées, puis la politique gloutonne';
+  caption = 'V après k mises à jour. À k = 0 tout vaut 0. Chaque itération propage l\'information d\'une case de plus depuis le but .';
+}
+---
+<figure class={`rlf rlf-grid rlf-grid-${view}`}>
+  <svg viewBox={`0 0 ${Math.round(W)} ${Math.round(H)}`} role="img" aria-label={aria} set:html={body} />
+  <figcaption>{caption}</figcaption>
+</figure>
+
+<style is:global>
+  .rlf-grid-world svg { max-width: 640px; }
+  .rlf-grid-vi svg { max-width: 640px; }
+  .rlf-grid-policy svg { max-width: 360px; }
+  .rlf-grid svg .v { font: 600 12px var(--font); fill: var(--text); }
+  .rlf-grid svg .vz { font: 11px var(--font); fill: var(--text-2); }
+  .rlf-grid svg .vs { font: 10.5px var(--font); fill: var(--text-2); }
+  .rlf-grid svg .ar { font: 600 24px var(--font); fill: var(--text); }
+</style>

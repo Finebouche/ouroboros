@@ -1,0 +1,43 @@
+---
+// Chapitre HPC 6 : arrêter LSQR tôt. Figure statique calculée à la construction : A (60 × 20) de conditionnement 10⁸, solution vraie lisse
+// (coefficients √σᵢ dans la base V), bruit 10⁻⁵ sur b. Erreur relative sur x de l'itéré k.
+import { makeProblem, lsqrPath, rel, gauss, rounder, pow10 } from './lsq';
+const M = 60, N = 20, K = 40;
+const P = makeProblem(M, N, 1e8, 0, 5);
+const g = gauss(99);
+const c = P.sig.map((s) => Math.sqrt(s));
+const xt = Array.from({ length: N }, (_, j) => c.reduce((s, ci, i) => s + ci * P.V[i][j], 0));
+const coef = P.sig.map((s, i) => s * c[i] + 1e-5 * g());
+const b = Array.from({ length: M }, (_, i) => P.U.reduce((s, col, k) => s + col[i] * coef[k], 0));
+const err = lsqrPath(P.A, b, K, rounder('f64')).map((x) => rel(x, xt));
+const best = err.indexOf(Math.min(...err));
+const W = 640, ox = 52, oy = 14, pw = W - ox - 14, ph = 190;
+const lo = Math.floor(Math.log10(Math.min(...err))), hi = Math.max(1, Math.ceil(Math.log10(Math.max(...err))));
+const X = (i: number) => ox + ((i - 1) / (K - 1)) * pw;
+const Y = (v: number) => oy + (1 - (Math.log10(Math.min(10 ** hi, Math.max(10 ** lo, v))) - lo) / (hi - lo)) * ph;
+const yt: number[] = []; for (let e = lo; e <= hi; e++) yt.push(e);
+const pts = err.map((v, i) => `${X(i + 1).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');
+const bx = X(best + 1), by = Y(err[best]);
+const ex = (v: number) => v.toExponential(0).replace('e-', ' · 10⁻').replace('e+', ' · 10');
+---
+<figure class="stop">
+  <svg viewBox={`0 0 ${W} ${oy + ph + 36}`} role="img" aria-label="Erreur de LSQR selon le nombre d'itérations : elle baisse puis remonte">
+    {yt.map((e) => <g><line x1={ox} y1={Y(10 ** e)} x2={ox + pw} y2={Y(10 ** e)} stroke="var(--border)" stroke-width="0.5" /><text x={ox - 6} y={Y(10 ** e) + 3.5} text-anchor="end" class="ax" set:html={pow10(e)} /></g>)}
+    {[1, 5, 10, 15, 20, 25, 30, 35, 40].map((i) => <text x={X(i)} y={oy + ph + 14} text-anchor="middle" class="ax">{i}</text>)}
+    <text x={ox + pw / 2} y={oy + ph + 31} text-anchor="middle" class="ax">itérations k</text>
+    <text x="12" y={oy + ph / 2} transform={`rotate(-90 12 ${oy + ph / 2})`} text-anchor="middle" class="ax">erreur relative sur x</text>
+    <polyline points={pts} fill="none" stroke="var(--text)" stroke-width="2.2" stroke-linejoin="round" />
+    <circle cx={bx} cy={by} r="5" fill="var(--hl-stroke)" />
+    <text x={bx} y={by - 12} text-anchor="middle" class="ax hl">meilleur arrêt : k = {best + 1}</text>
+    <text x={X(K) - 4} y={Y(err[K - 1]) - 8} text-anchor="end" class="ax">on continue : le bruit entre</text>
+  </svg>
+  <figcaption>Exemple : <i>A</i> de conditionnement 10⁸, bruit de 10⁻⁵ sur <i>b</i>, solution vraie lisse. Erreur minimale {ex(err[best])} à <i>k</i> = {best + 1} ; à <i>k</i> = {K}, {ex(err[K - 1])}.</figcaption>
+</figure>
+
+<style is:global>
+  .stop { margin: 1.2rem 0; }
+  .stop svg { width: 100%; height: auto; display: block; }
+  .stop svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .stop svg text.ax.hl { fill: var(--hl-text); }
+  .stop figcaption { font-size: 13px; color: var(--text-2); line-height: 1.5; margin-top: 6px; }
+</style>

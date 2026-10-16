@@ -1,0 +1,52 @@
+---
+// Cours RL, chapitre 1 : attribution du crédit. Épisode de T pas, récompense +1 seulement au dernier pas.
+// Crédit de chaque action : retour complet (γ^(T−1−t)) contre Bellman après m mises à jour (seuls les m derniers pas ont reçu le crédit).
+---
+<div class="widget rlw cr" data-widget="cr">
+  <label class="sl"><span>Longueur de l'épisode T</span><input type="range" data-ref="t" min="3" max="20" step="1" value="8" /><b data-ref="t-out"></b></label>
+  <label class="sl"><span>Facteur d'actualisation γ</span><input type="range" data-ref="g" min="0.5" max="0.99" step="0.01" value="0.9" /><b data-ref="g-out"></b></label>
+  <label class="sl"><span>Mises à jour de Bellman</span><input type="range" data-ref="m" min="0" max="20" step="1" value="3" /><b data-ref="m-out"></b></label>
+  <svg data-ref="svg" role="img" aria-label="Crédit attribué à chaque action : retour complet contre Bellman"></svg>
+  <div class="kpis">
+    <div><span>Crédit de la première action</span><b data-ref="k1"></b></div>
+    <div><span>Pas déjà informés par Bellman</span><b data-ref="k2"></b></div>
+  </div>
+  <p class="note">Les deux méthodes finissent avec le même crédit γ<sup>distance à la fin</sup>. Le retour complet l'obtient d'un coup, à la fin de l'épisode ; Bellman le fait remonter d'un pas par mise à jour, à partir de l'estimation du pas suivant. Avec un petit γ, les premières actions ne reçoivent presque rien.</p>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="cr"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const inp = (r: string) => $(r) as HTMLInputElement;
+    const fm = (v: number, d = 2) => v.toFixed(d).replace('.', ',');
+    function draw() {
+      const T = +inp('t').value, g = +inp('g').value, m = Math.min(+inp('m').value, T);
+      inp('m').max = String(T);
+      $('t-out').textContent = String(T); $('g-out').textContent = fm(g); $('m-out').textContent = String(m);
+      const W = 640, ox = 150, bh = 56, cw = (W - ox - 8) / T, rows = [
+        { y: 22, label: 'récompense reçue', sub: 'ce que l\'agent observe', col: 'var(--hl-stroke)', vals: Array.from({ length: T }, (_, t) => (t === T - 1 ? 1 : 0)) },
+        { y: 118, label: 'retour complet', sub: 'après la fin de l\'épisode', col: 'var(--a-es)', vals: Array.from({ length: T }, (_, t) => g ** (T - 1 - t)) },
+        { y: 214, label: `Bellman après ${m} mise${m > 1 ? 's' : ''}`, sub: 'un pas par mise à jour', col: 'var(--a-fqi)', vals: Array.from({ length: T }, (_, t) => (t >= T - m ? g ** (T - 1 - t) : 0)) },
+      ];
+      let s = '';
+      rows.forEach((row) => {
+        s += `<text x="${ox - 10}" y="${row.y + bh / 2 - 2}" text-anchor="end" class="l">${row.label}</text><text x="${ox - 10}" y="${row.y + bh / 2 + 13}" text-anchor="end" class="vs">${row.sub}</text>`;
+        s += `<line x1="${ox - 4}" y1="${row.y + bh}" x2="${ox + T * cw}" y2="${row.y + bh}" stroke="var(--border)"/>`;
+        row.vals.forEach((v, t) => {
+          const h = bh * v;
+          if (v > 0) s += `<rect x="${ox + t * cw + cw * 0.12}" y="${row.y + bh - h}" width="${cw * 0.76}" height="${Math.max(h, 1.2)}" rx="2" fill="${row.col}" fill-opacity="0.78"/>`;
+          if (v > 0.005 && T <= 12) s += `<text x="${ox + t * cw + cw / 2}" y="${row.y + bh - h - 4}" text-anchor="middle" class="vs">${fm(v)}</text>`;
+        });
+      });
+      for (let t = 0; t < T; t++) if (T <= 12 || t % 2 === 0 || t === T - 1) s += `<text x="${ox + t * cw + cw / 2}" y="${rows[2].y + bh + 15}" text-anchor="middle" class="vs">${t + 1}</text>`;
+      s += `<text x="${ox + T * cw / 2}" y="${rows[2].y + bh + 30}" text-anchor="middle" class="vs">pas de temps</text>`;
+      const svg = $('svg') as unknown as SVGSVGElement;
+      svg.setAttribute('viewBox', `0 0 ${W} ${rows[2].y + bh + 38}`); svg.innerHTML = s;
+      const first = g ** (T - 1);
+      $('k1').textContent = first < 0.001 ? '< 0,001' : fm(first, 3);
+      $('k2').textContent = `${m} sur ${T}`;
+    }
+    ['t', 'g', 'm'].forEach((r) => $(r).addEventListener('input', draw));
+    draw();
+  });
+</script>

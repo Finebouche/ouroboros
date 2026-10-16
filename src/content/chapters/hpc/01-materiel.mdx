@@ -14,8 +14,6 @@ import Roofline from '@/components/hpc/01-materiel/Roofline.astro';
 
 Ce qui coûte : **rarement le calcul, presque toujours le déplacement des données**. Ce chapitre donne les trois notions de base : l'échelle des délais, le nombre de voies de calcul, et le modèle roofline.
 
-Le code couleur du cours est réservé au type de travail ; le gris désigne la mémoire et les transferts.
-
 <Legend />
 
 ## 1. Délais et débits
@@ -29,11 +27,11 @@ Le code couleur du cours est réservé au type de travail ; le gris désigne la 
 
 ## 2. Combien de voies de calcul
 
-Une **voie FMA** fait une multiplication-addition par cycle. Le CPU en a quelques centaines (cœurs × unités SIMD), le GPU des dizaines de milliers (SM × voies FP32). Chaque point ci-dessous est une voie :
+Une **voie** est un petit circuit de calcul flottant : à chaque cycle d'horloge, il effectue une multiplication-addition fusionnée (*FMA*, $a \times b + c$), soit 2 FLOP. Le nombre de voies est le nombre de ces opérations menées en parallèle. Un CPU en a quelques centaines (cœurs × unités SIMD, qui traitent plusieurs valeurs par instruction), un GPU des dizaines de milliers (multiprocesseurs × voies FP32). Chaque point ci-dessous est une voie :
 
 <LaneGrid />
 
-- **Crête** $= \text{voies} \times 2 \times f$. On retrouve exactement les fiches constructeur : $6912 \times 2 \times 1{,}41$ GHz $= 19{,}5$ TFLOP/s pour l'A100.
+- **Crête** $= \text{voies} \times 2 \times f$.
 - **La mémoire ne suit pas** : 0,1 à 0,2 octet par voie et par cycle, sur les quatre machines. Une valeur float32 fait 4 octets : sans réutilisation, chaque voie attendrait 20 à 40 cycles par valeur. Toute performance vient de la **réutilisation** des données (registres, caches, mémoire partagée).
 - Les **unités matricielles** (Tensor Cores, MXU des TPU) font de petites multiplications de matrices entières par cycle : environ 15 fois la crête FP32 sur H100 en BF16. Elles ne servent qu'aux produits matriciels, et réclament encore plus de réutilisation.
 

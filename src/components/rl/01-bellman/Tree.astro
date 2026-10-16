@@ -1,0 +1,44 @@
+---
+// Cours RL, chapitre 1 : diagramme de « backup ». Un état s, deux actions, deux états suivants possibles pour chacune (γ = 0,9, récompense 0).
+// Panneau de gauche : valeur d'une politique (moyenne sur les actions). Panneau de droite : valeur optimale (maximum sur les actions).
+const g = 0.9;
+const pi = [0.7, 0.3];
+const P = [[0.8, 0.2], [0.5, 0.5]];
+const Vn = [[1.0, 0.0], [0.5, 0.2]];
+const Q = P.map((p, a) => g * p.reduce((s, pr, j) => s + pr * Vn[a][j], 0));
+const Vpi = pi.reduce((s, p, a) => s + p * Q[a], 0), Vstar = Math.max(...Q);
+const fm = (v: number, d = 2) => v.toFixed(d).replace('.', ',');
+const panel = (x0: number, opt: boolean) => {
+  const cx = x0 + 150, ty = 34, ay = 112, ly = 196;
+  const ax = [cx - 80, cx + 80], lx = [[ax[0] - 40, ax[0] + 40], [ax[1] - 40, ax[1] + 40]];
+  let s = `<text x="${cx}" y="14" text-anchor="middle" class="t">${opt ? 'Optimiser : maximum' : 'Évaluer une politique : moyenne'}</text>`;
+  s += `<circle cx="${cx}" cy="${ty}" r="15" fill="var(--a-fqi)" fill-opacity="0.2" stroke="var(--a-fqi)"/><text x="${cx}" y="${ty + 4}" text-anchor="middle" class="l">s</text>`;
+  s += `<text x="${cx + 24}" y="${ty + 5}" class="v" style="fill:var(--a-fqi)">${opt ? 'V*(s)' : 'V(s)'} = ${fm(opt ? Vstar : Vpi)}</text>`;
+  ax.forEach((x, a) => {
+    s += `<line x1="${cx}" y1="${ty + 15}" x2="${x}" y2="${ay - 6}" stroke="var(--text-2)"/>`;
+    s += `<circle cx="${x}" cy="${ay}" r="6" fill="var(--text-2)"/>`;
+    s += `<text x="${(cx + x) / 2 + (a === 0 ? -10 : 10)}" y="${(ty + ay) / 2}" text-anchor="${a === 0 ? 'end' : 'start'}" class="s">${opt ? `action ${a + 1}` : `π = ${fm(pi[a], 1)}`}</text>`;
+    const best = opt && Q[a] === Vstar;
+    s += `<text x="${x + 12}" y="${ay + 4}" text-anchor="start" class="s"${best ? ' style="fill:var(--hl-text);font-weight:600"' : ''}>Q = ${fm(Q[a], 3)}${best ? '  ← max' : ''}</text>`;
+    lx[a].forEach((xx, j) => {
+      s += `<line x1="${x}" y1="${ay + 6}" x2="${xx}" y2="${ly - 14}" stroke="var(--text-2)" stroke-dasharray="3 3"/>`;
+      s += `<circle cx="${xx}" cy="${ly}" r="14" fill="var(--text-2)" fill-opacity="0.12" stroke="var(--text-2)"/>`;
+      s += `<text x="${xx}" y="${ly + 4}" text-anchor="middle" class="l">${fm(Vn[a][j], 1)}</text>`;
+      s += `<text x="${(x + xx) / 2 + (j === 0 ? -8 : 8)}" y="${(ay + ly) / 2 + 6}" text-anchor="${j === 0 ? 'end' : 'start'}" class="s">${fm(P[a][j], 1)}</text>`;
+    });
+  });
+  if (opt) { const b = Q.indexOf(Vstar); s += `<rect x="${ax[b] - 56}" y="${ay - 20}" width="112" height="${ly - ay + 52}" rx="10" fill="none" stroke="var(--hl-stroke)" stroke-width="1.4" stroke-dasharray="4 3"/>`; }
+  return s;
+};
+const body = panel(0, false) + panel(310, true);
+const W = 620, H = 250;
+---
+<figure class="rlf rlf-tree">
+  <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Diagramme de backup : une valeur d'état est la moyenne, ou le maximum, des valeurs des actions, qui sont des moyennes des valeurs des états suivants" set:html={body} />
+  <figcaption>Cercles du bas : les états suivants, avec leur valeur V(s′) dans le cercle et la probabilité de les atteindre sur la flèche. Chaque action vaut Q = γ × (moyenne des V(s′)), ici avec γ = 0,9 et une récompense nulle. À gauche, la politique choisit l'action 1 avec la probabilité 0,7 et V(s) = 0,7 × {fm(Q[0], 2)} + 0,3 × {fm(Q[1], 3)} = {fm(Vpi)} ; à droite on prend la meilleure action.</figcaption>
+</figure>
+
+<style is:global>
+  .rlf-tree svg { max-width: 640px; }
+  .rlf svg .v { font: 600 13px var(--font); }
+</style>

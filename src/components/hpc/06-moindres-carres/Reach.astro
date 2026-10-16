@@ -1,0 +1,68 @@
+---
+// Chapitre HPC 6 : vitesse, mémoire, robustesse sur deux cas typiques, GPU H100 en FP32 (modèle roofline du chapitre 1).
+// Les factorisations denses par blocs sont limitées par le calcul, avec des efficacités supposées (Cholesky 60 %, QR 40 %, SVD 15 % : hypothèses,
+// pas des mesures) ; LSQR est limité par la mémoire (deux passes sur A par itération). Calcul à la construction.
+import { HWS, fmtTime } from '../hw';
+import { pow10, sciFr } from './lsq';
+const hw = HWS.find((h) => h.id === 'h100')!;
+const peak = hw.vec!, bw = hw.bw, K = 100, u32 = 2 ** -24;
+const NAMES = ['Cholesky', 'QR', 'SVD', 'LSQR'];
+const COL = ['var(--m-chol)', 'var(--m-qr)', 'var(--m-svd)', 'var(--text)'];
+// cas A : dense 10⁶ × 500
+const mA = 1e6, nA = 500;
+const iterA = Math.max((2 * 4 * mA * nA + 24 * (mA + nA)) / bw, (4 * mA * nA + 6 * mA + 10 * nA) / (0.5 * peak));
+const timesA = [(mA * nA * nA + nA ** 3 / 3) / (0.6 * peak), (2 * mA * nA * nA - (2 * nA ** 3) / 3) / (0.4 * peak), (4 * mA * nA * nA + 8 * nA ** 3) / (0.15 * peak), K * iterA];
+// cas B : creuse 10⁷ × 3·10⁴, 0,01 % de non nuls (A stockée en CSR float32 + indices 4 octets : 8 octets par élément non nul)
+const mB = 1e7, nB = 3e4, nnz = mB * nB * 1e-4;
+const memB = [4 * nB * nB, 4 * (mB * nB + nB * nB), 4 * (mB * nB + nB * nB), 8 * nnz + 4 * 2 * (mB + nB)];
+// robustesse : plus grand conditionnement traité en FP32
+const reach = [u32 ** -0.5, 1 / u32, 1 / u32, (2 * K) / Math.log(2 / 1e-6)];
+const fmtMem = (v: number) => (v >= 1e12 ? `${(v / 1e12).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} To` : `${(v / 1e9).toLocaleString('fr-FR', { maximumFractionDigits: v < 1e10 ? 1 : 0 })} Go`);
+const fmtReach = (v: number) => (v >= 1e4 ? sciFr(v) : `≈ ${Math.round(v)}`);
+const W = 215, ox = 50, wpx = 95, rowH = 26, H = 4 * rowH + 18;
+type Panel = { title: string; sub: string; vals: number[]; fmt: (v: number) => string; line?: { v: number; l: string }; lo?: number; hi?: number };
+const panels: Panel[] = [
+  { title: 'Temps (A dense 10⁶ × 500)', sub: `${K} itérations de LSQR, H100 FP32`, vals: timesA, fmt: fmtTime },
+  { title: 'Mémoire (A creuse 10⁷ × 3·10⁴)', sub: '0,01 % de non nuls', vals: memB, fmt: fmtMem, line: { v: 80e9, l: '80 Go' } },
+  { title: 'Conditionnement maximal', sub: `en FP32 ; LSQR après ${K} itérations`, vals: reach, fmt: fmtReach, lo: 0, hi: 8.5 },
+];
+const geo = panels.map((p) => {
+  const all = p.line ? [...p.vals, p.line.v] : p.vals;
+  const lo = p.lo ?? Math.floor(Math.log10(Math.min(...all))) - 0.4, hi = p.hi ?? Math.ceil(Math.log10(Math.max(...all))) + 0.2;
+  const X = (v: number) => ox + ((Math.log10(Math.max(v, 1.01 * 10 ** lo)) - lo) / (hi - lo)) * wpx;
+  const ticks: number[] = []; for (let e = Math.ceil(lo); e <= hi; e += Math.max(1, Math.ceil((hi - lo) / 5))) ticks.push(e);
+  return { ...p, lo, hi, X, ticks };
+});
+---
+<figure class="reach">
+  <div class="rg">
+    {geo.map((p) => (
+      <div>
+        <div class="ft">{p.title}<span>{p.sub}</span></div>
+        <svg viewBox={`0 0 ${W} ${H + 6}`} role="img" aria-label={p.title}>
+          {p.ticks.map((e) => <g><line x1={p.X(10 ** e)} y1="0" x2={p.X(10 ** e)} y2={4 * rowH} stroke="var(--border)" stroke-width="0.5" /><text x={p.X(10 ** e)} y={4 * rowH + 12} text-anchor="middle" class="ax" set:html={pow10(e)} /></g>)}
+          {p.vals.map((v, i) => <g>
+            <text x={ox - 6} y={i * rowH + 16} text-anchor="end" class="ax">{NAMES[i]}</text>
+            <rect x={ox} y={i * rowH + 3} width={Math.max(2, p.X(v) - ox)} height="18" rx="3" fill={COL[i]} opacity="0.85" />
+            <text x={p.X(v) + 5} y={i * rowH + 16} class="ax v">{p.fmt(v)}</text>
+          </g>)}
+          {p.line && <g><line x1={p.X(p.line.v)} y1="0" x2={p.X(p.line.v)} y2={4 * rowH} stroke="var(--hl-stroke)" stroke-dasharray="3 3" /><text x={p.X(p.line.v) - 3} y="-1" text-anchor="end" class="ax hl">{p.line.l}</text></g>}
+        </svg>
+      </div>
+    ))}
+  </div>
+  <figcaption>Échelles logarithmiques. Temps : modèle roofline avec une efficacité supposée de 60 % (Cholesky), 40 % (QR) et 15 % (SVD), et LSQR limité par la bande passante : ce sont des estimations, pas des mesures. Mémoire : QR et SVD stockent un facteur <i>m × n</i> ; la ligne pointillée est la mémoire de la H100. Conditionnement : Cholesky ≈ <i>u</i><sup>−1/2</sup>, QR et SVD ≈ <i>u</i><sup>−1</sup>, LSQR ≈ 2<i>k</i> / ln(2/ε) avec ε = 10<sup>−6</sup> (borne de pire cas du gradient conjugué sur AᵀA, sans préconditionneur).</figcaption>
+</figure>
+
+<style is:global>
+  .reach { margin: 1.2rem 0; }
+  .reach .rg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .reach .ft { font-size: 13px; font-weight: 500; margin: 2px 0 6px; line-height: 1.3; }
+  .reach .ft span { display: block; font-weight: 400; color: var(--text-2); font-size: 12px; }
+  .reach svg { width: 100%; height: auto; display: block; overflow: visible; margin-top: 8px; }
+  .reach svg text.ax { font: 10.5px var(--font); fill: var(--text-2); }
+  .reach svg text.ax.v { fill: var(--text); }
+  .reach svg text.ax.hl { fill: var(--hl-text); }
+  .reach figcaption { font-size: 13px; color: var(--text-2); line-height: 1.5; margin-top: 8px; }
+  @media (max-width: 700px) { .reach .rg { grid-template-columns: 1fr; } }
+</style>

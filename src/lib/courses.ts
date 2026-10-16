@@ -21,7 +21,14 @@ export const COURSES = {
     unit: 'Chapitre',
     tagline: 'Calcul haute performance, vu par JAX contre NumPy : matériel, compilation, transformations, plusieurs appareils.',
     intro:
-      "Ce qui coûte vraiment dans un calcul numérique (déplacer les données), et ce que JAX change par rapport à NumPy : compilation et fusion, exécution asynchrone sur l'appareil, transformations (vmap, scan, grad) et découpage sur plusieurs appareils. Chapitre 5 : un vrai code lu avec ces outils.",
+      "Ce qui coûte vraiment dans un calcul numérique (déplacer les données), et ce que JAX change par rapport à NumPy : compilation et fusion, exécution asynchrone sur l'appareil, transformations (vmap, scan, grad) et découpage sur plusieurs appareils. Chapitre 5 : un vrai code lu avec ces outils. Chapitre 6 (indépendant de JAX) : moindres carrés, Cholesky contre QR, SVD et LSQR.",
+  },
+  rl: {
+    title: 'RL',
+    unit: 'Chapitre',
+    tagline: "L'apprentissage par renforcement par ses mécanismes mathématiques, puis les algorithmes (BC, FQI, LSPI, NAC, OpenAI-ES, PPO) et les benchmarks (POPGym, LunarLander).",
+    intro:
+      "Un cours visuel, centré sur les mécanismes : l'équation de Bellman comme système linéaire et comme contraction, puis comment chaque algorithme (clonage de comportement, FQI, LSPI, gradient naturel, stratégies d'évolution, PPO) en tire sa mise à jour, et enfin les benchmarks qui les comparent.",
   },
 } as const;
 

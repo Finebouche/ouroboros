@@ -1,0 +1,190 @@
+---
+// Cours RL, chapitre 2 : apprendre à partir de données enregistrées.
+// view : 'data' (transitions enregistrées sur la grille), 'bc' (démonstrations, puis BC depuis une case jamais vue),
+//        'tab' (cibles de FQI à chaque itération, version tabulaire), 'fit' (FQI avec un régresseur sur un état continu).
+import { R, C, g, DIRS, is, terminal, expert, rollout, drawGrid, center, step } from '../world';
+interface Props { view: 'data' | 'bc' | 'tab' | 'fit' }
+const { view } = Astro.props;
+const f1 = (v: number) => v.toFixed(1);
+const fm = (v: number, d = 2) => v.toFixed(d).replace('.', ',');
+const lab = (r: number, c: number) => `(${r + 1}, ${c + 1})`;
+const arrowHead = (x1: number, y1: number, x2: number, y2: number, col: string, w = 2) => {
+  const L = Math.hypot(x2 - x1, y2 - y1) || 1, ux = (x2 - x1) / L, uy = (y2 - y1) / L, h = 7, bx = x2 - ux * h, by = y2 - uy * h;
+  return `<line x1="${f1(x1)}" y1="${f1(y1)}" x2="${f1(bx)}" y2="${f1(by)}" stroke="${col}" stroke-width="${w}"/><polygon points="${f1(x2)},${f1(y2)} ${f1(bx - uy * 3.2)},${f1(by + ux * 3.2)} ${f1(bx + uy * 3.2)},${f1(by - ux * 3.2)}" fill="${col}"/>`;
+};
+const txt = (x: number, y: number, s: string, cls = 'sb', a = 'middle', fill = '') => `<text x="${f1(x)}" y="${f1(y)}" class="${cls}" text-anchor="${a}"${fill ? ` style="fill:${fill}"` : ''}>${s}</text>`;
+
+// transitions enregistrées : [r, c, action, r', c'] (récompense déduite des règles)
+const DATA: [number, number, number][] = [[0, 2, 1], [0, 1, 1], [0, 0, 1], [1, 2, 0], [2, 2, 0], [1, 2, 1]];
+const trans = DATA.map(([r, c, a]) => { const [nr, nc, rew] = step(r, c, a); return { r, c, a, nr, nc, rew }; });
+
+let body = '', W = 0, H = 0, aria = '', caption = '';
+type Row = { id: string; s: string; a: string; rew: number; s2: string; y: number[] };
+let rows: Row[] = [];
+
+if (view === 'data') {
+  const cs = 70, ox = 10, oy = 10;
+  body += drawGrid(ox, oy, cs);
+  for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) if (!terminal(r, c) && !is([1, 1], r, c)) body += txt(ox + c * cs + cs - 8, oy + r * cs + cs - 7, `${r + 1},${c + 1}`, 'cl', 'end');
+  trans.forEach((t, i) => {
+    const [x1, y1] = center(ox, oy, cs, t.r, t.c), [x2, y2] = center(ox, oy, cs, t.nr, t.nc);
+    const col = t.rew > 0 ? 'var(--hl-stroke)' : t.rew < 0 ? 'var(--h-py)' : 'var(--a-fqi)';
+    const dx = (y2 - y1) / 22, dy = -(x2 - x1) / 22;
+    body += arrowHead(x1 + dx * 3 + (x2 - x1) * 0.22, y1 + dy * 3 + (y2 - y1) * 0.22, x2 + dx * 3 - (x2 - x1) * 0.18, y2 + dy * 3 - (y2 - y1) * 0.18, col, 2.4);
+    body += `<circle cx="${f1((x1 + x2) / 2 + dx * 9)}" cy="${f1((y1 + y2) / 2 + dy * 9)}" r="8" fill="var(--bg)" stroke="${col}"/>` + txt((x1 + x2) / 2 + dx * 9, (y1 + y2) / 2 + dy * 9 + 3.5, String(i + 1), 'nl');
+  });
+  const tx = ox + C * cs + 24;
+  body += txt(tx, 24, 'lot de six transitions enregistrées', 'gt', 'start');
+  body += txt(tx, 42, 'départ s, action a, récompense r, arrivée s′', 'sb', 'start');
+  trans.forEach((t, i) => {
+    const y = 72 + i * 30;
+    body += `<circle cx="${tx + 8}" cy="${y - 4}" r="8" fill="var(--bg)" stroke="var(--text-2)"/>` + txt(tx + 8, y - 0.5, String(i + 1), 'nl');
+    body += txt(tx + 26, y, `s = ${lab(t.r, t.c)}   a = ${DIRS[DIRS.findIndex((_, k) => k === t.a)][3]}   r = ${t.rew > 0 ? '+1' : t.rew < 0 ? '−1' : '0'}   s′ = ${terminal(t.nr, t.nc) ? (t.rew > 0 ? 'but' : 'piège') : lab(t.nr, t.nc)}`, 'sl', 'start');
+  });
+  W = tx + 270; H = oy + R * cs + 10;
+  aria = 'Six transitions enregistrées sur la grille : case de départ, action, récompense, case d\'arrivée';
+  caption = 'Ce qu\'on possède : seulement des transitions déjà observées, sans accès à l\'environnement. Les cases sont repérées par (ligne, colonne). On ne connaît ni les règles ni la politique qui les a produites.';
+}
+
+if (view === 'bc') {
+  const cs = 62, pw = C * cs, gap = 56, oy = 34;
+  const starts = [[3, 0], [3, 3]];
+  const visited = new Set<string>(), acts: number[] = [];
+  starts.forEach((s) => rollout(s, expert).slice(0, -1).forEach(([r, c]) => { if (!visited.has(`${r},${c}`)) { visited.add(`${r},${c}`); acts.push(expert(r, c)); } }));
+  const counts = [0, 0, 0, 0]; acts.forEach((a) => counts[a]++);
+  const def = counts.indexOf(Math.max(...counts));
+  const learned = (r: number, c: number) => (visited.has(`${r},${c}`) ? expert(r, c) : def);
+  // panneau A : démonstrations
+  body += txt(pw / 2, 14, 'démonstrations de l\'expert', 'gt');
+  body += drawGrid(0, oy, cs, (r, c) => (visited.has(`${r},${c}`) ? 'var(--a-fqi)' : null));
+  starts.forEach((s) => {
+    const p = rollout(s, expert);
+    for (let i = 0; i < p.length - 1; i++) { const [x1, y1] = center(0, oy, cs, p[i][0], p[i][1]), [x2, y2] = center(0, oy, cs, p[i + 1][0], p[i + 1][1]); body += arrowHead(x1, y1, x2, y2, 'var(--a-fqi)', 2.2); }
+  });
+  starts.forEach((s) => { const [x, y] = center(0, oy, cs, s[0], s[1]); body += `<circle cx="${f1(x)}" cy="${f1(y)}" r="5" fill="var(--a-fqi)"/>`; });
+  body += txt(pw / 2, oy + R * cs + 18, `en couleur : ${visited.size} cases vues`, 'sb');
+  // panneau B : BC depuis une case jamais vue
+  const bx = pw + gap;
+  body += txt(bx + pw / 2, 14, 'BC lâché depuis une case jamais vue', 'gt');
+  body += drawGrid(bx, oy, cs, (r, c) => (visited.has(`${r},${c}`) ? 'var(--a-fqi)' : null));
+  for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) if (!terminal(r, c) && !is([1, 1], r, c)) {
+    const [x, y] = center(bx, oy, cs, r, c), seen = visited.has(`${r},${c}`);
+    body += txt(x, y + 7, DIRS[learned(r, c)][3], 'bar', 'middle', seen ? 'var(--a-fqi)' : 'var(--text-2)');
+  }
+  const s0 = [3, 1], pth = rollout(s0, learned, 6);
+  const [sx, sy] = center(bx, oy, cs, s0[0], s0[1]), [ex, ey] = center(bx, oy, cs, pth[pth.length - 1][0], pth[pth.length - 1][1]);
+  body += `<circle cx="${f1(sx)}" cy="${f1(sy)}" r="5" fill="var(--h-py)"/>` + arrowHead(sx, sy - 6, ex, ey + 12, 'var(--h-py)', 2.2);
+  body += txt(ex, ey - 26, 'bloqué sous le mur', 'sl', 'middle', 'var(--h-py)');
+  body += txt(bx + pw / 2, oy + R * cs + 18, 'gris : action par défaut (pas de donnée)', 'sb');
+  W = 2 * pw + gap; H = oy + R * cs + 28;
+  aria = 'Démonstrations de l\'expert, puis le comportement d\'une politique apprise par imitation lancée depuis une case absente des données';
+  caption = 'Deux démonstrations optimales (à gauche). La politique apprise (version tabulaire : l\'action de l\'expert dans les cases vues, l\'action la plus fréquente ailleurs) est parfaite sur les cases vues, mais depuis la case (4, 2), absente des données, elle monte vers le mur et n\'en sort plus.';
+}
+
+if (view === 'tab') {
+  const K = 4, Q: Record<string, number> = {};
+  const key = (r: number, c: number, a: number) => `${r},${c},${a}`;
+  const ys: number[][] = trans.map(() => []);
+  let Qk: Record<string, number> = {};
+  for (let k = 1; k <= K; k++) {
+    const next: Record<string, number> = {};
+    trans.forEach((t, i) => {
+      const best = terminal(t.nr, t.nc) ? 0 : Math.max(0, ...[0, 1, 2, 3].map((a) => Qk[key(t.nr, t.nc, a)] ?? 0));
+      const y = t.rew + g * best; ys[i].push(y); next[key(t.r, t.c, t.a)] = y;
+    });
+    Qk = next;
+  }
+  void Q;
+  rows = trans.map((t, i) => ({ id: String(i + 1), s: lab(t.r, t.c), a: DIRS[t.a][3], rew: t.rew, s2: terminal(t.nr, t.nc) ? (t.rew > 0 ? 'but' : 'piège') : lab(t.nr, t.nc), y: ys[i] }));
+  aria = ''; caption = 'Chaque cible est « r + γ × meilleure valeur connue en s′ », avec la valeur de l\'itération précédente. Les cibles ne sont d\'abord non nulles que pour les transitions qui touchent le but ou le piège ; la valeur du but se transmet ensuite, une transition par itération, vers l\'arrière.';
+}
+
+if (view === 'fit') {
+  const deg = 4, N = 80, K = [1, 2, 3, 5, 10, 40];
+  let sd = 424242; const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+  const data = Array.from({ length: N }, () => { const x = rnd(), a = rnd() < 0.5 ? 1 : 0, xn = Math.min(1, Math.max(0, x + (a ? 0.1 : -0.1))); return { x, a, xn, term: xn >= 1, r: xn >= 1 ? 1 : 0 }; });
+  const feat = (x: number) => Array.from({ length: deg + 1 }, (_, k) => (2 * x - 1) ** k);
+  const solve = (A: number[][], b: number[]) => {
+    const n = b.length, M = A.map((row, i) => [...row, b[i]]);
+    for (let c = 0; c < n; c++) { let p = c; for (let i = c + 1; i < n; i++) if (Math.abs(M[i][c]) > Math.abs(M[p][c])) p = i; [M[c], M[p]] = [M[p], M[c]]; for (let i = c + 1; i < n; i++) { const f = M[i][c] / M[c][c]; for (let j = c; j <= n; j++) M[i][j] -= f * M[c][j]; } }
+    const x = new Array(n).fill(0); for (let i = n - 1; i >= 0; i--) x[i] = (M[i][n] - M[i].slice(i + 1, n).reduce((s, v, j) => s + v * x[i + 1 + j], 0)) / M[i][i]; return x;
+  };
+  const fit = (pts: number[][]) => { const d = deg + 1, A = Array.from({ length: d }, () => new Array(d).fill(0)), b = new Array(d).fill(0); pts.forEach(([x, y]) => { const f = feat(x); for (let i = 0; i < d; i++) { b[i] += f[i] * y; for (let j = 0; j < d; j++) A[i][j] += f[i] * f[j]; } }); for (let i = 0; i < d; i++) A[i][i] += 1e-6; return solve(A, b); };
+  const ev = (w: number[], x: number) => feat(x).reduce((s, f, i) => s + f * w[i], 0);
+  let Wt = [new Array(deg + 1).fill(0), new Array(deg + 1).fill(0)];
+  const snaps: { k: number; W: number[][]; pts: number[][][] }[] = [];
+  for (let k = 1; k <= 40; k++) {
+    const pts: number[][][] = [[], []];
+    data.forEach((d) => pts[d.a].push([d.x, d.r + (d.term ? 0 : g * Math.max(ev(Wt[0], d.xn), ev(Wt[1], d.xn)))]));
+    Wt = [fit(pts[0]), fit(pts[1])];
+    if (K.includes(k)) snaps.push({ k, W: Wt, pts });
+  }
+  const pw = 190, ph = 110, gx = 30, gy = 46, ox = 34;
+  const qs = (x: number) => g ** (Math.ceil((1 - x) / 0.1 - 1e-9) - 1);
+  snaps.forEach((sn, i) => {
+    const px = ox + (i % 3) * (pw + gx), py = 74 + Math.floor(i / 3) * (ph + gy);
+    const X = (x: number) => px + x * pw, Y = (v: number) => py + ph - ((Math.min(1.2, Math.max(-0.1, v)) + 0.1) / 1.3) * ph;
+    body += txt(px, py - 8, `k = ${sn.k}`, 'gt', 'start');
+    body += `<line x1="${px}" y1="${f1(Y(0))}" x2="${px + pw}" y2="${f1(Y(0))}" stroke="var(--border)"/><line x1="${px}" y1="${f1(Y(1))}" x2="${px + pw}" y2="${f1(Y(1))}" stroke="var(--border)" stroke-dasharray="2 3"/>`;
+    sn.pts[0].forEach(([x, y]) => (body += `<circle cx="${f1(X(x))}" cy="${f1(Y(y))}" r="2" fill="var(--text-2)" fill-opacity="0.5"/>`));
+    sn.pts[1].forEach(([x, y]) => (body += `<circle cx="${f1(X(x))}" cy="${f1(Y(y))}" r="2" fill="var(--a-fqi)" fill-opacity="0.65"/>`));
+    const xs = Array.from({ length: 61 }, (_, j) => j / 60);
+    body += `<polyline points="${xs.map((x) => `${f1(X(x))},${f1(Y(qs(x)))}`).join(' ')}" fill="none" stroke="var(--text)" stroke-width="1" stroke-dasharray="3 3" opacity="0.6"/>`;
+    body += `<polyline points="${xs.map((x) => `${f1(X(x))},${f1(Y(ev(sn.W[0], x)))}`).join(' ')}" fill="none" stroke="var(--text-2)" stroke-width="2"/>`;
+    body += `<polyline points="${xs.map((x) => `${f1(X(x))},${f1(Y(ev(sn.W[1], x)))}`).join(' ')}" fill="none" stroke="var(--a-fqi)" stroke-width="2.4"/>`;
+    if (i >= 3) body += txt(px + pw / 2, py + ph + 16, 'état x (position dans le couloir)', 'sb');
+  });
+  const lg = (x: number, y: number, col: string, label: string, kind: 'dot' | 'line' | 'dash') => (kind === 'dot' ? `<circle cx="${x}" cy="${y}" r="3" fill="${col}"/>` : `<line x1="${x - 8}" y1="${y}" x2="${x + 8}" y2="${y}" stroke="${col}" stroke-width="2.2"${kind === 'dash' ? ' stroke-dasharray="3 3"' : ''}/>`) + txt(x + 14, y + 4, label, 'sb', 'start');
+  body += lg(ox + 8, 12, 'var(--a-fqi)', 'cible, action « droite »', 'dot') + lg(ox + 168, 12, 'var(--text-2)', 'cible, action « gauche »', 'dot');
+  body += lg(ox + 8, 32, 'var(--a-fqi)', 'Q ajusté, « droite »', 'line') + lg(ox + 168, 32, 'var(--text-2)', 'Q ajusté, « gauche »', 'line') + lg(ox + 328, 32, 'var(--text)', 'Q optimal de « droite »', 'dash');
+  W = ox + 3 * (pw + gx); H = 74 + 2 * (ph + gy) - 8;
+  aria = 'FQI sur un couloir continu : à chaque itération, le régresseur ajuste Q aux cibles ; la valeur du but se propage vers la gauche';
+  caption = 'Couloir continu : x ∈ [0, 1], actions « gauche » et « droite » (± 0,1), récompense +1 en atteignant x = 1, γ = 0,9. Les points sont les cibles r + γ max Q(x′, ·) de 80 transitions, calculées avec le Q de l\'itération précédente. Les courbes sont un polynôme de degré 4 ajusté à ces points ; l\'oscillation en bord (surtout à k = 1) est typique d\'un polynôme.';
+}
+---
+{view === 'tab' ? (
+  <figure class="rlf rlf-tab">
+    <table class="tgt">
+      <thead><tr><th>#</th><th>transition (s, a, r, s′)</th><th>y₁</th><th>y₂</th><th>y₃</th><th>y₄</th></tr></thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr>
+            <td>{r.id}</td>
+            <td>s = {r.s}, a = {r.a}, r = {r.rew > 0 ? '+1' : r.rew < 0 ? '−1' : '0'}, s′ = {r.s2}</td>
+            {r.y.map((y, k) => (
+              <td class={Math.abs(y) > 1e-9 && (k === 0 || Math.abs(y - r.y[k - 1]) > 1e-9) ? 'new' : Math.abs(y) > 1e-9 ? 'on' : 'off'}>{y === 0 ? '0' : fm(y)}</td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+    <figcaption>{caption}</figcaption>
+  </figure>
+) : (
+  <figure class={`rlf rlf-off rlf-off-${view}`}>
+    <svg viewBox={`0 0 ${Math.round(W)} ${Math.round(H)}`} role="img" aria-label={aria} set:html={body} />
+    <figcaption>{caption}</figcaption>
+  </figure>
+)}
+
+<style is:global>
+  .rlf-off svg { width: 100%; height: auto; display: block; margin: 0 auto; }
+  .rlf-off-data svg { max-width: 640px; }
+  .rlf-off-bc svg { max-width: 600px; }
+  .rlf-off-fit svg { max-width: 680px; }
+  .rlf-off svg .gt { font: 600 12.5px var(--font); fill: var(--text); }
+  .rlf-off svg .gv { font: 600 12px var(--font); fill: var(--text); }
+  .rlf-off svg .sb { font: 10.5px var(--font); fill: var(--text-2); }
+  .rlf-off svg .sl { font: 12px var(--font); fill: var(--text); }
+  .rlf-off svg .cl { font: 9px var(--font); fill: var(--text-2); }
+  .rlf-off svg .nl { font: 600 10px var(--font); fill: var(--text); text-anchor: middle; }
+  .rlf-off svg .bar { font: 600 22px var(--font); }
+  .rlf-off figcaption, .rlf-tab figcaption { font-size: 13px; color: var(--text-2); line-height: 1.5; margin-top: 6px; }
+  .rlf-tab { margin: 1.2rem 0; }
+  .tgt { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  .tgt th, .tgt td { padding: 6px 10px; border-bottom: 1px solid var(--border); text-align: left; }
+  .tgt th { color: var(--text-2); font-weight: 500; }
+  .tgt td.off { color: var(--text-2); }
+  .tgt td.on { color: var(--text); }
+  .tgt td.new { background: color-mix(in srgb, var(--a-fqi) 24%, transparent); font-weight: 600; }
+</style>
