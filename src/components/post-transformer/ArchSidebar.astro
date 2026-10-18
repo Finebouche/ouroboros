@@ -2,7 +2,7 @@
 // Schéma d'un transformer décodeur, avec mise en évidence de la partie en cours d'explication.
 // Parties : mh (multi-têtes : remplace attn et qkv par h têtes, une concaténation et W_O), head, norm-final, norm1, qkv (projections Q, K, V), attn, wo (projection de sortie W_O), kv (K et V gardés en cache), add1, norm2, mlp, add2, embed.
 // Une boîte peut porter plusieurs parties (data-part="qkv kv") : elle s'allume si l'une d'elles est active.
-// Variante « loop » (module 1) : embed, inject (réinjection de l'embedding), block (k blocs, dessinés par le script), loop (retour de la boucle), norm-final, head.
+// Variante « loop » (chapitre 1) : embed, inject (réinjection de l'embedding), block (k blocs, dessinés par le script), loop (retour de la boucle), norm-final, head.
 // Un widget suivi (follow) publie son état dans data-arch-extra (JSON : heads pour le multi-têtes ; k, t, inj pour la boucle).
 interface Props { variant?: 'transformer' | 'loop' }
 const { variant = 'transformer' } = Astro.props;

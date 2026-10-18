@@ -6,7 +6,6 @@ status: en-cours
 sidebar: transformer
 ---
 import CausalAttention from '@/components/post-transformer/00-bases/CausalAttention.astro';
-import QKVProjection from '@/components/post-transformer/00-bases/QKVProjection.astro';
 import AttentionSteps from '@/components/post-transformer/00-bases/AttentionSteps.astro';
 import ArchMarker from '@/components/shared/ArchMarker.astro';
 import KVCacheSteps from '@/components/post-transformer/00-bases/KVCacheSteps.astro';
@@ -24,7 +23,7 @@ import RoPEClock from '@/components/post-transformer/00-bases/RoPEClock.astro';
 
 <ArchMarker parts="attn" label="Attention causale : Q, K, V et le masque M" />
 
-## La formule centrale
+La formule centrale est
 
 $$
 A \;=\; \mathrm{softmax}\!\left(\frac{Q\,K^{\top}}{\sqrt{d_k}} \;+\; M\right) V
@@ -44,6 +43,7 @@ $$
 
 ## 1. Un bloc de transformer, étape par étape
 
+Un token n'est d'abord qu'un numéro. Une table d'*embeddings* le remplace par un vecteur de $d_{\text{model}}$ nombres, noté $x_i$ : c'est tout ce que le modèle sait de ce token à l'entrée de l'attention.
 
 <AttentionSteps />
 
@@ -51,17 +51,8 @@ $$
 
 <ArchMarker parts="embed norm1 qkv" label="Entrée de l'attention : le vecteur de chaque token est projeté en Q, K, V par trois matrices" />
 
-## 2. Rappel : d'où viennent Q, K et V ?
+Dans l'attention, on projette l'embedding avec trois matrices apprises $W_Q$, $W_K$ et $W_V$. Ce sont trois projections linéaires du même vecteur $x_i$, et ce que chacune finit par encoder est décidé par l'entraînement. Les trois résultats s'appellent la requête $q_i$ (*query*), la clé $k_i$ (*key*) et la valeur $v_i$ (*value*).
 
-Un token n'est d'abord qu'un numéro. Une table d'*embeddings* le remplace par un vecteur de $d_{\text{model}}$ nombres, noté $x_i$ : c'est tout ce que le modèle sait de ce token à l'entrée de l'attention.
-
-Dans l'attention, on projette ce vecteur trois fois, avec trois matrices apprises $W_Q$, $W_K$ et $W_V$. Ce sont trois projections linéaires du même vecteur $x_i$, et ce que chacune finit par encoder est décidé par l'entraînement. Les trois résultats s'appellent la requête $q_i$ (*query*), la clé $k_i$ (*key*) et la valeur $v_i$ (*value*).
-
-$$
-Q = X\,W_Q, \qquad K = X\,W_K, \qquad V = X\,W_V
-$$
-
-<QKVProjection />
 
 <div class="retain">
 
@@ -105,7 +96,7 @@ Avec une seule matrice ($W_Q = W_K = W$), on aurait $q_i \cdot k_j = x_i\,W W^{\
 
 <ArchMarker parts="head" label="Sortie du modèle : une distribution de probabilité sur le token suivant, à chaque position (softmax sur le vocabulaire, distinct du softmax de l'attention)" />
 
-## 3. Entraîner en parallèle, générer pas à pas
+## 2. Entraîner en parallèle, générer pas à pas
 
 Un modèle de langage *autoregressif* prédit le token suivant à partir de ceux qui le précèdent.
 
@@ -167,7 +158,7 @@ Il serait perdu sur l'axe de la séquence : le calcul du token $i$ dépendrait d
 
 <ArchMarker parts="attn kv" label="KV cache : ce qu'on garde, ce qu'on recalcule" />
 
-## 4. Le KV cache en détail
+## 3. Le KV cache en détail
 
 À la génération, le token $t$ compare sa requête $q_t$ aux clés et aux valeurs de tous les tokens précédents. Ces clés et valeurs ne changent plus une fois calculées : à chaque couche, la représentation du token $i$ ne dépend que des tokens $\le i$ (causalité), donc ajouter des tokens après lui ne la modifie pas. On les garde donc en mémoire plutôt que de les recalculer à chaque pas.
 
@@ -252,7 +243,7 @@ Par token : $2 \times 32 \times 8 \times 128 \times 2 = 131\,072$ octets, soit e
 
 <ArchMarker parts="attn kv" label="Fenêtre glissante : chaque mot ne regarde que les W derniers" />
 
-## 5. Attention à fenêtre glissante (sliding window)
+## 4. Attention à fenêtre glissante (sliding window)
 
 Chaque mot ne regarde que les $W$ derniers mots, lui compris. Tout ce qui est plus loin est masqué, comme le futur.
 
@@ -281,7 +272,7 @@ $$
 - Exemple réaliste : avec $L = 32$ couches et $W = 4096$, la portée est de $32 \times 4095 + 1 = 131\,041$ tokens.
 - Le mot du début n'est pas lu directement : son information passe de vecteur en vecteur, une couche à la fois.
 - La plupart des LLM (de type GPT ou Llama) n'ont pas de fenêtre : $W = s$, et chaque mot lit directement tout le contexte. La fenêtre glissante est un choix de certains modèles, pour économiser le KV cache.
-- Avec une boucle de $T$ passes au lieu de $L$ couches, c'est le même cône (module 1, section 2).
+- Avec une boucle de $T$ passes au lieu de $L$ couches, c'est le même cône (chapitre 1, section 2).
 
 <div class="retain">
 
@@ -317,7 +308,7 @@ Avec une seule couche, non : il est hors de la fenêtre. Avec plusieurs couches,
 
 <Reveal>
 
-Au-delà de la portée des fenêtres empilées, l'attention ne peut plus rien voir. Un état qui passe de token en token est alors la seule route pour garder une information plus ancienne, avec une mémoire de taille fixe. On le détaillera aux modules 7 et 8.
+Au-delà de la portée des fenêtres empilées, l'attention ne peut plus rien voir. Un état qui passe de token en token est alors la seule route pour garder une information plus ancienne, avec une mémoire de taille fixe. On le détaillera aux chapitres 7 et 8.
 
 </Reveal>
 
@@ -325,7 +316,7 @@ Au-delà de la portée des fenêtres empilées, l'attention ne peut plus rien vo
 
 <ArchMarker parts="mh" label="Multi-têtes : h = 2 attentions en parallèle, concaténées puis mélangées par W_O" follow="[data-widget='mhead']" />
 
-## 6. Attention multi-têtes (multi-head)
+## 5. Attention multi-têtes (multi-head)
 
 Au lieu d'une seule attention avec $d_k = d_{\text{model}}$, on en calcule $h$ en parallèle, chacune avec ses propres $W_Q$, $W_K$, $W_V$, plus petites ($d_k = d_{\text{model}} / h$). Chaque tête a son propre motif d'attention ; on met leurs sorties bout à bout, puis $W_O$ les mélange.
 
@@ -389,92 +380,7 @@ $32 / 8 = 4$ têtes de requête par paire $K$, $V$. Le cache est 4 fois plus pet
 
 <ArchMarker parts="norm2 mlp add2" label="Seconde moitié du bloc : RMSNorm, MLP, résidu" />
 
-## 7. Le bloc complet : RMSNorm, MLP et résidus
-
-Les étapes 10 à 15 du widget de la section 1 montrent la seconde moitié du bloc. Voici les formules.
-
-<ArchMarker parts="norm2" label="RMSNorm (ici celle d'avant le MLP ; même formule pour les autres)" />
-
-### RMSNorm
-
-$$
-\mathrm{RMSNorm}(x) = \frac{x}{\sqrt{\tfrac{1}{d}\sum_{i=1}^{d} x_i^2 + \varepsilon}} \odot g
-$$
-
-- On divise le vecteur par la racine de la moyenne de ses carrés : toutes les lignes reviennent à la même échelle.
-- $g$ : un gain appris par composante ; $\varepsilon$ : une petite constante qui évite de diviser par zéro.
-- Elle agit sur chaque token séparément.
-
-<ArchMarker parts="mlp" label="MLP : appliqué à chaque token séparément" />
-
-### MLP
-
-$$
-\mathrm{MLP}(u) = \sigma(u\, W_1)\, W_2, \qquad W_1 \in \mathbb{R}^{d \times d_{\text{ff}}},\; W_2 \in \mathbb{R}^{d_{\text{ff}} \times d}
-$$
-
-- On monte de $d = d_{\text{model}}$ à $d_{\text{ff}}$ (souvent $4\,d$), on applique une non-linéarité $\sigma$ (GELU ici ; d'autres modèles utilisent des variantes, comme SwiGLU), puis on redescend à $d$.
-- Le MLP agit sur **chaque token séparément** : seule l'attention fait circuler l'information entre les tokens.
-- Avec $d_{\text{ff}} = 4\,d$, le MLP a $8\,d^2$ paramètres, deux fois plus que l'attention ($4\,d^2$).
-
-<ArchMarker parts="add1 add2" label="Résidus : chaque sous-bloc ajoute son résultat au vecteur du token" />
-
-### Le bloc et les résidus
-
-$$
-h = x + \mathrm{Attention}\big(\mathrm{RMSNorm}(x)\big), \qquad y = h + \mathrm{MLP}\big(\mathrm{RMSNorm}(h)\big)
-$$
-
-- Chaque sous-bloc ne fait qu'**ajouter** quelque chose au vecteur du token (le « flux résiduel »).
-- Le bloc est répété $N$ fois. Après la dernière couche : RMSNorm finale, puis $\times W_{\text{vocab}}$ (une colonne par mot du vocabulaire) et un softmax, qui donnent les probabilités du mot suivant.
-
-<ArchMarker parts="norm-final head" label="Après la dernière couche : RMSNorm finale et tête de sortie" />
-
-<div class="retain">
-
-**À retenir**
-
-- Bloc : $h = x + \mathrm{Attn}(\mathrm{RMSNorm}(x))$, puis $y = h + \mathrm{MLP}(\mathrm{RMSNorm}(h))$ ; répété $N$ fois.
-- RMSNorm : remet chaque vecteur à la même échelle, token par token.
-- MLP : $\sigma(u W_1) W_2$, de $d$ à $d_{\text{ff}} \approx 4d$ puis retour à $d$, token par token ; $8d^2$ paramètres.
-- Seule l'attention mélange les tokens ; RMSNorm et MLP n'en mélangent aucun.
-- Sortie : RMSNorm finale → $\times W_{\text{vocab}}$ → softmax → probabilités du mot suivant.
-
-</div>
-
-<Refs items={[["Root Mean Square Layer Normalization", "Zhang et Sennrich", 2019, "1910.07467"], ["Gaussian Error Linear Units (GELUs)", "Hendrycks et Gimpel", 2016, "1606.08415"], ["GLU Variants Improve Transformer", "Shazeer", 2020, "2002.05202"], ["Deep Residual Learning for Image Recognition", "He et al.", 2015, "1512.03385"], ["On Layer Normalization in the Transformer Architecture", "Xiong et al.", 2020, "2002.04745"]]} />
-
-<Quiz>
-
-**Q1.** Le MLP fait-il circuler de l'information entre les tokens ?
-
-<Reveal>
-
-Non. Il s'applique à chaque ligne (chaque token) séparément, avec les mêmes $W_1$ et $W_2$. Dans un transformer, seule l'attention fait circuler l'information d'un token à l'autre.
-
-</Reveal>
-
-**Q2.** Avec $d_{\text{model}} = 4096$ et $d_{\text{ff}} = 4 \times d_{\text{model}}$, combien de paramètres a le MLP d'une couche ? Et l'attention ?
-
-<Reveal>
-
-MLP : $2 \times 4096 \times 16\,384 \approx 134$ millions. Attention : $4 \times 4096^2 \approx 67$ millions. Le MLP pèse donc deux fois plus que l'attention.
-
-</Reveal>
-
-**Q3.** Si une couche entière (attention et MLP) sortait des zéros, que deviendrait le vecteur d'un token en la traversant ?
-
-<Reveal>
-
-Il passerait inchangé : avec les résidus, $h = x + 0$ puis $y = h + 0 = x$. Une couche ne peut qu'ajouter quelque chose au vecteur, ce qui facilite l'entraînement de modèles profonds.
-
-</Reveal>
-
-</Quiz>
-
-<ArchMarker parts="embed" label="Où est la position ? L'attention seule ignore l'ordre des mots" />
-
-## 8. Où est la position ?
+## 6. Où est la position ?
 
 L'attention compare des vecteurs, sans savoir où ils sont dans la phrase : si on mélange les mots, chaque mot obtient les mêmes scores, simplement réordonnés. Avec le masque causal, un modèle peut en partie retrouver l'ordre seul, mais en pratique on lui donne la position de chaque token explicitement.
 

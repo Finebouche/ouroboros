@@ -1,22 +1,42 @@
 ---
-// Cours RL, chapitre 1 : itération de valeur sur une grille 4 × 4 déterministe. On règle k et γ, et on déplace le but, le piège ou le mur.
+// Cours RL, chapitre 1 : itération de valeur sur une grille 4 × 4 déterministe, case par case.
+// Chaque mise à jour lit les valeurs de l'itération précédente (V_k), calcule r + γ V_k(s') pour les 4 actions,
+// garde le maximum (nouvelle valeur, évaluation) et l'action qui l'atteint (flèche, amélioration de la politique).
+import katex from 'katex';
+const tx = (t: string) => katex.renderToString(t, { throwOnError: false });
+const F = tx('V_{k+1}(s) = \\max_a \\big[\\, r + \\gamma\\, V_k(s\') \\,\\big]');
+// règles du MDP de la grille (déterministe)
+const RULES: [string, string][] = [
+  ['actions', tx('a \\in \\{\\uparrow, \\rightarrow, \\downarrow, \\leftarrow\\}')],
+  ['transition', tx("s'") + ' = la case voisine dans la direction ' + tx('a') + ' (on reste sur place contre un mur ou un bord)'],
+  ['récompense', tx("r = +1") + ' si ' + tx("s'") + ' est le but, ' + tx('-1') + ' si c\'est le piège, ' + tx('0') + ' sinon'],
+];
 ---
 <div class="widget rlw vi" data-widget="vi">
-  <div class="row"><span>Placer :</span><span class="seg" data-ref="mode"></span><span class="hint">puis cliquer sur une case de la grille</span></div>
-  <label class="sl"><span>Itération k</span><input type="range" data-ref="k" min="0" max="12" step="1" value="3" /><b data-ref="k-out"></b></label>
-  <label class="sl"><span>Facteur d'actualisation γ</span><input type="range" data-ref="g" min="0.5" max="0.99" step="0.01" value="0.9" /><b data-ref="g-out"></b></label>
-  <svg class="clk" data-ref="svg" role="img" aria-label="Valeurs et politique de la grille après k itérations de valeur"></svg>
-  <div class="kpis">
-    <div><span>Itérations pour converger</span><b data-ref="kc"></b></div>
-    <div><span>Valeur de la case de départ (en bas à gauche)</span><b data-ref="vs"></b></div>
+  <div class="row"><span class="seg" data-ref="ctl"></span></div>
+  <div class="row2">
+    <div class="row"><span>Placer :</span><span class="seg" data-ref="mode"></span></div>
+    <label class="sl"><span>Actualisation γ</span><input type="range" data-ref="g" min="0.5" max="0.99" step="0.01" value="0.9" /><b data-ref="g-out"></b></label>
   </div>
-  <p class="note">Une flèche indique l'action qui maximise « récompense + γ × valeur de la case atteinte » d'après les valeurs affichées. À k = 0 toutes les valeurs sont nulles. Quand le but est inaccessible, les valeurs restent à 0.</p>
+  <div class="vibody">
+    <svg class="clk" data-ref="svg" role="img" aria-label="Itération de valeur case par case : valeurs et actions choisies"></svg>
+    <div class="viside">
+      <div class="fm" set:html={F} />
+      <dl class="rules">{RULES.map(([k, v]) => (<><dt>{k}</dt><dd set:html={v} /></>))}</dl>
+      <div class="calc" data-ref="calc"></div>
+      <div class="kpis">
+        <div><span>Itération k</span><b data-ref="kk"></b></div>
+        <div><span>Valeur du départ</span><b data-ref="vs"></b></div>
+      </div>
+    </div>
+  </div>
+  <p class="note">Contour bleu : case mise à jour ; pointillés : cases lues, avec les valeurs de l'itération précédente (V<sub>k</sub>). Flèche : action qui atteint le maximum. Clique une case pour y placer le but, le piège ou le mur.</p>
 </div>
 
 <script>
   document.querySelectorAll<HTMLElement>('[data-widget="vi"]').forEach((root) => {
     const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
-    const R = 4, C = 4, START: [number, number] = [3, 0], cs = 74;
+    const R = 4, C = 4, START: [number, number] = [3, 0], cs = 62, PAD = 4, LBL = 16;
     const DIRS: [number, number, string][] = [[-1, 0, '↑'], [0, 1, '→'], [1, 0, '↓'], [0, -1, '←']];
     const st = { goal: [0, 3] as [number, number], pit: [1, 3] as [number, number], wall: [1, 1] as [number, number], mode: 'goal' };
     const same = (p: [number, number], r: number, c: number) => p[0] === r && p[1] === c;
@@ -26,54 +46,132 @@
       if (nr < 0 || nr >= R || nc < 0 || nc >= C || same(st.wall, nr, nc)) { nr = r; nc = c; }
       return [nr, nc, same(st.goal, nr, nc) ? 1 : same(st.pit, nr, nc) ? -1 : 0];
     };
-    const kIn = $('k') as HTMLInputElement, gIn = $('g') as HTMLInputElement;
+    const gIn = $('g') as HTMLInputElement;
+    const fm = (v: number) => v.toFixed(2).replace('.', ',').replace('-', '−');
+    const grid = (v: number) => Array.from({ length: R }, () => new Array(C).fill(v));
+    type Cand = { a: number; nr: number; nc: number; rew: number; vn: number; val: number };
+    let g = 0.9, V = grid(0), Vk = grid(0), best: (number[] | null)[][] = [], order: [number, number][] = [], idx = 0, k = 0, conv = false;
+    let cur: { r: number; c: number; cands: Cand[]; old: number; nw: number; kRead: number } | null = null;
+    let timer: number | null = null;
+
+    function reset() {
+      stop(); g = +gIn.value; V = grid(0); Vk = grid(0); idx = 0; k = 0; conv = false; cur = null;
+      best = Array.from({ length: R }, () => new Array(C).fill(null));
+      order = [];
+      for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) if (!term(r, c) && !same(st.wall, r, c)) order.push([r, c]);
+      draw();
+    }
+    function stepCell() {
+      if (conv) return;
+      if (idx === 0) Vk = V.map((row) => row.slice());
+      const [r, c] = order[idx];
+      const cands: Cand[] = DIRS.map((_, a) => { const [nr, nc, rew] = step(r, c, a); const vn = term(nr, nc) ? 0 : Vk[nr][nc]; return { a, nr, nc, rew, vn, val: rew + g * vn }; });
+      const nw = Math.max(...cands.map((q) => q.val));
+      cur = { r, c, cands, old: Vk[r][c], nw, kRead: k };
+      V[r][c] = nw;
+      best[r][c] = cands.filter((q) => q.val > nw - 1e-9).map((q) => q.a);
+      idx++;
+      if (idx === order.length) {
+        idx = 0; k++;
+        const d = Math.max(...V.flatMap((row, i) => row.map((v, j) => Math.abs(v - Vk[i][j]))));
+        if (d < 1e-4) conv = true;
+      }
+    }
+    const mk = (label: string, f: () => void) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', f); $('ctl').appendChild(b); return b; };
+    let playB: HTMLButtonElement | null = null;
+    function stop() { if (timer) { clearInterval(timer); timer = null; } if (playB) playB.textContent = '▶ lecture'; }
+    mk('case suivante', () => { stop(); stepCell(); draw(); });
+    mk('itération suivante', () => { stop(); do stepCell(); while (idx !== 0 && !conv); draw(); });
+    playB = mk('▶ lecture', () => {
+      if (timer) { stop(); return; }
+      playB!.textContent = '⏸ pause';
+      timer = window.setInterval(() => { stepCell(); draw(); if (conv) stop(); }, 380);
+    });
+    mk('recommencer', () => reset());
     [['but (+1)', 'goal'], ['piège (−1)', 'pit'], ['mur', 'wall']].forEach(([l, v]) => {
       const b = document.createElement('button'); b.textContent = l; b.dataset.v = v;
       b.addEventListener('click', () => { st.mode = v; draw(); }); $('mode').appendChild(b);
     });
-    const fm = (v: number) => v.toFixed(2).replace('.', ',');
+
     function draw() {
-      $('mode').querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.v === st.mode));
-      const g = +gIn.value, K = +kIn.value;
-      $('k-out').textContent = String(K); $('g-out').textContent = fm(g);
-      const hist: number[][][] = [Array.from({ length: R }, () => new Array(C).fill(0))];
-      for (let k = 0; k < 30; k++) {
-        const V = hist[hist.length - 1];
-        hist.push(V.map((row, r) => row.map((_, c) => (term(r, c) || same(st.wall, r, c) ? 0 : Math.max(...DIRS.map((__, a) => { const [nr, nc, rew] = step(r, c, a); return rew + g * (term(nr, nc) ? 0 : V[nr][nc]); }))))));
-      }
-      let kc = 0; for (let k = 1; k < hist.length; k++) { const d = Math.max(...hist[k].flatMap((row, r) => row.map((v, c) => Math.abs(v - hist[k - 1][r][c])))); if (d > 1e-4) kc = k; }
-      kc = Math.min(kc + 1, 30);
-      const V = hist[K], vmax = Math.max(1e-9, ...hist[hist.length - 1].flat());
+      $('mode').querySelectorAll('button').forEach((b) => b.classList.toggle('active', (b as HTMLElement).dataset.v === st.mode));
+      $('g-out').textContent = fm(+gIn.value);
+      const vmax = Math.max(1e-9, ...V.flat());
+      const read = new Set(cur ? cur.cands.map((q) => `${q.nr},${q.nc}`) : []);
       let s = '';
       for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
-        const x = 6 + c * cs, y = 6 + r * cs, w = cs - 3;
-        if (same(st.wall, r, c)) { s += `<rect x="${x}" y="${y}" width="${w}" height="${w}" rx="5" fill="var(--text-2)" fill-opacity="0.35"/>`; continue; }
-        if (same(st.goal, r, c)) { s += `<rect x="${x}" y="${y}" width="${w}" height="${w}" rx="5" fill="var(--hl-stroke)" fill-opacity="0.35" stroke="var(--hl-stroke)"/><text x="${x + w / 2}" y="${y + w / 2 + 5}" text-anchor="middle" class="gv">+1</text>`; continue; }
-        if (same(st.pit, r, c)) { s += `<rect x="${x}" y="${y}" width="${w}" height="${w}" rx="5" fill="var(--h-py)" fill-opacity="0.35" stroke="var(--h-py)"/><text x="${x + w / 2}" y="${y + w / 2 + 5}" text-anchor="middle" class="gv">−1</text>`; continue; }
-        const v = V[r][c];
-        s += `<rect x="${x}" y="${y}" width="${w}" height="${w}" rx="5" fill="var(--a-fqi)" fill-opacity="${(0.06 + 0.7 * Math.max(v, 0) / vmax).toFixed(2)}" stroke="var(--border)" stroke-width="0.8"/>`;
-        s += `<text x="${x + 6}" y="${y + 14}" class="vs">${v === 0 ? '0' : fm(v)}</text>`;
-        if (K > 0 && v > 0) {
-          const q = DIRS.map((__, a) => { const [nr, nc, rew] = step(r, c, a); return rew + g * (term(nr, nc) ? 0 : V[nr][nc]); }), best = Math.max(...q);
-          const bests = DIRS.map((d, a) => [d, q[a]] as const).filter(([, qa]) => qa > best - 1e-9).map(([d]) => d);
-          bests.forEach((d) => { const o = bests.length === 1 ? 0 : 15; s += `<text x="${x + w / 2 + d[1] * o}" y="${y + w / 2 + 8 + d[0] * o}" text-anchor="middle" class="ar">${d[2]}</text>`; });
+        const x = PAD + c * cs, y = PAD + r * cs, w = cs - 4;
+        const isCur = !!cur && cur.r === r && cur.c === c, isRead = read.has(`${r},${c}`) && !isCur;
+        if (same(st.wall, r, c)) s += `<rect x="${x}" y="${y}" width="${w}" height="${w}" rx="5" fill="var(--text-2)" fill-opacity="0.35"/>`;
+        else if (same(st.goal, r, c)) s += `<rect x="${x}" y="${y}" width="${w}" height="${w}" rx="5" fill="var(--hl-stroke)" fill-opacity="0.35" stroke="var(--hl-stroke)"/><text x="${x + w / 2}" y="${y + w / 2 + 5}" text-anchor="middle" class="vv">+1</text>`;
+        else if (same(st.pit, r, c)) s += `<rect x="${x}" y="${y}" width="${w}" height="${w}" rx="5" fill="var(--h-py)" fill-opacity="0.35" stroke="var(--h-py)"/><text x="${x + w / 2}" y="${y + w / 2 + 5}" text-anchor="middle" class="vv">−1</text>`;
+        else {
+          const v = V[r][c];
+          s += `<rect x="${x}" y="${y}" width="${w}" height="${w}" rx="5" fill="var(--a-fqi)" fill-opacity="${(0.06 + 0.7 * Math.max(v, 0) / vmax).toFixed(2)}" stroke="var(--border)" stroke-width="0.8"/>`;
+          s += `<text x="${x + w / 2}" y="${y + w / 2 - 2}" text-anchor="middle" class="${v !== 0 ? 'vv' : 'vz'}">${v === 0 ? '0' : fm(v)}</text>`;
+          const b = best[r][c];
+          if (b && v > 0) s += `<text x="${x + w / 2}" y="${y + w / 2 + 17}" text-anchor="middle" class="va">${b.map((a) => DIRS[a][2]).join(' ')}</text>`;
+          if (same(START, r, c)) s += `<text x="${x + w / 2}" y="${PAD + R * cs + 11}" text-anchor="middle" class="vs">départ</text>`;
         }
-        if (same(START, r, c)) s += `<text x="${x + w / 2}" y="${y + w - 6}" text-anchor="middle" class="vs">départ</text>`;
+        if (isRead) s += `<rect x="${x + 2}" y="${y + 2}" width="${w - 4}" height="${w - 4}" rx="4" fill="none" stroke="var(--a-fqi)" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+        if (isCur) s += `<rect x="${x + 1}" y="${y + 1}" width="${w - 2}" height="${w - 2}" rx="5" fill="none" stroke="var(--a-fqi)" stroke-width="3"/>`;
       }
       const svg = $('svg') as unknown as SVGSVGElement;
-      svg.setAttribute('viewBox', `0 0 ${C * cs + 12} ${R * cs + 12}`); svg.innerHTML = s;
-      $('kc').textContent = String(kc);
-      $('vs').textContent = fm(hist[hist.length - 1][START[0]][START[1]]);
+      svg.setAttribute('viewBox', `0 0 ${C * cs + 2 * PAD} ${R * cs + PAD + LBL}`); svg.innerHTML = s;
+      // calcul de la case courante
+      const calc = $('calc'); calc.innerHTML = '';
+      if (cur) {
+        const head = document.createElement('div'); head.className = 'ch';
+        head.textContent = `case (${cur.r + 1}, ${cur.c + 1}), avec les valeurs V${['₀', '₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉'][cur.kRead % 10] ?? ''}${cur.kRead >= 10 ? ` (k = ${cur.kRead})` : ''}`;
+        calc.appendChild(head);
+        cur.cands.forEach((q) => {
+          const d = document.createElement('div'); d.className = 'cr' + (q.val > cur!.nw - 1e-9 ? ' best' : '');
+          const dest = q.nr === cur!.r && q.nc === cur!.c ? 'reste' : term(q.nr, q.nc) ? (q.rew > 0 ? 'but' : 'piège') : `(${q.nr + 1},${q.nc + 1})`;
+          d.textContent = `${DIRS[q.a][2]} ${dest.padEnd(5)}  ${q.rew === 1 ? '+1' : q.rew === -1 ? '−1' : ' 0'} + ${fm(g)}×${fm(q.vn)} = ${fm(q.val)}`;
+          calc.appendChild(d);
+        });
+        const e = document.createElement('div'); e.className = 'ce';
+        e.textContent = `max : V(${cur.r + 1},${cur.c + 1}) ${fm(cur.old)} → ${fm(cur.nw)}`;
+        calc.appendChild(e);
+      }
+      $('kk').textContent = conv ? `${k} (convergé)` : String(k);
+      $('vs').textContent = fm(V[START[0]][START[1]]);
     }
     ($('svg') as unknown as SVGSVGElement).addEventListener('click', (e) => {
       const svg = $('svg') as unknown as SVGSVGElement, rect = svg.getBoundingClientRect();
-      const sx = (C * cs + 12) / rect.width, c = Math.floor(((e.clientX - rect.left) * sx - 6) / cs), r = Math.floor(((e.clientY - rect.top) * sx - 6) / cs);
+      const sx = (C * cs + 2 * PAD) / rect.width, c = Math.floor(((e.clientX - rect.left) * sx - PAD) / cs), r = Math.floor(((e.clientY - rect.top) * sx - PAD) / cs);
       if (r < 0 || r >= R || c < 0 || c >= C || (r === START[0] && c === START[1])) return;
       const others = (['goal', 'pit', 'wall'] as const).filter((m) => m !== st.mode);
       if (others.some((m) => same(st[m], r, c))) return;
-      (st as any)[st.mode] = [r, c]; draw();
+      (st as any)[st.mode] = [r, c]; reset();
     });
-    ['k', 'g'].forEach((r) => $(r).addEventListener('input', draw));
-    draw();
+    gIn.addEventListener('input', reset);
+    reset();
   });
 </script>
+
+<style is:global>
+  .vi .row > .seg { display: flex; flex-wrap: wrap; }
+  .vi .row2 { display: grid; grid-template-columns: auto 1fr; gap: 0 28px; align-items: center; margin-top: 6px; }
+  .vi .row2 .sl { grid-template-columns: auto 1fr 34px; gap: 10px; }
+  .vi .vibody { display: flex; gap: 24px; align-items: flex-start; margin-top: 12px; }
+  .vi .vibody svg.clk { flex: 0 0 auto; width: 256px; max-width: 100%; margin: 0; }
+  .vi .viside { flex: 1 1 0; min-width: 0; }
+  .vi .fm { font-size: 1rem; margin: 0 0 8px; overflow-x: auto; overflow-y: hidden; }
+  .vi .rules { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0 0 10px; font-size: 12px; color: var(--text-2); line-height: 1.45; }
+  .vi .rules dt { font-weight: 600; color: var(--text); }
+  .vi .rules dd { margin: 0; }
+  .vi .rules .katex { font-size: 1.05em; }
+  .vi .calc { font: 11.5px/1.6 var(--mono); color: var(--text-2); min-height: 9.6em; margin-bottom: 10px; white-space: pre; overflow-x: auto; }
+  .vi .calc .ch { font-family: var(--font); font-size: 12px; margin-bottom: 2px; }
+  .vi .calc .cr.best { color: var(--a-fqi); font-weight: 700; }
+  .vi .calc .ce { color: var(--text); margin-top: 2px; }
+  .vi .kpis { flex-direction: column; gap: 8px; margin: 0; max-width: 240px; }
+  .vi .kpis > div { display: flex; justify-content: space-between; background: var(--surface-2); border-radius: 8px; padding: 0.35rem 0.6rem; }
+  .vi .kpis > div > span { font-size: 12px; }
+  .vi .kpis b { font-size: 14px; }
+  .vi svg text.vv { font: 600 12px var(--font); fill: var(--text); }
+  .vi svg text.vz { font: 11px var(--font); fill: var(--text-2); }
+  .vi svg text.va { font: 600 15px var(--font); fill: var(--text); }
+  @media (max-width: 640px) { .vi .vibody { flex-direction: column; align-items: stretch; } .vi .vibody svg.clk { margin: 0 auto; } .vi .row2 { grid-template-columns: 1fr; } }
+</style>

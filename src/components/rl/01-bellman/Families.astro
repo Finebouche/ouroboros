@@ -1,0 +1,62 @@
+---
+// Cours RL, chapitre 1 : les familles d'amélioration de la politique et leurs exemples dans le cours,
+// même mise en forme que Evaluation.astro et McBellman.astro (bandes arrondies, schémas de propagation du crédit).
+const MC = 'var(--a-es)', TD = 'var(--a-fqi)';
+type Glyph = 'all' | 'step' | 'mix' | 'group' | 'none';
+const glyph = (g: Glyph) => {
+  const dx = 13, x0 = 8, cy = 9, dot = (k: number, fill: string, op: number) => `<circle cx="${x0 + k * dx}" cy="${cy}" r="4.2" fill="${fill}" fill-opacity="${op.toFixed(2)}"/>`;
+  let o = `<svg viewBox="0 0 ${x0 + 5 * dx + 8} 18" class="fagl" aria-hidden="true">`;
+  if (g === 'step') o += `<defs><marker id="famk" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="${TD}"/></marker></defs>`;
+  if (g === 'group') o += `<rect x="1" y="1" width="${x0 + 5 * dx + 6}" height="16" rx="8" fill="none" stroke="var(--text-2)" stroke-width="1.2"/>`;
+  if (g === 'none') return '';
+  for (let k = 0; k < 6; k++) {
+    if (g === 'all') o += dot(k, MC, 0.35 + 0.13 * k);
+    if (g === 'step') { o += dot(k, TD, 0.35 + 0.13 * k); if (k > 0) o += `<line x1="${x0 + k * dx - 4.6}" y1="${cy}" x2="${x0 + (k - 1) * dx + 4.8}" y2="${cy}" stroke="${TD}" stroke-width="1.1" marker-end="url(#famk)"/>`; }
+    if (g === 'mix') o += dot(k, k % 2 ? TD : MC, 0.35 + 0.13 * k);
+    if (g === 'group') o += dot(k, 'var(--text-2)', 0.45);
+  }
+  return o + '</svg>';
+};
+const rows: { fam: string; ex: string; how: string; glyph: Glyph; credit: string; data: string }[] = [
+  { fam: 'Contrôle Monte-Carlo', ex: 'contrôle Monte-Carlo ε-greedy', how: 'évaluer Q par des retours complets, puis jouer l\'action de plus grande valeur', glyph: 'all', credit: 'retour complet', data: 'en ligne' },
+  { fam: 'Contrôle TD', ex: 'SARSA, Q-learning, DQN', how: 'cible de Bellman à chaque pas ; Q-learning et DQN visent directement l\'optimum (max)', glyph: 'step', credit: 'Bellman', data: 'en ligne' },
+  { fam: 'Itération de valeur approchée', ex: 'FQI', how: 'équation d\'optimalité (max), par régression sur un lot', glyph: 'step', credit: 'Bellman', data: 'hors ligne' },
+  { fam: 'Itération de politique approchée', ex: 'LSPI', how: 'évaluer (LSTD), puis prendre l\'action de plus grande valeur', glyph: 'step', credit: 'Bellman', data: 'hors ligne' },
+  { fam: 'Gradient de politique', ex: 'REINFORCE, acteur-critique (A2C), NAC, TRPO, PPO', how: 'ajuster directement la politique dans le sens qui augmente le retour moyen ; un critique note les actions (sauf REINFORCE)', glyph: 'mix', credit: 'du retour complet (REINFORCE) au mélange selon λ', data: 'en ligne' },
+  { fam: 'Stratégies d\'évolution', ex: 'OpenAI-ES, CMA-ES', how: 'boîte noire : perturber la politique au hasard, garder les directions qui donnent le meilleur retour', glyph: 'group', credit: 'retour d\'épisode, sans crédit par action', data: 'en ligne' },
+  { fam: 'Avec un modèle', ex: 'itération de valeur, Dyna, MCTS (AlphaZero), MuZero', how: 'connaître ou apprendre P et r, puis planifier : simuler la suite avant d\'agir', glyph: 'none', credit: 'selon la méthode de planification', data: 'modèle connu ou appris' },
+];
+---
+<figure class="fa">
+  <div class="far fahd">
+    <div>famille <span>· exemples</span></div>
+    <div>amélioration de la politique</div>
+    <div>attribution du crédit</div>
+    <div>données</div>
+  </div>
+  {rows.map((r, i) => (
+    <div class={`far fag${i % 2 ? ' alt' : ''}`}>
+      <div class="fan"><b>{r.fam}</b><small>{r.ex}</small></div>
+      <div class="fah">{r.how}</div>
+      <div class="fac"><div set:html={glyph(r.glyph)} /><span>{r.credit}</span></div>
+      <div><span class={`fad${r.data === 'en ligne' ? ' on' : ''}`}>{r.data}</span></div>
+    </div>
+  ))}
+</figure>
+
+<style is:global>
+  .fa { margin: 1.4rem 0; font-family: var(--font); }
+  .fa .far { display: grid; grid-template-columns: 170px minmax(0, 1fr) 170px 84px; column-gap: 16px; align-items: center; }
+  .fa .fahd { padding: 0 14px 8px; font-size: 11.5px; font-weight: 600; color: var(--text); }
+  .fa .fahd span { font-weight: 400; color: var(--text-2); }
+  .fa .fag { border-radius: 8px; background: color-mix(in srgb, var(--text-2) 7%, transparent); padding: 10px 14px; margin-bottom: 6px; }
+  .fa .fag.alt { background: color-mix(in srgb, var(--text-2) 3.5%, transparent); }
+  .fa .fan b { display: block; font-size: 13px; font-weight: 600; color: var(--text); }
+  .fa .fan small { display: block; font-size: 11.5px; color: var(--text-2); margin-top: 2px; line-height: 1.35; }
+  .fa .fah { font-size: 12.5px; color: var(--text); line-height: 1.45; }
+  .fa .fagl { display: block; width: 90px; height: auto; margin-bottom: 3px; }
+  .fa .fac span { display: block; font-size: 11.5px; color: var(--text-2); line-height: 1.35; }
+  .fa .fad { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-2); text-align: center; line-height: 1.3; }
+  .fa .fad.on { color: var(--text); border-color: var(--text-2); }
+  @media (max-width: 680px) { .fa .far { grid-template-columns: 1fr; row-gap: 6px; } .fa .fahd { display: none; } }
+</style>

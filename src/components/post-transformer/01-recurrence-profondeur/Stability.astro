@@ -1,5 +1,5 @@
 ---
-// Module 1 : jouet scalaire de la récurrence h ← a·h + e (e = 1), pour voir quand la norme de l'état converge, croît ou explose.
+// Chapitre 1 : jouet scalaire de la récurrence h ← a·h + e (e = 1), pour voir quand la norme de l'état converge, croît ou explose.
 // Ce n'est pas un vrai modèle : l'analyse de Parcae porte sur une approximation linéaire en dimension d_h, où a devient la matrice Ā.
 ---
 <div class="widget stab" data-widget="stab">
@@ -14,7 +14,7 @@
   <p class="eq">h<sub>t+1</sub> = a · h<sub>t</sub> + e, avec e = 1 et h<sub>0</sub> = 0</p>
   <svg data-ref="svg" width="100%" viewBox="0 0 640 220" role="img" aria-label="Norme de l'état en fonction du nombre de passes"></svg>
   <div class="kpis">
-    <div><span>a = ρ(Ā)</span><b data-ref="k1"></b></div>
+    <div><span>a = ρ(Ā)</span><b data-ref="k1"></b><i>rayon spectral : sous 1, l'état s'éteint ; au-dessus, il explose</i></div>
     <div><span>État après 32 passes</span><b data-ref="k2"></b></div>
     <div><span>Verdict</span><b data-ref="k3" class="v"></b></div>
   </div>
@@ -57,6 +57,7 @@
       const v = hs[T];
       $('k2').textContent = v > 1e4 ? v.toExponential(1).replace('.', ',').replace('e+', ' × 10^') : fr(v, 1);
       $('k3').textContent = a < 0.995 ? 'converge' : a <= 1.005 ? 'croît sans borne' : 'explose';
+      $('k3').className = 'v ' + (a <= 1.005 ? '' : 'r');
     }
 
     root.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) =>
@@ -82,6 +83,5 @@
   .stab .eq { font-size: 14px; color: var(--text-2); margin: 6px 0 2px; }
   .stab svg text { font: 11px var(--font); fill: var(--text-2); }
   .stab svg text.warn { fill: var(--c-model-loop); font-weight: 500; }
-  .stab .kpis b.v { font-size: 20px; }
   @media (max-width: 600px) { .stab .sl label { grid-template-columns: 1fr; } }
 </style>

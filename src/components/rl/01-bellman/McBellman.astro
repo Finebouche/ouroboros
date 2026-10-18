@@ -1,0 +1,56 @@
+---
+// Cours RL, chapitre 1 : Monte-Carlo contre Bellman, même mise en forme que Evaluation.astro (bandes arrondies, vert = retour complet,
+// bleu = bootstrapping, équations rendues par KaTeX à la construction, schéma de propagation du crédit).
+import katex from 'katex';
+const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
+const MC = 'var(--a-es)', TD = 'var(--a-fqi)';
+// [libellé, cellule Monte-Carlo, cellule Bellman] ; une cellule est du HTML
+const glyph = (kind: 'all' | 'step') => {
+  const dx = 13, x0 = 8, cy = 9;
+  let o = `<svg viewBox="0 0 ${x0 + 5 * dx + 8} 18" class="mbgl" aria-hidden="true">`;
+  if (kind === 'step') o += `<defs><marker id="mbmk" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="${TD}"/></marker></defs>`;
+  for (let k = 0; k < 6; k++) {
+    o += `<circle cx="${x0 + k * dx}" cy="${cy}" r="4.2" fill="${kind === 'all' ? MC : TD}" fill-opacity="${(0.35 + 0.13 * k).toFixed(2)}"/>`;
+    if (kind === 'step' && k > 0) o += `<line x1="${x0 + k * dx - 4.6}" y1="${cy}" x2="${x0 + (k - 1) * dx + 4.8}" y2="${cy}" stroke="${TD}" stroke-width="1.1" marker-end="url(#mbmk)"/>`;
+  }
+  return o + '</svg>';
+};
+const rows: [string, string, string][] = [
+  ['Équation', tx('V^\\pi(s) = \\mathbb{E}[\\, r_{t+1} + \\gamma\\, r_{t+2} + \\gamma^2 r_{t+3} + \\dots \\,]'), tx('V^\\pi(s) = \\mathbb{E}[\\, r_{t+1} + \\gamma\\, V^\\pi(s_{t+1}) \\,]')],
+  ['D\'où elle vient', 'la définition du retour', 'le retour coupé après la 1<sup>re</sup> récompense : ' + tx('G_t = r_{t+1} + \\gamma\\, G_{t+1}')],
+  ['Cible de la mise à jour', 'le retour observé ' + tx('G_t'), tx('r_{t+1} + \\gamma\\, V(s_{t+1})') + ' (contient une estimation)'],
+  ['Crédit', glyph('all') + '<span>chaque action reçoit le sien en un coup, en fin d\'épisode</span>', glyph('step') + '<span>il remonte d\'un pas à chaque mise à jour</span>'],
+  ['Données', 'des épisodes entiers', 'des transitions isolées'],
+  ['Qualité', 'sans biais, mais bruitée', 'biaisée tant que ' + tx('V') + ' est fausse, moins bruitée'],
+];
+---
+<figure class="mb">
+  <div class="mbr mbhd">
+    <div></div>
+    <div style={`color:${MC}`}><b>Monte-Carlo</b><i>retour complet</i></div>
+    <div style={`color:${TD}`}><b>Bellman</b><i>bootstrapping</i></div>
+  </div>
+  {rows.map(([k, a, b], i) => (
+    <div class={`mbr mbg${i % 2 ? ' alt' : ''}`}>
+      <div class="mbk">{k}</div>
+      <div class="mbc" set:html={a} />
+      <div class="mbc" set:html={b} />
+    </div>
+  ))}
+</figure>
+
+<style is:global>
+  .mb { margin: 1.4rem 0; font-family: var(--font); }
+  .mb .mbr { display: grid; grid-template-columns: 128px minmax(0, 1fr) minmax(0, 1fr); column-gap: 18px; align-items: center; }
+  .mb .mbhd { padding: 0 14px 8px; }
+  .mb .mbhd b { display: block; font-size: 13px; font-weight: 600; }
+  .mb .mbhd i { font-style: normal; font-size: 11px; color: var(--text-2); }
+  .mb .mbg { border-radius: 8px; background: color-mix(in srgb, var(--text-2) 7%, transparent); padding: 9px 14px; margin-bottom: 6px; }
+  .mb .mbg.alt { background: color-mix(in srgb, var(--text-2) 3.5%, transparent); }
+  .mb .mbk { font-size: 12px; font-weight: 600; color: var(--text); }
+  .mb .mbc { font-size: 13px; color: var(--text); line-height: 1.45; overflow-x: auto; overflow-y: hidden; }
+  .mb .mbc .katex { font-size: 1.1em; }
+  .mb .mbgl { display: block; width: 90px; height: auto; margin-bottom: 3px; }
+  .mb .mbc span { font-size: 12px; color: var(--text-2); }
+  @media (max-width: 640px) { .mb .mbr { grid-template-columns: 1fr; row-gap: 4px; } .mb .mbhd { display: none; } }
+</style>

@@ -1,5 +1,5 @@
 ---
-// Widget du module 0 : taille du KV cache, M = 2 · L · h_kv · d_k · b · s · batch.
+// Widget du chapitre 0 : taille du KV cache, M = 2 · L · h_kv · d_k · b · s · batch.
 ---
 <div class="widget kvmem" data-widget="kv-mem">
   <div class="row">
@@ -26,12 +26,12 @@
     <label><span>Séquences en parallèle</span><input type="range" data-ref="bs" min="1" max="64" step="1" value="1" /><b data-ref="bs-out"></b></label>
   </div>
   <div class="kpis">
-    <div><span>Par token</span><b data-ref="k-tok"></b></div>
-    <div><span>Cache total</span><b data-ref="k-tot"></b></div>
-    <div><span>Part d'un GPU de 80 Go</span><b data-ref="k-pct"></b></div>
+    <div><span>Par token</span><b data-ref="k-tok"></b><i>K et V, toutes couches, toutes têtes</i></div>
+    <div><span>Cache total</span><b data-ref="k-tot"></b><i>par token × longueur du contexte × séquences</i></div>
+    <div><span>Part d'un GPU de 80 Go</span><b data-ref="k-pct"></b><i>au-delà de 100 %, le cache ne tient plus</i></div>
   </div>
   <div class="bar"><div data-ref="bar"></div></div>
-  <p class="note">Ordre de grandeur : sans les poids du modèle ni les activations. s est une puissance de 2.</p>
+  <p class="note">Ordre de grandeur : sans les poids du modèle ni les activations.</p>
 </div>
 
 <script>
@@ -83,13 +83,19 @@
 </script>
 
 <style is:global>
-  .kvmem .sliders { display: grid; gap: 6px; margin-bottom: 12px; }
-  .kvmem .sliders label { display: grid; grid-template-columns: 200px 1fr 70px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); }
+  /* cinq curseurs sur deux lignes (3 + 2) : nom et valeur au-dessus, curseur en dessous */
+  .kvmem .sliders { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px 24px; margin-bottom: 12px; }
+  .kvmem .sliders label:nth-child(-n+3) { grid-column: span 2; }
+  .kvmem .sliders label:nth-child(n+4) { grid-column: span 3; }
+  .kvmem .sliders label { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 2px 8px; font-size: 14px; color: var(--text-2); }
+  .kvmem .sliders label > span { grid-column: 1; grid-row: 1; }
+  .kvmem .sliders label > b { grid-column: 2; grid-row: 1; }
+  .kvmem .sliders label input { grid-column: 1 / -1; grid-row: 2; width: 100%; }
   .kvmem .sliders b { text-align: right; color: var(--text); font-weight: 500; }
   .kvmem .row label { display: flex; align-items: center; gap: 8px; }
   .kvmem select { font: inherit; font-size: 14px; padding: 4px 6px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); color: var(--text); }
   .kvmem .bar { height: 10px; border-radius: 5px; background: var(--surface-2); margin-top: 10px; overflow: hidden; }
   .kvmem .bar > div { height: 100%; background: var(--accent); transition: width 0.15s; }
   .kvmem .note { font-size: 12px; color: var(--text-2); margin: 8px 0 0; }
-  @media (max-width: 600px) { .kvmem .sliders label { grid-template-columns: 1fr; } }
+  @media (max-width: 600px) { .kvmem .sliders { grid-template-columns: 1fr; } .kvmem .sliders label:nth-child(n) { grid-column: auto; } }
 </style>

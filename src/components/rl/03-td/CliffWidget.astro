@@ -1,0 +1,195 @@
+---
+// Cours RL, chapitre 3 : le monde de la falaise (Sutton & Barto). Deux agents ε-greedy apprennent Q à chaque pas :
+// SARSA vise r + γ Q(s′, a′) avec l'action a′ qu'il jouera vraiment, Q-learning vise r + γ max Q(s′, ·).
+// Chaque pas coûte −1 ; tomber dans la falaise coûte −100 et renvoie au départ. α = 0,5, γ = 1.
+import katex from 'katex';
+const tex = (s: string) => katex.renderToString(s, { throwOnError: false });
+const F = {
+  s: tex('\\text{cible} = r + \\gamma\\, Q(s\', a\'), \\quad a\' = \\text{action jouée ensuite}'),
+  q: tex('\\text{cible} = r + \\gamma \\max_{a\'} Q(s\', a\')'),
+  u: tex('Q(s,a) \\leftarrow Q(s,a) + \\alpha\\,\\big(\\text{cible} - Q(s,a)\\big)'),
+};
+---
+<div class="widget rlw runw cliffw" data-widget="cliffw">
+  <div class="row"><span class="seg" data-ref="ctl"></span></div>
+  <div class="row cfrow">
+    <label class="sl" title="Probabilité de jouer une action au hasard"><span>Exploration ε</span><input type="range" data-ref="e" min="0" max="0.3" step="0.05" value="0.1" /><b data-ref="e-out"></b></label>
+    <div class="fm cfu" set:html={F.u} />
+  </div>
+  <div class="cfbox">
+    <div class="eh"><b style="color:var(--a-lspi)">SARSA</b><span class="es" data-ref="evS"></span></div>
+    <div class="fm" set:html={F.s} /><div class="ef" data-ref="lS"></div>
+    <svg class="exp cfg" data-ref="svgS" role="img" aria-label="Monde de la falaise, agent SARSA : position et chemin glouton"></svg>
+  </div>
+  <div class="cfbox">
+    <div class="eh"><b style="color:var(--a-fqi)">Q-learning</b><span class="es" data-ref="evQ"></span></div>
+    <div class="fm" set:html={F.q} /><div class="ef" data-ref="lQ"></div>
+    <svg class="exp cfg" data-ref="svgQ" role="img" aria-label="Monde de la falaise, agent Q-learning : position et chemin glouton"></svg>
+  </div>
+  <div class="plotrow">
+    <svg class="plot" data-ref="svg2" role="img" aria-label="Retour de chaque épisode pendant l'apprentissage, pour SARSA et Q-learning"></svg>
+    <div class="kpis">
+      <div title="SARSA · Q-learning"><span>Épisodes joués</span><b data-ref="ke"></b></div>
+      <div title="SARSA · Q-learning"><span>Retour moyen (10 derniers)</span><b data-ref="kr"></b></div>
+    </div>
+  </div>
+  <p class="note">Chaque pas coûte −1 ; tomber dans la falaise coûte −100 et renvoie au départ. Trait épais : chemin glouton (meilleure action selon Q, sans exploration). Courbe : retour de chaque épisode réellement joué, exploration comprise (moyenne sur 10 épisodes) ; pointillés : moyenne de 30 essais. α = 0,5, γ = 1.</p>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="cliffw"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const R = 4, C = 12, START = [3, 0], GOAL = [3, 11], ALPHA = 0.5, G = 1, NAVG = 30, EPAVG = 300, CAP = 1000;
+    const DIRS: [number, number, string][] = [[-1, 0, '↑'], [0, 1, '→'], [1, 0, '↓'], [0, -1, '←']];
+    const cliff = (r: number, c: number) => r === 3 && c >= 1 && c <= 10;
+    const isGoal = (r: number, c: number) => r === GOAL[0] && c === GOAL[1];
+    const mv = (r: number, c: number, a: number): [number, number, number, boolean] => {
+      const nr = Math.min(R - 1, Math.max(0, r + DIRS[a][0])), nc = Math.min(C - 1, Math.max(0, c + DIRS[a][1]));
+      return cliff(nr, nc) ? [START[0], START[1], -100, true] : [nr, nc, -1, false];
+    };
+    const eIn = $('e') as HTMLInputElement;
+    let eps = 0.1;
+    const lcg = (seed: number) => { let x = seed; return () => { x = (x * 16807) % 2147483647; return x / 2147483647; }; };
+    const fm = (v: number) => v.toFixed(2).replace('.', ',').replace('-', '−');
+    const cell = (r: number, c: number) => `(${r + 1},${c + 1})`;
+    type Agent = { Q: number[][][]; r: number; c: number; a: number; ret: number; steps: number; inEp: boolean; ep: number; rets: number[]; line: string; ev: { explore: boolean; fell: boolean; goal: boolean } | null; trail: [number, number][]; rnd: () => number };
+    const newAgent = (seed: number): Agent => ({ Q: Array.from({ length: R }, () => Array.from({ length: C }, () => [0, 0, 0, 0])), r: START[0], c: START[1], a: 0, ret: 0, steps: 0, inEp: false, ep: 0, rets: [], line: '', ev: null, trail: [], rnd: lcg(seed) });
+    const pick = (A: Agent, r: number, c: number): [number, boolean] => {
+      if (A.rnd() < eps) return [Math.floor(A.rnd() * 4), true];
+      const q = A.Q[r][c], m = Math.max(...q), b = [0, 1, 2, 3].filter((k) => q[k] > m - 1e-12);
+      return [b[Math.floor(A.rnd() * b.length)], false];
+    };
+    let sa: Agent, ql: Agent, avg: [number, number][] = [];
+
+    function stepAgent(A: Agent, kind: 's' | 'q', explain: boolean) {
+      if (!A.inEp) { A.r = START[0]; A.c = START[1]; A.a = pick(A, A.r, A.c)[0]; A.ret = 0; A.steps = 0; A.inEp = true; A.trail = [[A.r, A.c]]; }
+      const [nr, nc, rw, fell] = mv(A.r, A.c, A.a);
+      const done = isGoal(nr, nc);
+      const [a2, explore] = pick(A, nr, nc);
+      const q = A.Q[A.r][A.c], old = q[A.a];
+      const next = done ? 0 : kind === 'q' ? Math.max(...A.Q[nr][nc]) : A.Q[nr][nc][a2];
+      const tgt = rw + G * next;
+      q[A.a] += ALPHA * (tgt - old);
+      if (explain) {
+        const rwT = rw === -1 ? '−1' : '−100', nv = done ? '0' : fm(next), par = next < 0 ? `(${nv})` : nv;
+        const what = done ? 'but atteint, rien ensuite' : kind === 'q' ? `max Q(${cell(nr, nc)},·)` : `Q(${cell(nr, nc)},${DIRS[a2][2]})`;
+        A.line = `cible = ${rwT} + ${what} = ${rwT} + ${par} = ${fm(tgt)}\nQ(${cell(A.r, A.c)},${DIRS[A.a][2]}) = ${fm(old)} + 0,5×(${fm(tgt)} − ${old < 0 ? '(' + fm(old) + ')' : fm(old)}) = ${fm(q[A.a])}`;
+        A.ev = { explore, fell, goal: done };
+      }
+      A.ret += rw; A.steps++;
+      A.r = nr; A.c = nc; A.a = a2; A.trail.push([nr, nc]);
+      if (done || A.steps >= CAP) { A.ep++; A.inEp = false; A.rets.push(A.ret); }
+    }
+    function runEpisode(A: Agent, kind: 's' | 'q') { let k = 0; do { stepAgent(A, kind, false); k++; } while (A.inEp && k < CAP + 5); A.line = ''; A.ev = null; A.trail = []; }
+    function averageCurves() {
+      const out: [number, number][] = Array.from({ length: EPAVG }, () => [0, 0]);
+      for (let m = 0; m < NAVG; m++) {
+        const A = newAgent(100 + 13 * m), B = newAgent(7000 + 13 * m);
+        for (let e = 0; e < EPAVG; e++) { runEpisode(A, 's'); runEpisode(B, 'q'); out[e][0] += A.rets[e] / NAVG; out[e][1] += B.rets[e] / NAVG; }
+      }
+      return out;
+    }
+    function reset() { stop(); eps = +eIn.value; avg = averageCurves(); sa = newAgent(22222); ql = newAgent(54321); draw(); }
+    const mk = (label: string, f: () => void) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', f); $('ctl').appendChild(b); return b; };
+    let timer: number | null = null, playB: HTMLButtonElement | null = null;
+    function stop() { if (timer) { clearInterval(timer); timer = null; } if (playB) playB.textContent = '▶ lecture rapide'; }
+    mk('pas suivant', () => { stop(); stepAgent(sa, 's', true); stepAgent(ql, 'q', true); draw(); });
+    mk('épisode suivant', () => { stop(); runEpisode(sa, 's'); runEpisode(ql, 'q'); draw(); });
+    mk('50 épisodes', () => { stop(); for (let i = 0; i < 50; i++) { runEpisode(sa, 's'); runEpisode(ql, 'q'); } draw(); });
+    playB = mk('▶ lecture rapide', () => {
+      if (timer) { stop(); return; }
+      playB!.textContent = '⏸ pause';
+      timer = window.setInterval(() => { for (let k = 0; k < 6; k++) { stepAgent(sa, 's', true); stepAgent(ql, 'q', true); } draw(); if (sa.ep >= EPAVG && ql.ep >= EPAVG) stop(); }, 50);
+    });
+    mk('tout effacer', () => reset());
+
+    function greedyPath(A: Agent) {
+      const path: [number, number][] = [[START[0], START[1]]]; let r = START[0], c = START[1];
+      const seen = new Set([`${r},${c}`]);
+      for (let k = 0; k < 40 && !isGoal(r, c); k++) { const q = A.Q[r][c]; const a = q.indexOf(Math.max(...q)); const [nr, nc, , fell] = mv(r, c, a); if (fell) { path.push([3, Math.min(10, Math.max(1, c + DIRS[a][1]))]); break; } if (seen.has(`${nr},${nc}`)) break; seen.add(`${nr},${nc}`); r = nr; c = nc; path.push([r, c]); }
+      return path;
+    }
+    function gridSvg(svg: SVGSVGElement, col: string, A: Agent) {
+      const cs = 30, P = 3;
+      const X = (c: number) => P + c * cs + (cs - 3) / 2, Y = (r: number) => P + r * cs + (cs - 3) / 2;
+      let o = '';
+      for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
+        const x = P + c * cs, y = P + r * cs, w = cs - 3;
+        const cl = cliff(r, c), g = isGoal(r, c), s = r === START[0] && c === START[1];
+        o += `<rect x="${x}" y="${y}" width="${w}" height="${w}" rx="4" fill="${cl ? 'var(--h-py)' : g ? 'var(--hl-stroke)' : 'var(--text-2)'}" fill-opacity="${cl ? 0.28 : g ? 0.3 : 0.07}" stroke="var(--border)" stroke-width="0.7"/>`;
+        if (s) o += `<text x="${x + w / 2}" y="${y + w / 2 + 4}" text-anchor="middle" class="cfl">S</text>`;
+        if (g) o += `<text x="${x + w / 2}" y="${y + w / 2 + 4}" text-anchor="middle" class="cfl">but</text>`;
+      }
+      o += `<text x="${X(5.5)}" y="${Y(3) + 4}" text-anchor="middle" class="cfc">falaise (−100)</text>`;
+      if (A.trail.length > 1) o += `<polyline points="${A.trail.map(([r, c]) => `${X(c)},${Y(r)}`).join(' ')}" fill="none" stroke="${col}" stroke-opacity="0.3" stroke-width="2" stroke-linejoin="round"/>`;
+      if (A.ep > 0 || A.inEp) { const p = greedyPath(A); o += `<polyline points="${p.map(([r, c]) => `${X(c)},${Y(r)}`).join(' ')}" fill="none" stroke="${col}" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>`; }
+      if (A.inEp) o += `<circle cx="${X(A.c)}" cy="${Y(A.r)}" r="6" fill="${col}" stroke="var(--surface)" stroke-width="1.5"/>`;
+      svg.setAttribute('viewBox', `0 0 ${C * cs + 2 * P} ${R * cs + 2 * P}`); svg.innerHTML = o;
+    }
+    function head(el: HTMLElement, line: HTMLElement, A: Agent) {
+      el.innerHTML = '';
+      const add = (t: string, color: string) => { const s = document.createElement('span'); s.textContent = t; s.style.color = color; el.appendChild(s); };
+      if (A.ev?.explore) add(' · exploration', 'var(--text-2)');
+      if (A.ev?.fell) add(' · tombé dans la falaise (−100)', 'var(--h-py)');
+      if (A.ev?.goal) add(' · but atteint', 'var(--hl-text)');
+      line.textContent = A.line;
+    }
+    const smooth = (v: number[]) => v.map((_, i) => { const lo = Math.max(0, i - 9); let s = 0; for (let k = lo; k <= i; k++) s += v[k]; return s / (i - lo + 1); });
+    function draw() {
+      gridSvg($('svgS') as unknown as SVGSVGElement, 'var(--a-lspi)', sa);
+      gridSvg($('svgQ') as unknown as SVGSVGElement, 'var(--a-fqi)', ql);
+      head($('evS'), $('lS'), sa); head($('evQ'), $('lQ'), ql);
+      const W2 = 440, px = 52, py = 8, ph = 120, pw = 370, ymin = -120, ymax = 0;
+      const X = (e: number) => px + (e / EPAVG) * pw, Y = (v: number) => py + ph - ((Math.max(ymin, Math.min(v, ymax)) - ymin) / (ymax - ymin)) * ph;
+      let o2 = `<text x="14" y="${py + ph / 2}" transform="rotate(-90 14 ${py + ph / 2})" text-anchor="middle" class="vs">retour par épisode</text>`;
+      o2 += `<line x1="${px}" y1="${py + ph}" x2="${px + pw}" y2="${py + ph}" stroke="var(--border)"/><line x1="${px}" y1="${py}" x2="${px}" y2="${py + ph}" stroke="var(--border)"/>`;
+      [0, 100, 200, 300].forEach((e) => (o2 += `<text x="${X(e)}" y="${py + ph + 14}" text-anchor="middle" class="vs">${e}</text>`));
+      [-120, -60, 0].forEach((v) => (o2 += `<text x="${px - 5}" y="${Y(v) + 3}" text-anchor="end" class="vs">${v === 0 ? '0' : '−' + -v}</text>`));
+      [[-13, 'chemin le plus court (−13)'], [-17, 'chemin sûr (−17)']].forEach(([v, t]) => (o2 += `<line x1="${px}" y1="${Y(v as number)}" x2="${px + pw}" y2="${Y(v as number)}" stroke="var(--text-2)" stroke-width="0.8" stroke-dasharray="2 3"/><text x="${(v as number) === -13 ? px + pw : px + 6}" y="${Y(v as number) + ((v as number) === -13 ? -3 : 10)}" text-anchor="${(v as number) === -13 ? 'end' : 'start'}" class="vs">${t}</text>`));
+      const line = (pts: number[], col: string, dash: string, w: number) => pts.length ? `<polyline points="${pts.slice(0, EPAVG).map((v, i) => `${X(i + 1).toFixed(1)},${Y(v).toFixed(1)}`).join(' ')}" fill="none" stroke="${col}" stroke-width="${w}" ${dash ? `stroke-dasharray="${dash}"` : ''} stroke-linejoin="round"/>` : '';
+      o2 += line(smooth(avg.map((v) => v[0])), 'var(--a-lspi)', '5 3', 1.6) + line(smooth(avg.map((v) => v[1])), 'var(--a-fqi)', '5 3', 1.6);
+      o2 += line(smooth(sa.rets), 'var(--a-lspi)', '', 2.2) + line(smooth(ql.rets), 'var(--a-fqi)', '', 2.2);
+      o2 += `<line x1="${px + pw - 134}" y1="${py + ph - 10}" x2="${px + pw - 114}" y2="${py + ph - 10}" stroke="var(--text-2)" stroke-width="1.6" stroke-dasharray="5 3"/><text x="${px + pw - 108}" y="${py + ph - 6}" class="vs">moyenne de ${NAVG} essais</text>`;
+      o2 += `<text x="${px + pw / 2}" y="${py + ph + 30}" text-anchor="middle" class="vs">épisodes joués par chaque agent</text>`;
+      const svg2 = $('svg2') as unknown as SVGSVGElement;
+      svg2.setAttribute('viewBox', `0 0 ${W2} ${py + ph + 38}`); svg2.innerHTML = o2;
+      $('e-out').textContent = fm(eps);
+      const two = (x: string, y: string) => `<i style="font-style:normal;color:var(--a-lspi)">${x}</i> · <i style="font-style:normal;color:var(--a-fqi)">${y}</i>`;
+      const last = (v: number[]) => (v.length ? (v.slice(-10).reduce((a, b) => a + b, 0) / Math.min(10, v.length)).toFixed(0).replace('-', '−') : '–');
+      $('ke').innerHTML = two(String(sa.ep), String(ql.ep));
+      $('kr').innerHTML = two(last(sa.rets), last(ql.rets));
+    }
+    eIn.addEventListener('change', reset);
+    eIn.addEventListener('input', () => { $('e-out').textContent = fm(+eIn.value); });
+    reset();
+  });
+</script>
+
+<style is:global>
+  /* styles communs aux widgets d'agents (repris de RunWidget, qui n'est pas chargé sur cette page) */
+  .cliffw .row > .seg { display: flex; width: 100%; }
+  .cliffw .row > .seg button:last-child { margin-left: auto; }
+  .cliffw .eh { font-size: 13px; color: var(--text-2); }
+  .cliffw .eh b { font-size: 14px; }
+  .cliffw .eh .ev { font-size: 12px; font-style: italic; }
+  .cliffw .fm { margin: 4px 0 0; font-size: 0.82rem; overflow-x: auto; overflow-y: hidden; }
+  .cliffw .fm .katex { font-size: 1em; }
+  .cliffw .ef { font: 10.5px/1.5 var(--mono); color: var(--text-2); min-height: 1.5em; margin: 0 0 2px; white-space: nowrap; overflow: hidden; }
+  .cliffw .plotrow { display: flex; gap: 16px; align-items: center; margin-top: 8px; }
+  .cliffw .plotrow svg { flex: 1 1 0; min-width: 0; margin: 0; }
+  .cliffw .plotrow .kpis { flex: 0 0 146px; flex-direction: column; align-items: stretch; margin: 0; gap: 10px; }
+  .cliffw .plotrow .kpis > div { display: block; background: var(--surface-2); border-radius: 8px; padding: 0.4rem 0.6rem; }
+  .cliffw .plotrow .kpis > div > span { display: block; font-size: 12px; }
+  .cliffw .plotrow .kpis b { font-size: 14px; }
+  .cliffw svg.exp text.vs, .cliffw svg.plot text.vs { font: 10.5px var(--font); fill: var(--text-2); }
+  @media (max-width: 700px) { .cliffw .plotrow { flex-direction: column; align-items: stretch; } .cliffw .plotrow .kpis { flex-basis: auto; } }
+  .cliffw .cfrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 24px; align-items: center; margin-top: 4px; }
+  .cliffw .cfrow .sl { grid-template-columns: auto 1fr 34px; gap: 10px; margin: 0; }
+  .cliffw .cfu { margin: 0; font-size: 0.85rem; }
+  .cliffw .cfbox { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px 8px; margin-top: 10px; }
+  .cliffw .ef { white-space: pre; overflow-x: auto; min-height: 3em; }
+  .cliffw svg.cfg { max-width: 380px; margin: 6px auto 0; }
+  .cliffw svg.cfg text.cfl { font: 600 10px var(--font); fill: var(--text); }
+  .cliffw svg.cfg text.cfc { font: 10px var(--font); fill: var(--h-py); }
+  @media (max-width: 640px) { .cliffw .cfrow { grid-template-columns: 1fr; } }
+</style>

@@ -39,7 +39,7 @@ $$
 
 ### Ce que ça coûte
 
-- Un bloc a environ $12\,d^2$ paramètres ($4d^2$ d'attention, $8d^2$ de MLP ; module 0, section 7) et coûte environ 2 opérations par paramètre et par token. Les barres du widget le montrent : boucler divise les **paramètres** par $T$, mais le **calcul**, la **mémoire d'activations** et le **KV cache** restent ceux d'un modèle de $kT$ couches (chaque passe a ses propres $K$, $V$).
+- Un bloc a environ $12\,d^2$ paramètres ($4d^2$ d'attention, $8d^2$ de MLP ; chapitre 0, section 7) et coûte environ 2 opérations par paramètre et par token. Les barres du widget le montrent : boucler divise les **paramètres** par $T$, mais le **calcul**, la **mémoire d'activations** et le **KV cache** restent ceux d'un modèle de $kT$ couches (chaque passe a ses propres $K$, $V$).
 - Le KV cache peut être réduit : Ouro, au décodage, ne garde que celui de la dernière passe (4 fois moins, perte de 0,1 à 2 points selon le benchmark), mais pas au prefill, où chaque passe garde le sien (section 4). Et on peut ne rétropropager qu'à travers les dernières passes (section 3).
 
 <div class="retain">
@@ -103,7 +103,7 @@ Un bloc : $12 \times 2048^2 \approx 50$ millions. Classique 12 couches : environ
 
 ## 2. Champ réceptif avec une fenêtre : T·W
 
-Avec une attention à fenêtre glissante $W$ (module 0, section 5), une passe permet à un token de voir $W - 1$ tokens en arrière. Chaque passe repart des vecteurs de la passe précédente, qui ont eux-mêmes déjà regardé $W - 1$ tokens plus loin : la portée s'élargit à chaque passe.
+Avec une attention à fenêtre glissante $W$ (chapitre 0, section 5), une passe permet à un token de voir $W - 1$ tokens en arrière. Chaque passe repart des vecteurs de la passe précédente, qui ont eux-mêmes déjà regardé $W - 1$ tokens plus loin : la portée s'élargit à chaque passe.
 
 <ReachCone />
 

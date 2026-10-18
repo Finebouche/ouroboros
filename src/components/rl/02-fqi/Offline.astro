@@ -1,9 +1,9 @@
 ---
 // Cours RL, chapitre 2 : apprendre à partir de données enregistrées.
-// view : 'data' (transitions enregistrées sur la grille), 'bc' (démonstrations, puis BC depuis une case jamais vue),
+// view : 'data' (transitions enregistrées sur la grille),
 //        'tab' (cibles de FQI à chaque itération, version tabulaire), 'fit' (FQI avec un régresseur sur un état continu).
-import { R, C, g, DIRS, is, terminal, expert, rollout, drawGrid, center, step } from '../world';
-interface Props { view: 'data' | 'bc' | 'tab' | 'fit' }
+import { R, C, g, DIRS, is, terminal, drawGrid, center, step } from '../world';
+interface Props { view: 'data' | 'tab' | 'fit' }
 const { view } = Astro.props;
 const f1 = (v: number) => v.toFixed(1);
 const fm = (v: number, d = 2) => v.toFixed(d).replace('.', ',');
@@ -44,41 +44,6 @@ if (view === 'data') {
   W = tx + 270; H = oy + R * cs + 10;
   aria = 'Six transitions enregistrées sur la grille : case de départ, action, récompense, case d\'arrivée';
   caption = 'Ce qu\'on possède : seulement des transitions déjà observées, sans accès à l\'environnement. Les cases sont repérées par (ligne, colonne). On ne connaît ni les règles ni la politique qui les a produites.';
-}
-
-if (view === 'bc') {
-  const cs = 62, pw = C * cs, gap = 56, oy = 34;
-  const starts = [[3, 0], [3, 3]];
-  const visited = new Set<string>(), acts: number[] = [];
-  starts.forEach((s) => rollout(s, expert).slice(0, -1).forEach(([r, c]) => { if (!visited.has(`${r},${c}`)) { visited.add(`${r},${c}`); acts.push(expert(r, c)); } }));
-  const counts = [0, 0, 0, 0]; acts.forEach((a) => counts[a]++);
-  const def = counts.indexOf(Math.max(...counts));
-  const learned = (r: number, c: number) => (visited.has(`${r},${c}`) ? expert(r, c) : def);
-  // panneau A : démonstrations
-  body += txt(pw / 2, 14, 'démonstrations de l\'expert', 'gt');
-  body += drawGrid(0, oy, cs, (r, c) => (visited.has(`${r},${c}`) ? 'var(--a-fqi)' : null));
-  starts.forEach((s) => {
-    const p = rollout(s, expert);
-    for (let i = 0; i < p.length - 1; i++) { const [x1, y1] = center(0, oy, cs, p[i][0], p[i][1]), [x2, y2] = center(0, oy, cs, p[i + 1][0], p[i + 1][1]); body += arrowHead(x1, y1, x2, y2, 'var(--a-fqi)', 2.2); }
-  });
-  starts.forEach((s) => { const [x, y] = center(0, oy, cs, s[0], s[1]); body += `<circle cx="${f1(x)}" cy="${f1(y)}" r="5" fill="var(--a-fqi)"/>`; });
-  body += txt(pw / 2, oy + R * cs + 18, `en couleur : ${visited.size} cases vues`, 'sb');
-  // panneau B : BC depuis une case jamais vue
-  const bx = pw + gap;
-  body += txt(bx + pw / 2, 14, 'BC lâché depuis une case jamais vue', 'gt');
-  body += drawGrid(bx, oy, cs, (r, c) => (visited.has(`${r},${c}`) ? 'var(--a-fqi)' : null));
-  for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) if (!terminal(r, c) && !is([1, 1], r, c)) {
-    const [x, y] = center(bx, oy, cs, r, c), seen = visited.has(`${r},${c}`);
-    body += txt(x, y + 7, DIRS[learned(r, c)][3], 'bar', 'middle', seen ? 'var(--a-fqi)' : 'var(--text-2)');
-  }
-  const s0 = [3, 1], pth = rollout(s0, learned, 6);
-  const [sx, sy] = center(bx, oy, cs, s0[0], s0[1]), [ex, ey] = center(bx, oy, cs, pth[pth.length - 1][0], pth[pth.length - 1][1]);
-  body += `<circle cx="${f1(sx)}" cy="${f1(sy)}" r="5" fill="var(--h-py)"/>` + arrowHead(sx, sy - 6, ex, ey + 12, 'var(--h-py)', 2.2);
-  body += txt(ex, ey - 26, 'bloqué sous le mur', 'sl', 'middle', 'var(--h-py)');
-  body += txt(bx + pw / 2, oy + R * cs + 18, 'gris : action par défaut (pas de donnée)', 'sb');
-  W = 2 * pw + gap; H = oy + R * cs + 28;
-  aria = 'Démonstrations de l\'expert, puis le comportement d\'une politique apprise par imitation lancée depuis une case absente des données';
-  caption = 'Deux démonstrations optimales (à gauche). La politique apprise (version tabulaire : l\'action de l\'expert dans les cases vues, l\'action la plus fréquente ailleurs) est parfaite sur les cases vues, mais depuis la case (4, 2), absente des données, elle monte vers le mur et n\'en sort plus.';
 }
 
 if (view === 'tab') {

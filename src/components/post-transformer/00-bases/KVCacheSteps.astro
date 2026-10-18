@@ -1,5 +1,5 @@
 ---
-// Widget du module 0 : à chaque pas de génération, ce qu'on recalcule sans cache et avec cache.
+// Widget du chapitre 0 : à chaque pas de génération, ce qu'on recalcule sans cache et avec cache.
 ---
 <div class="widget kvsteps" data-widget="kv-steps">
   <div class="row">
@@ -16,9 +16,9 @@
     <span><i class="sw future"></i>pas encore généré</span>
   </div>
   <div class="kpis">
-    <div><span>Tokens traités à ce pas</span><div data-ref="k1"></div></div>
-    <div><span>Cumul depuis le pas 1</span><div data-ref="k2"></div></div>
-    <div><span>Clés comparées à q<sub>t</sub></span><div data-ref="k3"></div></div>
+    <div><span>Tokens traités</span><b data-ref="k1"></b></div>
+    <div><span>Cumul depuis le pas 1</span><b data-ref="k2"></b></div>
+    <div><span>Clés comparées</span><b data-ref="k3"></b><i>le cache évite de recalculer K, V, pas la comparaison</i></div>
   </div>
 </div>
 
@@ -42,9 +42,9 @@
       $('t-out').textContent = String(t);
       slider.value = String(t);
       const cum = (t * (t + 1)) / 2;
-      $('k1').innerHTML = `<b>${t}</b> sans · <b>1</b> avec`;
-      $('k2').innerHTML = `<b>${cum}</b> sans · <b>${t}</b> avec`;
-      $('k3').innerHTML = `<b>${t}</b> dans les deux cas`;
+      $('k1').innerHTML = `<span class="r">${t}</span> sans · <span>1</span> avec`;
+      $('k2').innerHTML = `<span class="r">${cum}</span> sans · <span>${t}</span> avec`;
+      $('k3').innerHTML = `${t} <small>dans les deux cas</small>`;
     }
 
     slider.addEventListener('input', () => { t = +slider.value; draw(); });
@@ -64,6 +64,4 @@
   .kvsteps .tk.future, .kvsteps .sw.future { border-style: dashed; color: var(--text-2); opacity: 0.5; background: transparent; }
   .kvsteps .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--text-2); margin: 10px 0; }
   .kvsteps .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid; margin-right: 6px; vertical-align: -1px; }
-  .kvsteps .kpis > div > div { font-size: 14px; color: var(--text-2); }
-  .kvsteps .kpis b { font-size: 22px; }
 </style>

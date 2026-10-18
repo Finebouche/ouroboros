@@ -1,0 +1,129 @@
+---
+num: 3
+title: "Contrôle TD : SARSA, Q-learning, DQN"
+summary: "Apprendre Q en jouant, une transition à la fois : SARSA (sur la politique) et Q-learning (hors politique), le monde de la falaise, puis DQN, Q-learning avec un réseau de neurones, une mémoire de relecture et un réseau cible."
+status: en-cours
+---
+import Reveal from '@/components/shared/Reveal.astro';
+import Quiz from '@/components/shared/Quiz.astro';
+import Refs from '@/components/shared/Refs.astro';
+import TdTargets from '@/components/rl/03-td/TdTargets.astro';
+import CliffWidget from '@/components/rl/03-td/CliffWidget.astro';
+import DqnLoop from '@/components/rl/03-td/DqnLoop.astro';
+
+## 1. Le cadre : apprendre Q en jouant
+
+Au chapitre 1, Q-learning apprenait déjà en jouant, sans connaître $P$. Ce chapitre étudie cette famille, le **contrôle TD** : l'agent joue, et après **chaque transition** $(s, a, r, s')$, il rapproche $Q(s,a)$ d'une cible de Bellman, sans attendre la fin de l'épisode.
+
+$$
+Q(s,a) \leftarrow Q(s,a) + \alpha\,\big(\text{cible} - Q(s,a)\big)
+$$
+
+Pour choisir ses actions, l'agent joue la meilleure selon $Q$, sauf avec la probabilité $\varepsilon$, où il en joue une au hasard pour essayer les autres (**ε-greedy**). Le chapitre 4 revient sur cette exploration.
+
+## 2. Deux cibles : SARSA et Q-learning
+
+Les deux méthodes ne diffèrent que par l'action qu'elles supposent en $s'$ :
+
+<TdTargets />
+
+- **SARSA** tire son nom des cinq éléments de sa mise à jour, $(s, a, r, s', a')$. Sa cible utilise l'action $a'$ qu'il va réellement jouer, exploration comprise : il apprend la valeur de **la politique qu'il suit**.
+- **Q-learning** prend le maximum en $s'$, quelle que soit l'action jouée ensuite : il apprend la valeur de **la politique optimale**, tout en jouant autre chose. Ses données peuvent venir de n'importe quel comportement, à condition de couvrir les situations utiles : c'est ce qui permet à FQI (chapitre 2) et à DQN de réutiliser des transitions anciennes.
+
+Les deux convergent vers $Q^\star$ dans le cas d'une table, si toutes les paires (état, action) sont essayées indéfiniment et si le pas $\alpha$ décroît assez lentement ; pour SARSA, il faut en plus que l'exploration diminue peu à peu (Watkins & Dayan pour Q-learning, Sutton & Barto pour SARSA).
+
+## 3. La falaise : quand l'exploration coûte cher
+
+L'exemple classique de Sutton & Barto : il faut aller de S au but en longeant une falaise. Chaque pas coûte $-1$ ; tomber coûte $-100$ et renvoie au départ. Le plus court chemin longe le bord (13 pas) ; un chemin sûr passe plus haut (17 pas).
+
+<CliffWidget />
+
+- **Ce qu'ils apprennent** : Q-learning trouve le plus court chemin, le long de la falaise. SARSA apprend le plus souvent le chemin sûr, plus haut.
+- **Pourquoi** : SARSA évalue la politique qu'il suit vraiment, et cette politique explore ; le long du bord, une action au hasard sur dix risque la chute. Il en tient compte et s'écarte. Q-learning évalue la politique sans exploration, pour laquelle le bord n'est pas dangereux.
+- **Ce que ça coûte** : pendant l'apprentissage, c'est SARSA qui obtient les meilleurs retours. Avec $\varepsilon = 0{,}1$ et ces réglages, le retour moyen des épisodes 200 à 300 est d'environ $-27$ pour SARSA et $-50$ pour Q-learning, qui tombe plus souvent.
+- **Sans exploration** ($\varepsilon = 0$), les deux cibles se confondent et les deux trouvent le plus court chemin.
+
+Le bon choix dépend donc de ce qu'on veut : bien jouer pendant l'apprentissage (SARSA), ou apprendre la meilleure politique et l'utiliser ensuite sans exploration (Q-learning).
+
+## 4. DQN : Q-learning avec un réseau de neurones
+
+Une table ne tient que pour quelques milliers d'états. DQN remplace la table par un réseau de neurones $Q_\theta(s, a)$, qui prend l'état (par exemple les pixels d'un jeu) et donne une valeur par action. La mise à jour de Q-learning devient une **régression** : on ajuste $\theta$ pour réduire l'écart à la cible.
+
+$$
+L(\theta) = \Big(\, \underbrace{r + \gamma \max_{a'} Q_{\theta^-}(s', a')}_{\text{cible } y} - Q_\theta(s, a) \,\Big)^2
+$$
+
+<DqnLoop />
+
+Les deux ajouts répondent à deux problèmes :
+
+- **Des transitions corrélées** : des pas successifs se ressemblent, et un réseau qui apprend dessus dans l'ordre oublie le reste. La **mémoire de relecture** mélange les transitions et réutilise chacune plusieurs fois. Elle est possible parce que Q-learning est hors politique : une transition ancienne, jouée par une politique dépassée, reste une donnée valable.
+- **Une cible mouvante** : la cible dépend de $\theta$, qui change à chaque pas ; le réseau poursuit une cible qui fuit. Le **réseau cible** $\theta^-$ fige la cible pendant $C$ pas. Entre deux copies, DQN résout une régression à cible fixe : c'est une itération de FQI (chapitre 2), faite par descente de gradient sur des mini-lots.
+
+### Ce qui peut encore mal tourner
+
+- **La triade mortelle** : approximation par une fonction, bootstrapping et apprentissage hors politique. Chacun est utile ; les trois ensemble peuvent faire diverger les valeurs (Sutton & Barto). DQN réunit les trois : la mémoire et le réseau cible le stabilisent en pratique, sans garantie.
+- **La surestimation** : le maximum de valeurs bruitées est en moyenne plus grand que le maximum des vraies valeurs. Le $\max_{a'}$ de la cible choisit donc de préférence les actions surestimées, et l'erreur se propage. **Double DQN** sépare le choix de l'action et son évaluation : $y = r + \gamma\, Q_{\theta^-}\big(s', \arg\max_{a'} Q_\theta(s', a')\big)$.
+
+## 5. Qui attribue le crédit ?
+
+Comme TD(0) au chapitre 1, SARSA, Q-learning et DQN attribuent le crédit par la cible de Bellman : la récompense remonte d'un pas à chaque mise à jour. Une récompense lointaine met donc longtemps à atteindre les premières actions. On peut accélérer en gardant $n$ récompenses réelles avant d'utiliser l'estimation (cibles à $n$ pas, chapitre 1), au prix de plus de bruit.
+
+<div class="retain">
+
+**À retenir**
+
+- Contrôle TD : après chaque transition, $Q(s,a) \leftarrow Q(s,a) + \alpha\,(\text{cible} - Q(s,a))$, avec une politique ε-greedy.
+- **SARSA** : cible $r + \gamma\, Q(s', a')$ avec l'action jouée ensuite ; apprend la politique qu'il suit (**sur la politique**).
+- **Q-learning** : cible $r + \gamma \max_{a'} Q(s', a')$ ; apprend la politique optimale en jouant autre chose (**hors politique**).
+- Falaise : Q-learning apprend le chemin le plus court mais tombe plus pendant l'apprentissage ; SARSA apprend un chemin sûr, adapté à son exploration.
+- **DQN** : Q-learning avec un réseau, une **mémoire de relecture** (décorréler, réutiliser) et un **réseau cible** (figer la cible) ; chaque période du réseau cible est une itération de FQI.
+- Risques : la triade mortelle (approximation, bootstrapping, hors politique) et la surestimation par le $\max$ (corrigée par Double DQN).
+
+</div>
+
+<Refs items={[["Q-learning (Machine Learning 8, 279–292)", "Watkins & Dayan", 1992, "10.1007/BF00992698"], ["Playing Atari with Deep Reinforcement Learning", "Mnih et al.", 2013, "1312.5602"], ["Human-level control through deep reinforcement learning (Nature 518)", "Mnih et al.", 2015, "10.1038/nature14236"], ["Deep Reinforcement Learning with Double Q-learning (AAAI 2016)", "van Hasselt, Guez & Silver", 2015, "1509.06461"], ["Reinforcement Learning: An Introduction, 2e éd. (version de travail de 2015 ; chapitre 6 : apprentissage TD)", "Sutton & Barto", 2015, "https://web.stanford.edu/class/psych209/Readings/SuttonBartoIPRLBook2ndEd.pdf"]]} />
+
+<Quiz>
+
+**Q1.** Dans l'état $s'$, les valeurs sont $Q(s', \uparrow) = 0{,}5$ et $Q(s', \rightarrow) = 0{,}8$, et l'agent va jouer $\uparrow$ (exploration). Avec $r = 0$ et $\gamma = 0{,}9$, quelles sont les cibles de SARSA et de Q-learning ?
+
+<Reveal>
+
+SARSA : $0 + 0{,}9 \times 0{,}5 = 0{,}45$ (l'action réellement jouée). Q-learning : $0 + 0{,}9 \times 0{,}8 = 0{,}72$ (la meilleure action, même non jouée).
+
+</Reveal>
+
+**Q2.** Pourquoi SARSA apprend-il un chemin plus éloigné de la falaise que Q-learning ?
+
+<Reveal>
+
+SARSA évalue la politique qu'il suit, exploration comprise : le long du bord, une action au hasard peut faire tomber, ce qui baisse la valeur de ces cases. Q-learning évalue la politique sans exploration, pour laquelle longer le bord ne coûte rien de plus.
+
+</Reveal>
+
+**Q3.** Pourquoi la mémoire de relecture marche-t-elle avec Q-learning, et pas directement avec SARSA ?
+
+<Reveal>
+
+Q-learning est hors politique : une transition jouée par une ancienne politique reste valable, puisque la cible prend le maximum en $s'$ sans dépendre de l'action jouée ensuite. La cible de SARSA utilise l'action que la politique actuelle choisirait : des transitions anciennes, jouées par une autre politique, ne la donnent pas.
+
+</Reveal>
+
+**Q4.** À quoi sert le réseau cible de DQN, et quel lien avec FQI ?
+
+<Reveal>
+
+Il fige la cible $y = r + \gamma \max_{a'} Q_{\theta^-}(s', a')$ pendant $C$ pas, pour que le réseau ne poursuive pas une cible qui bouge à chaque mise à jour. Pendant ces $C$ pas, DQN résout une régression à cible fixe : c'est une itération de FQI.
+
+</Reveal>
+
+**Q5.** Trois actions valent toutes vraiment 0, mais leurs estimations sont bruitées. Que vaut en moyenne le maximum des trois estimations ?
+
+<Reveal>
+
+Plus que 0 : on garde toujours la plus grande des trois erreurs, qui est positive en moyenne. C'est la surestimation que corrige Double DQN, en choisissant l'action avec un réseau et en l'évaluant avec l'autre.
+
+</Reveal>
+
+</Quiz>

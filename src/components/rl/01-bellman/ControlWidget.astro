@@ -1,0 +1,204 @@
+---
+// Cours RL, chapitre 1 : amélioration de la politique sans connaître P, sur la grille 4 × 4 de l'itération de valeur.
+// Deux agents apprennent une table Q avec leurs propres épisodes et jouent la meilleure action selon Q (ε-greedy) :
+// le contrôle Monte-Carlo met à jour en fin d'épisode avec le retour complet, Q-learning à chaque pas avec la cible
+// r + γ max Q(s′, ·). La courbe est la vraie valeur de la politique gloutonne depuis le départ (calculée avec P, que les agents ignorent).
+import katex from 'katex';
+const tex = (s: string) => katex.renderToString(s, { throwOnError: false });
+const F = {
+  mc1: tex('G_t = r_{t+1} + \\gamma\\, r_{t+2} + \\gamma^2\\, r_{t+3} + \\dots'),
+  mc2: tex('Q(s,a) \\leftarrow Q(s,a) + \\alpha\\,\\big(G_t - Q(s,a)\\big)'),
+  q1: tex('\\text{cible} = r + \\gamma \\max_{a\'} Q(s\', a\')'),
+  q2: tex('Q(s,a) \\leftarrow Q(s,a) + \\alpha\\,\\big(\\text{cible} - Q(s,a)\\big)'),
+};
+---
+<div class="widget rlw runw ctlw" data-widget="ctlw">
+  <div class="row"><span class="seg" data-ref="ctl"></span></div>
+  <div class="sl2">
+    <label class="sl" title="Probabilité de jouer une action au hasard au lieu de la meilleure selon Q"><span>Exploration ε</span><input type="range" data-ref="e" min="0" max="0.5" step="0.05" value="0.1" /><b data-ref="e-out"></b></label>
+    <label class="sl" title="Probabilité que le déplacement parte dans une direction au hasard"><span>Glissade p</span><input type="range" data-ref="p" min="0" max="0.4" step="0.05" value="0" /><b data-ref="p-out"></b></label>
+  </div>
+  <div class="expgrid">
+    <div class="expbox">
+      <div class="eh"><b style="color:var(--a-es)">Contrôle Monte-Carlo</b><span class="es" data-ref="stepMC"></span></div>
+      <div class="fm" set:html={F.mc1} /><div class="ef" data-ref="l1MC"></div>
+      <div class="fm" set:html={F.mc2} /><div class="ef" data-ref="l2MC"></div>
+      <svg class="exp cg" data-ref="svgMC" role="img" aria-label="Agent contrôle Monte-Carlo : meilleure action selon Q dans chaque case et position de l'agent"></svg>
+    </div>
+    <div class="expbox">
+      <div class="eh"><b style="color:var(--a-fqi)">Q-learning</b><span class="es" data-ref="stepQ"></span></div>
+      <div class="fm" set:html={F.q1} /><div class="ef" data-ref="l1Q"></div>
+      <div class="fm" set:html={F.q2} /><div class="ef" data-ref="l2Q"></div>
+      <svg class="exp cg" data-ref="svgQ" role="img" aria-label="Agent Q-learning : meilleure action selon Q dans chaque case et position de l'agent"></svg>
+    </div>
+  </div>
+  <div class="plotrow">
+    <svg class="plot" data-ref="svg2" role="img" aria-label="Valeur de la politique de chaque agent selon le nombre d'épisodes"></svg>
+    <div class="kpis">
+      <div title="vert : contrôle Monte-Carlo, bleu : Q-learning"><span>Épisodes joués</span><b data-ref="ke"></b></div>
+      <div title="vert : contrôle Monte-Carlo, bleu : Q-learning"><span>Valeur de la politique</span><b data-ref="kv"></b></div>
+    </div>
+  </div>
+  <p class="note"><b>Amélioration de la politique, sans connaître P.</b> Chaque agent joue la meilleure action selon sa table Q, sauf avec la probabilité ε, où il joue au hasard pour explorer. Flèche : meilleure action selon Q ; couleur : sa valeur. Le contrôle Monte-Carlo met à jour en fin d'épisode avec le retour complet ; Q-learning met à jour à chaque pas avec la cible de Bellman d'optimalité. Courbe : vraie valeur, depuis le départ, de la politique « meilleure action selon Q », calculée avec les règles que les agents ignorent ; pointillé gris : l'optimum. γ = 0,9, α = 0,1.</p>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="ctlw"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const R = 4, C = 4, G = 0.9, ALPHA = 0.1, NAVG = 20, EPAVG = 150, CAP = 100;
+    const GOAL = [0, 3], PIT = [1, 3], WALL = [1, 1], START = [3, 0];
+    const DIRS: [number, number, string][] = [[-1, 0, '↑'], [0, 1, '→'], [1, 0, '↓'], [0, -1, '←']];
+    const same = (q: number[], r: number, c: number) => q[0] === r && q[1] === c;
+    const term = (r: number, c: number) => same(GOAL, r, c) || same(PIT, r, c);
+    const mv = (r: number, c: number, a: number): [number, number, number] => {
+      let nr = r + DIRS[a][0], nc = c + DIRS[a][1];
+      if (nr < 0 || nr >= R || nc < 0 || nc >= C || same(WALL, nr, nc)) { nr = r; nc = c; }
+      return [nr, nc, same(GOAL, nr, nc) ? 1 : same(PIT, nr, nc) ? -1 : 0];
+    };
+    const eIn = $('e') as HTMLInputElement, pIn = $('p') as HTMLInputElement;
+    let eps = 0.1, p = 0, vStar = 0;
+    const lcg = (seed: number) => { let x = seed; return () => { x = (x * 16807) % 2147483647; return x / 2147483647; }; };
+    const fm = (v: number) => v.toFixed(2).replace('.', ',').replace('-', '−');
+    // valeur exacte d'une politique déterministe (évaluation itérative avec P), mise en cache
+    const cache = new Map<string, number>();
+    const backup = (V: number[][], r: number, c: number, a: number) => {
+      let s = 0;
+      for (let b = 0; b < 4; b++) { const pr = (b === a ? 1 - p : 0) + p / 4; if (pr === 0) continue; const [nr, nc, rw] = mv(r, c, b); s += pr * (rw + G * (term(nr, nc) ? 0 : V[nr][nc])); }
+      return s;
+    };
+    const evalPol = (pi: number[][]) => {
+      const key = pi.flat().join('');
+      const hit = cache.get(key); if (hit !== undefined) return hit;
+      let V = Array.from({ length: R }, () => new Array(C).fill(0));
+      for (let it = 0; it < 90; it++) V = V.map((row, r) => row.map((_, c) => (term(r, c) || same(WALL, r, c) ? 0 : backup(V, r, c, pi[r][c]))));
+      const v = V[START[0]][START[1]]; cache.set(key, v); return v;
+    };
+    const optimum = () => { let V = Array.from({ length: R }, () => new Array(C).fill(0)); for (let it = 0; it < 120; it++) V = V.map((row, r) => row.map((_, c) => (term(r, c) || same(WALL, r, c) ? 0 : Math.max(...[0, 1, 2, 3].map((a) => backup(V, r, c, a)))))); return V[START[0]][START[1]]; };
+    const greedyPol = (Q: number[][][]) => Q.map((row) => row.map((q) => { const m = Math.max(...q); return q.findIndex((v) => v > m - 1e-12); }));
+    type Move = { fr: number; fc: number; tr: number; tc: number; explore: boolean; slip: boolean; rew: number };
+    type Agent = { Q: number[][][]; r: number; c: number; steps: number; path: [number, number, number, number][]; inEp: boolean; ep: number; vals: number[]; line: string; move: Move | null; rnd: () => number };
+    const newQ = () => Array.from({ length: R }, () => Array.from({ length: C }, () => [0, 0, 0, 0]));
+    const newAgent = (seed: number): Agent => ({ Q: newQ(), r: START[0], c: START[1], steps: 0, path: [], inEp: false, ep: 0, vals: [], line: '', move: null, rnd: lcg(seed) });
+    let mc: Agent, ql: Agent, avg: [number, number][] = [];
+    const cell = (r: number, c: number) => `(${r + 1},${c + 1})`;
+
+    function stepAgent(a: Agent, kind: 'mc' | 'q', explain: boolean) {
+      if (!a.inEp) { a.r = START[0]; a.c = START[1]; a.steps = 0; a.path = []; a.inEp = true; }
+      const q = a.Q[a.r][a.c], m = Math.max(...q), bests = [0, 1, 2, 3].filter((k) => q[k] > m - 1e-12);
+      const explore = a.rnd() < eps;
+      const act = explore ? Math.floor(a.rnd() * 4) : bests[Math.floor(a.rnd() * bests.length)];
+      const b = a.rnd() < p ? Math.floor(a.rnd() * 4) : act;
+      const [nr, nc, rew] = mv(a.r, a.c, b);
+      if (kind === 'q') {
+        const old = q[act], mn = term(nr, nc) ? 0 : Math.max(...a.Q[nr][nc]), tgt = rew + G * mn;
+        q[act] += ALPHA * (tgt - old);
+        if (explain) a.line = `cible = ${rew === 1 ? '+1' : rew === -1 ? '−1' : '0'} + 0,9×${fm(mn)} = ${fm(tgt)}\nQ(${cell(a.r, a.c)},${DIRS[act][2]}) = ${fm(old)} + 0,1×(${fm(tgt)} − ${fm(old)}) = ${fm(q[act])}`;
+      } else if (explain) a.line = 'aucune mise à jour avant la fin de l\'épisode\n';
+      if (explain) a.move = { fr: a.r, fc: a.c, tr: nr, tc: nc, explore, slip: b !== act, rew };
+      a.path.push([a.r, a.c, act, rew]); a.r = nr; a.c = nc; a.steps++;
+      if (term(nr, nc) || a.steps >= CAP) {
+        if (kind === 'mc') {
+          let Gt = 0; const seen = new Set<string>();
+          for (let i = a.path.length - 1; i >= 0; i--) { const [pr, pc, pa, rw] = a.path[i]; Gt = rw + G * Gt; a.Q[pr][pc][pa] += ALPHA * (Gt - a.Q[pr][pc][pa]); seen.add(`${pr},${pc},${pa}`); }
+          if (explain) a.line = `fin de l'épisode (${a.steps} pas) : G = ${fm(Gt)} depuis le départ\n${seen.size} couples (case, action) mis à jour d'un coup`;
+        }
+        a.ep++; a.inEp = false; a.vals.push(evalPol(greedyPol(a.Q)));
+      }
+    }
+    function runEpisode(a: Agent, kind: 'mc' | 'q') { let k = 0; do { stepAgent(a, kind, false); k++; } while (a.inEp && k < CAP + 5); a.line = ''; a.move = null; }
+    function averageCurves() {
+      const out: [number, number][] = Array.from({ length: EPAVG }, () => [0, 0]);
+      for (let m = 0; m < NAVG; m++) {
+        const A = newAgent(1000 + 7 * m), B = newAgent(5000 + 7 * m);
+        for (let e = 0; e < EPAVG; e++) { runEpisode(A, 'mc'); runEpisode(B, 'q'); out[e][0] += A.vals[e] / NAVG; out[e][1] += B.vals[e] / NAVG; }
+      }
+      return out;
+    }
+    function reset() {
+      stop(); eps = +eIn.value; p = +pIn.value; cache.clear(); vStar = optimum();
+      avg = averageCurves(); mc = newAgent(12345); ql = newAgent(54321); draw();
+    }
+    const mk = (label: string, f: () => void) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', f); $('ctl').appendChild(b); return b; };
+    let timer: number | null = null;
+    let playB: HTMLButtonElement | null = null;
+    function stop() { if (timer) { clearInterval(timer); timer = null; } if (playB) playB.textContent = '▶ lecture rapide'; }
+    mk('pas suivant', () => { stop(); stepAgent(mc, 'mc', true); stepAgent(ql, 'q', true); draw(); });
+    mk('épisode suivant', () => { stop(); runEpisode(mc, 'mc'); runEpisode(ql, 'q'); draw(); });
+    mk('20 épisodes', () => { stop(); for (let i = 0; i < 20; i++) { runEpisode(mc, 'mc'); runEpisode(ql, 'q'); } draw(); });
+    playB = mk('▶ lecture rapide', () => {
+      if (timer) { stop(); return; }
+      playB!.textContent = '⏸ pause';
+      timer = window.setInterval(() => { for (let k = 0; k < 4; k++) { stepAgent(mc, 'mc', true); stepAgent(ql, 'q', true); } draw(); if (mc.ep >= EPAVG && ql.ep >= EPAVG) stop(); }, 60);
+    });
+    mk('tout effacer', () => reset());
+
+    function gridSvg(svg: SVGSVGElement, col: string, a: Agent) {
+      const cs = 34, PAD = 3;
+      const qmax = Math.max(1e-9, ...a.Q.flat().map((q) => Math.max(...q)));
+      let o = '';
+      for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
+        const x = PAD + c * cs, y = PAD + r * cs, w = cs - 3, mvv = a.move, dest = !!mvv && mvv.tr === r && mvv.tc === c, orig = !!mvv && mvv.fr === r && mvv.fc === c && !dest;
+        let fill = 'var(--text-2)', op = 0.08, lab = '';
+        if (same(WALL, r, c)) { fill = 'var(--text-2)'; op = 0.35; }
+        else if (same(GOAL, r, c)) { fill = 'var(--hl-stroke)'; op = 0.35; lab = '+1'; }
+        else if (same(PIT, r, c)) { fill = 'var(--h-py)'; op = 0.35; lab = '−1'; }
+        else { const m = Math.max(...a.Q[r][c]); if (m > 0) { fill = col; op = 0.08 + 0.6 * m / qmax; } }
+        o += `<rect x="${x}" y="${y}" width="${w}" height="${w}" rx="4" fill="${fill}" fill-opacity="${op.toFixed(2)}" stroke="${dest || orig ? col : 'var(--border)'}" stroke-width="${dest ? 2 : 0.8}"${orig ? ' stroke-dasharray="3 2"' : ''}/>`;
+        if (lab) o += `<text x="${x + w / 2}" y="${y + w / 2 + 4}" text-anchor="middle" class="cv">${lab}</text>`;
+        else if (!same(WALL, r, c)) {
+          const q = a.Q[r][c], m = Math.max(...q);
+          if (q.some((v) => v !== 0)) { const k = q.findIndex((v) => v > m - 1e-12); o += `<text x="${x + w / 2}" y="${y + w / 2 + 5}" text-anchor="middle" class="ca">${DIRS[k][2]}</text>`; }
+        }
+        if (same(START, r, c)) o += `<text x="${x + w / 2}" y="${PAD + R * cs + 10}" text-anchor="middle" class="vs" style="font-size:9.5px">départ</text>`;
+      }
+      if (a.move) o += `<circle cx="${PAD + a.move.fc * cs + (cs - 3) / 2}" cy="${PAD + a.move.fr * cs + (cs - 3) / 2}" r="5" fill="none" stroke="${col}" stroke-width="1.3" stroke-dasharray="2 2"/>`;
+      if (a.inEp || a.move) { const rr = a.inEp ? a.r : a.move!.tr, cc = a.inEp ? a.c : a.move!.tc; o += `<circle cx="${PAD + cc * cs + (cs - 3) / 2}" cy="${PAD + rr * cs + (cs - 3) / 2}" r="5.5" fill="${col}"/>`; }
+      svg.setAttribute('viewBox', `0 0 ${C * cs + 2 * PAD} ${R * cs + PAD + 14}`); svg.innerHTML = o;
+    }
+    function head(el: HTMLElement, l1: HTMLElement, l2: HTMLElement, a: Agent) {
+      el.innerHTML = '';
+      const add = (t: string, color: string) => { const s = document.createElement('span'); s.textContent = t; s.style.color = color; el.appendChild(s); };
+      if (a.move && a.move.explore) add(' · exploration', 'var(--text-2)');
+      if (a.move && a.move.slip) add(' · a glissé', 'var(--h-py)');
+      if (a.move && a.move.rew === 1) add(' · récompense +1', 'var(--hl-text)');
+      if (a.move && a.move.rew === -1) add(' · piège −1', 'var(--h-py)');
+      const parts = a.line.split('\n'); l1.textContent = parts[0] ?? ''; l2.textContent = parts[1] ?? '';
+    }
+    function draw() {
+      gridSvg($('svgMC') as unknown as SVGSVGElement, 'var(--a-es)', mc);
+      gridSvg($('svgQ') as unknown as SVGSVGElement, 'var(--a-fqi)', ql);
+      head($('stepMC'), $('l1MC'), $('l2MC'), mc);
+      head($('stepQ'), $('l1Q'), $('l2Q'), ql);
+      const W2 = 440, px = 52, py = 8, ph = 120, pw = 370, all = [...avg.flat(), ...mc.vals, ...ql.vals, vStar];
+      const ymin = Math.min(0, ...all), ymax = Math.max(...all) * 1.08;
+      const X = (e: number) => px + (e / EPAVG) * pw, Y = (v: number) => py + ph - ((Math.max(ymin, Math.min(v, ymax)) - ymin) / (ymax - ymin)) * ph;
+      let o2 = `<text x="14" y="${py + ph / 2}" transform="rotate(-90 14 ${py + ph / 2})" text-anchor="middle" class="vs">valeur de la politique</text>`;
+      o2 += `<line x1="${px}" y1="${py + ph}" x2="${px + pw}" y2="${py + ph}" stroke="var(--border)"/><line x1="${px}" y1="${py}" x2="${px}" y2="${py + ph}" stroke="var(--border)"/>`;
+      [0, 50, 100, 150].forEach((e) => (o2 += `<text x="${X(e)}" y="${py + ph + 14}" text-anchor="middle" class="vs">${e}</text>`));
+      [ymin, vStar].forEach((v) => (o2 += `<text x="${px - 5}" y="${Y(v) + 3}" text-anchor="end" class="vs">${fm(v)}</text>`));
+      o2 += `<line x1="${px}" y1="${Y(vStar)}" x2="${px + pw}" y2="${Y(vStar)}" stroke="var(--text-2)" stroke-width="1" stroke-dasharray="2 3"/><text x="${px + pw}" y="${Y(vStar) - 4}" text-anchor="end" class="vs">optimum</text>`;
+      const line = (pts: number[], col: string, dash: string, w: number) => `<polyline points="${pts.map((v, i) => `${X(i + 1).toFixed(1)},${Y(v).toFixed(1)}`).join(' ')}" fill="none" stroke="${col}" stroke-width="${w}" ${dash ? `stroke-dasharray="${dash}"` : ''} stroke-linejoin="round"/>`;
+      o2 += line(avg.map((v) => v[0]), 'var(--a-es)', '5 3', 1.6) + line(avg.map((v) => v[1]), 'var(--a-fqi)', '5 3', 1.6);
+      if (mc.vals.length) o2 += line(mc.vals.slice(0, EPAVG + 50), 'var(--a-es)', '', 2.4);
+      if (ql.vals.length) o2 += line(ql.vals.slice(0, EPAVG + 50), 'var(--a-fqi)', '', 2.4);
+      o2 += `<line x1="${px + pw - 134}" y1="${py + ph - 10}" x2="${px + pw - 114}" y2="${py + ph - 10}" stroke="var(--text-2)" stroke-width="1.6" stroke-dasharray="5 3"/><text x="${px + pw - 108}" y="${py + ph - 6}" class="vs">moyenne de ${NAVG} essais</text>`;
+      o2 += `<text x="${px + pw / 2}" y="${py + ph + 30}" text-anchor="middle" class="vs">épisodes joués par chaque agent</text>`;
+      const svg2 = $('svg2') as unknown as SVGSVGElement;
+      svg2.setAttribute('viewBox', `0 0 ${W2} ${py + ph + 38}`); svg2.innerHTML = o2;
+      $('e-out').textContent = fm(eps); $('p-out').textContent = fm(p);
+      const two = (x: string, y: string) => `<i style="font-style:normal;color:var(--a-es)">${x}</i> · <i style="font-style:normal;color:var(--a-fqi)">${y}</i>`;
+      $('ke').innerHTML = two(String(mc.ep), String(ql.ep));
+      $('kv').innerHTML = two(fm(evalPol(greedyPol(mc.Q))), fm(evalPol(greedyPol(ql.Q))));
+    }
+    ['e', 'p'].forEach((r) => $(r).addEventListener('change', reset));
+    ['e', 'p'].forEach((r) => $(r).addEventListener('input', () => { $('e-out').textContent = fm(+eIn.value); $('p-out').textContent = fm(+pIn.value); }));
+    reset();
+  });
+</script>
+
+<style is:global>
+  .ctlw svg.exp.cg { max-width: 150px; margin: 6px auto 0; }
+  .ctlw svg.cg text.cv { font: 600 11px var(--font); fill: var(--text); }
+  .ctlw svg.cg text.ca { font: 600 14px var(--font); fill: var(--text); }
+  .ctlw svg.cg text.vs { font: 10.5px var(--font); fill: var(--text-2); }
+</style>

@@ -3,6 +3,14 @@
 // mais glisse parfois en arrière), avec ses propres épisodes. Monte-Carlo met à jour en fin d'épisode avec le retour complet ;
 // TD(0), fondé sur Bellman, met à jour à chaque pas avec « récompense + γ × valeur actuelle de la case atteinte ». Même pas α = 0,1.
 // Chaque agent tient dans une seule bande : une colonne par case (barre = valeur estimée, trait = valeur vraie), le jeton au-dessus.
+import katex from 'katex';
+const tex = (s: string) => katex.renderToString(s, { throwOnError: false });
+const F = {
+  mc1: tex('G_t = r_{t+1} + \\gamma\\, r_{t+2} + \\gamma^2\\, r_{t+3} + \\dots'),
+  mc2: tex('V(s) \\leftarrow V(s) + \\alpha\\,\\big(G_t - V(s)\\big), \\quad \\alpha = 0{,}1'),
+  td1: tex('\\text{erreur TD} = r + \\gamma\\, V(s\') - V(s)'),
+  td2: tex('V(s) \\leftarrow V(s) + \\alpha \\times (\\text{erreur TD}), \\quad \\alpha = 0{,}1'),
+};
 ---
 <div class="widget rlw runw" data-widget="runw">
   <div class="row"><span class="seg" data-ref="ctl"></span></div>
@@ -12,13 +20,15 @@
   </div>
   <div class="expgrid">
   <div class="expbox" data-ref="boxMC">
-    <div class="eh"><b style="color:var(--a-es)">Monte-Carlo</b><span class="es" data-ref="stepMC"></span></div>
-    <div class="ef" data-ref="lineMC"></div>
+    <div class="eh"><b style="color:var(--a-es)">Monte-Carlo</b> <span class="ev">(every-visit)</span><span class="es" data-ref="stepMC"></span></div>
+    <div class="fm" set:html={F.mc1} /><div class="ef" data-ref="l1MC"></div>
+    <div class="fm" set:html={F.mc2} /><div class="ef" data-ref="l2MC"></div>
     <svg class="exp" data-ref="svgMC" role="img" aria-label="Agent Monte-Carlo : valeur estimée de chaque case du couloir et position de l'agent"></svg>
   </div>
   <div class="expbox" data-ref="boxTD">
     <div class="eh"><b style="color:var(--a-fqi)">TD(0)</b><span class="es" data-ref="stepTD"></span></div>
-    <div class="ef" data-ref="lineTD"></div>
+    <div class="fm" set:html={F.td1} /><div class="ef" data-ref="l1TD"></div>
+    <div class="fm" set:html={F.td2} /><div class="ef" data-ref="l2TD"></div>
     <svg class="exp" data-ref="svgTD" role="img" aria-label="Agent TD(0) : valeur estimée de chaque case du couloir et position de l'agent"></svg>
   </div>
   </div>
@@ -29,7 +39,7 @@
       <div title="vert : Monte-Carlo, bleu : TD(0)"><span>Erreur actuelle</span><b data-ref="kc"></b></div>
     </div>
   </div>
-  <p class="note">Deux agents indépendants, chacun avec ses propres épisodes : à chaque pas il avance vers le but à droite (+1), mais glisse d'une case en arrière avec la probabilité choisie. Barres : valeur estimée de chaque case par l'agent ; contour en pointillé : valeur vraie. Monte-Carlo ne met rien à jour avant la fin de son épisode, puis met à jour d'un coup toutes les cases visitées. TD(0), une méthode fondée sur Bellman, met à jour la case qu'il vient de quitter à chaque pas (survole la ligne de formule pour le détail du calcul).</p>
+  <p class="note"><b>Évaluation de politique : la politique est fixe, toujours essayer d'aller à droite, vers le but (+1).</b> Le hasard vient du terrain, qui fait glisser l'agent d'une case en arrière avec la probabilité choisie. Les deux agents ne l'améliorent jamais : ils estiment seulement ce qu'elle vaut, chacun avec ses propres épisodes. Barres : valeur estimée de chaque case par l'agent ; contour en pointillé : valeur vraie. Monte-Carlo ne met rien à jour avant la fin de son épisode, puis met à jour d'un coup toutes les cases visitées. TD(0), une méthode fondée sur Bellman, met à jour la case qu'il vient de quitter à chaque pas.</p>
 </div>
 
 <script>
@@ -92,21 +102,20 @@
         a.move = { from: a.s, to: ns, slip, r, step: a.steps };
         if (kind === 'td') {
           const target = r + g * nextV, err = target - old;
-          a.line = `V(${a.s + 1}) : ${fm(old)} → ${fm(a.V[a.s])} · erreur TD ${fm(err).replace('-', '−')}`;
-          a.tip = `V(${a.s + 1}) ← V(${a.s + 1}) + α·[r + γ·${nextLabel} − V(${a.s + 1})]\n${fm(old)} + 0,1×(${r} + ${fm(g)}×${fm(nextV)} − ${fm(old)}) = ${fm(a.V[a.s])}`;
-        } else { a.line = 'aucune mise à jour avant la fin de l\'épisode'; a.tip = 'Monte-Carlo attend le retour complet de l\'épisode.'; }
+          a.line = `s = ${a.s + 1} : ${r} + ${fm(g)}×${fm(nextV)} − ${fm(old)} = ${fm(err).replace('-', '−')}\nV(${a.s + 1}) = ${fm(old)} + 0,1×${fm(err).replace('-', '−')} = ${fm(a.V[a.s])}`;
+        } else { a.line = 'aucune mise à jour avant la fin de l\'épisode\n'; }
       }
       a.s = ns;
       if (ns === S || a.steps >= CAP) {
         if (kind === 'mc') {
           let G = 0; for (let i = a.path.length - 1; i >= 0; i--) { G = a.rew[i] + g * G; a.V[a.path[i]] += ALPHA * (G - a.V[a.path[i]]); }
-          if (explain) { a.line = `fin de l'épisode (${a.steps} pas) : ${new Set(a.path).size} cases mises à jour d'un coup · G = ${fm(G)} pour la case de départ`; a.tip = 'Chaque case visitée reçoit son retour γ^k·récompenses suivantes ; V ← V + 0,1×(G − V).'; }
+          if (explain) { a.line = `fin de l'épisode (${a.steps} pas) : G = ${fm(G)} pour la case 1\n${new Set(a.path).size} cases mises à jour d'un coup`; }
         }
         if (explain && a.move) a.move.end = true;
         a.ep++; a.inEp = false; a.errs.push(rms(a.V));
       }
     }
-    function runEpisode(a: Agent, kind: 'mc' | 'td') { let k = 0; do { stepAgent(a, kind, false); k++; } while (a.inEp && k < CAP + 5); a.line = ''; a.tip = ''; a.move = null; }
+    function runEpisode(a: Agent, kind: 'mc' | 'td') { let k = 0; do { stepAgent(a, kind, false); k++; } while (a.inEp && k < CAP + 5); a.line = ''; a.move = null; }
     function strip(svg: SVGSVGElement, col: string, a: Agent) {
       const cw = 35, W = (S + 1) * cw + 8, x0 = 4, sq = cw - 8, bh = 40;
       let o = '';
@@ -129,17 +138,17 @@
       }
       svg.setAttribute('viewBox', `0 0 ${W} ${by + bh + 18}`); svg.innerHTML = o;
     }
-    function head(el: HTMLElement, line: HTMLElement, a: Agent) {
+    function head(el: HTMLElement, l1: HTMLElement, l2: HTMLElement, a: Agent) {
       el.innerHTML = '';
       if (a.move && a.move.slip) { const s2 = document.createElement('span'); s2.textContent = ' · a glissé'; s2.style.color = 'var(--h-py)'; el.appendChild(s2); }
       if (a.move && a.move.r) { const s3 = document.createElement('span'); s3.textContent = ' · récompense +1'; s3.style.color = 'var(--hl-text)'; el.appendChild(s3); }
-      line.textContent = a.line; line.title = a.tip;
+      const parts = a.line.split('\n'); l1.textContent = parts[0] ?? ''; l2.textContent = parts[1] ?? '';
     }
     function draw() {
       strip($('svgMC') as unknown as SVGSVGElement, 'var(--a-es)', mc);
       strip($('svgTD') as unknown as SVGSVGElement, 'var(--a-fqi)', td);
-      head($('stepMC'), $('lineMC'), mc);
-      head($('stepTD'), $('lineTD'), td);
+      head($('stepMC'), $('l1MC'), $('l2MC'), mc);
+      head($('stepTD'), $('l1TD'), $('l2TD'), td);
       // graphique d'erreur
       const W2 = 440, px = 52, py = 8, ph = 120, pw = 370, all = [...avg.flat(), ...mc.errs, ...td.errs], ymax = Math.max(0.3, ...all) * 1.05;
       const X = (e: number) => px + (e / EPAVG) * pw, Y = (v: number) => py + ph - (Math.min(v, ymax) / ymax) * ph;
@@ -175,7 +184,10 @@
   .runw .expbox { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px 6px; min-width: 0; }
   .runw .eh { font-size: 13px; color: var(--text-2); }
   .runw .eh b { font-size: 14px; }
-  .runw .ef { font: 11px/1.5 var(--mono); color: var(--text); min-height: 3em; margin: 2px 0 2px; cursor: help; }
+  .runw .eh .ev { font-size: 12px; font-style: italic; }
+  .runw .fm { margin: 4px 0 0; font-size: 0.82rem; overflow-x: auto; overflow-y: hidden; }
+  .runw .fm .katex { font-size: 1em; }
+  .runw .ef { font: 10.5px/1.5 var(--mono); color: var(--text-2); min-height: 1.5em; margin: 0 0 2px; white-space: nowrap; overflow: hidden; }
   .runw svg.exp { margin: 2px 0 0; }
   .runw .plotrow { display: flex; gap: 16px; align-items: center; margin-top: 8px; }
   .runw .plotrow svg { flex: 1 1 0; min-width: 0; margin: 0; }

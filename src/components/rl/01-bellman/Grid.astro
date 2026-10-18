@@ -1,6 +1,8 @@
 ---
 // Cours RL, chapitre 1 : une grille 4 × 4 déterministe (γ = 0,9). Le but (+1) en haut à droite, un piège (−1) en dessous, un mur.
 // view : 'world' (la grille et ses règles), 'vi' (itération de valeur : V après k itérations, puis la politique gloutonne).
+import katex from 'katex';
+const tx = (t: string) => katex.renderToString(t, { throwOnError: false });
 interface Props { view: 'world' | 'vi' | 'policy' }
 const { view } = Astro.props;
 const R = 4, C = 4, g = 0.9;
@@ -43,13 +45,18 @@ const cell = (x0: number, y0: number, cs: number, r: number, c: number, V: numbe
   return s;
 };
 let body = '', W = 0, H = 0, aria = '', caption = '';
+// règles du MDP de la grille, écrites avec les notations de la section 1
+const rules = view === 'world' ? [
+  ['actions', tx('a \\in \\{\\uparrow, \\rightarrow, \\downarrow, \\leftarrow\\}')],
+  ['transition (déterministe)', tx("P(s' \\mid s, a) = 1") + ' pour la case voisine dans la direction ' + tx('a') + ', ou ' + tx("s' = s") + ' contre un mur ou un bord'],
+  ['récompense', tx("r(s, a, s') = \\begin{cases} +1 & \\text{si } s' \\text{ est le but} \\\\ -1 & \\text{si } s' \\text{ est le piège} \\\\ 0 & \\text{sinon} \\end{cases}")],
+  ['actualisation', tx('\\gamma = 0{,}9')],
+] : [];
 if (view === 'world') {
   const cs = 72;
   for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) body += cell(8, 8, cs, r, c, null, false);
-  body += `<text x="${8 + C * cs + 16}" y="40" class="l">4 actions : ↑ → ↓ ←</text><text x="${8 + C * cs + 16}" y="62" class="s">une case sans mur,</text><text x="${8 + C * cs + 16}" y="78" class="s">sinon on reste en place</text>`;
-  body += `<text x="${8 + C * cs + 16}" y="112" class="s">+1 en entrant dans le but,</text><text x="${8 + C * cs + 16}" y="128" class="s">−1 dans le piège, 0 ailleurs</text><text x="${8 + C * cs + 16}" y="162" class="s">γ = 0,9</text>`;
-  W = 8 + C * cs + 190; H = 8 + R * cs + 8;
-  aria = 'Grille 4 par 4 avec un but, un piège, un mur et une case de départ'; caption = 'Le monde de l\'exemple : un but qui donne +1 (l\'épisode s\'arrête), un piège à −1 juste en dessous, un mur. Les déplacements sont déterministes.';
+  W = 8 + C * cs + 8; H = 8 + R * cs + 8;
+  aria = 'Grille 4 par 4 avec un but, un piège, un mur et une case de départ'; caption = 'Le MDP de l\'exemple : une case par état, quatre actions. Le but et le piège terminent l\'épisode. On connaît ici P et r, ce que suppose l\'itération de valeur.';
 } else if (view === 'policy') {
   const cs = 76;
   for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) body += cell(8, 8, cs, r, c, hist[12], true);
@@ -69,12 +76,25 @@ if (view === 'world') {
 }
 ---
 <figure class={`rlf rlf-grid rlf-grid-${view}`}>
-  <svg viewBox={`0 0 ${Math.round(W)} ${Math.round(H)}`} role="img" aria-label={aria} set:html={body} />
+  {view === 'world' ? (
+    <div class="gw">
+      <svg viewBox={`0 0 ${Math.round(W)} ${Math.round(H)}`} role="img" aria-label={aria} set:html={body} />
+      <dl class="gr">{rules.map(([k, v]) => (<><dt>{k}</dt><dd set:html={v} /></>))}</dl>
+    </div>
+  ) : (
+    <svg viewBox={`0 0 ${Math.round(W)} ${Math.round(H)}`} role="img" aria-label={aria} set:html={body} />
+  )}
   <figcaption>{caption}</figcaption>
 </figure>
 
 <style is:global>
-  .rlf-grid-world svg { max-width: 640px; }
+  .rlf-grid-world .gw { display: flex; flex-wrap: wrap; gap: 18px 28px; align-items: center; justify-content: center; }
+  .rlf-grid-world .gw svg { flex: 0 0 auto; width: 300px; max-width: 100%; margin: 0; }
+  .rlf-grid-world .gr { margin: 0; font-size: 13px; color: var(--text-2); max-width: 330px; }
+  .rlf-grid-world .gr dt { font-size: 11.5px; font-weight: 600; color: var(--text); margin-top: 10px; }
+  .rlf-grid-world .gr dt:first-child { margin-top: 0; }
+  .rlf-grid-world .gr dd { margin: 2px 0 0; line-height: 1.5; }
+  .rlf-grid-world .gr .katex { font-size: 1.05em; }
   .rlf-grid-vi svg { max-width: 640px; }
   .rlf-grid-policy svg { max-width: 360px; }
   .rlf-grid svg .v { font: 600 12px var(--font); fill: var(--text); }

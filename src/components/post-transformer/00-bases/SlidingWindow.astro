@@ -1,9 +1,8 @@
 ---
-// Widget du module 0 : attention à fenêtre glissante (W) — bande dans la matrice, taille du cache selon le pas.
+// Widget du chapitre 0 : attention à fenêtre glissante (W) — bande dans la matrice, taille du cache selon le pas.
 ---
 <div class="widget swin" data-widget="swin">
   <div class="sl">
-    <label><span>Longueur s</span><input type="range" data-ref="s" min="6" max="14" step="1" value="12" /><b data-ref="s-out"></b></label>
     <label><span>Fenêtre W</span><input type="range" data-ref="w" min="1" max="12" step="1" value="4" /><b data-ref="w-out"></b></label>
     <label><span>Pas de génération t</span><input type="range" data-ref="t" min="1" max="12" step="1" value="9" /><b data-ref="t-out"></b></label>
   </div>
@@ -17,8 +16,8 @@
   <div class="cachel"><span class="cl">Au pas t :</span><span data-ref="cache"></span></div>
   <p class="clg"><i class="sw new"></i>nouveau mot <i class="sw cache"></i>K, V en cache <i class="sw out"></i>sorti du cache</p>
   <div class="kpis">
-    <div><span>Cases calculées (entraînement)</span><b data-ref="k1"></b></div>
-    <div><span>K et V gardés au pas t</span><b data-ref="k2"></b></div>
+    <div><span>Cases calculées (entraînement)</span><b data-ref="k1"></b><i>les cases hors fenêtre sont masquées</i></div>
+    <div><span>K et V gardés au pas t</span><b data-ref="k2"></b><i>le cache ne grandit plus au-delà de W</i></div>
   </div>
 </div>
 
@@ -32,7 +31,8 @@
     const chart = $('chart') as unknown as SVGSVGElement;
     const Q = X.map((x) => mul(x, WQ));
     const K = X.map((x) => mul(x, WK));
-    let s = 12, W = 4, t = 9;
+    const s = 12; // longueur fixe de la phrase
+    let W = 4, t = 9;
 
     const inWin = (i: number, j: number) => j <= i && j > i - W;
     // softmax restreint à la fenêtre de la ligne i
@@ -47,7 +47,7 @@
       const ox = 70, oy = 70;
       const VBW = ox + s * cell + 30, VBH = oy + s * cell + 6;
       const midY = oy + (s * cell) / 2;
-      let h = `<text class="ts" x="${ox}" y="14">Mot regardé →</text>`;
+      let h = `<text class="ts" x="${ox}" y="14">Mot regardé</text>`;
       h += `<text class="ts" x="12" y="${midY}" transform="rotate(-90 12 ${midY})" text-anchor="middle">Mot qui regarde</text>`;
       for (let i = 0; i < s; i++) {
         const cur = i === t - 1;
@@ -97,7 +97,6 @@
       inp('t').max = String(s);
       inp('w').value = String(W);
       inp('t').value = String(t);
-      $('s-out').textContent = String(s);
       $('w-out').textContent = String(W);
       $('t-out').textContent = String(t);
       drawMatrix();
@@ -113,7 +112,6 @@
       $('k2').innerHTML = `${Math.min(t, W)} <small>au lieu de ${t}</small>`;
     }
 
-    inp('s').addEventListener('input', () => { s = +inp('s').value; draw(); });
     inp('w').addEventListener('input', () => { W = +inp('w').value; draw(); });
     inp('t').addEventListener('input', () => { t = +inp('t').value; draw(); });
     draw();
@@ -121,8 +119,8 @@
 </script>
 
 <style is:global>
-  .swin .sl { display: grid; gap: 6px; margin-bottom: 12px; }
-  .swin .sl label { display: grid; grid-template-columns: 170px 1fr 40px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); }
+  .swin .sl { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; margin-bottom: 12px; }
+  .swin .sl label { display: grid; grid-template-columns: auto 1fr 28px; align-items: center; gap: 10px; font-size: 14px; color: var(--text-2); }
   .swin .sl b { text-align: right; color: var(--text); font-weight: 500; }
   .swin .srow { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
   .swin .srow > svg { max-width: 100%; height: auto; }
@@ -139,6 +137,5 @@
   .swin .tk.future { border-style: dashed; color: var(--text-2); opacity: 0.45; }
   .swin .clg { font-size: 12px; color: var(--text-2); margin: 6px 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
   .swin .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid; margin-right: 4px; vertical-align: -1px; }
-  .swin .kpis small { font-size: 13px; color: var(--text-2); font-weight: 400; }
-  @media (max-width: 600px) { .swin .sl label { grid-template-columns: 1fr; } }
+  @media (max-width: 600px) { .swin .sl { grid-template-columns: 1fr; } }
 </style>

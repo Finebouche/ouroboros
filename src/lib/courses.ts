@@ -4,7 +4,7 @@ import { getCollection } from 'astro:content';
 export const COURSES = {
   'post-transformer': {
     title: 'Post-Transformer',
-    unit: 'Module',
+    unit: 'Chapitre',
     tagline: 'Le transformer, puis ce qui vient après : récurrence en profondeur, récurrence dans le temps, modèles linéaires, hybrides, et leur couplage (projet de recherche Ouroboros).',
     intro:
       "Un cours visuel pour comprendre comment une récurrence en profondeur (un bloc bouclé T fois) et une récurrence dans le temps (un état transporté d'un token au suivant) peuvent coexister, et pourquoi certains couplages gardent l'entraînement parallèle.",
@@ -26,9 +26,9 @@ export const COURSES = {
   rl: {
     title: 'RL',
     unit: 'Chapitre',
-    tagline: "L'apprentissage par renforcement par ses mécanismes mathématiques, puis les algorithmes (BC, FQI, LSPI, NAC, OpenAI-ES, PPO) et les benchmarks (POPGym, LunarLander).",
+    tagline: "L'apprentissage par renforcement par ses mécanismes mathématiques, puis toutes les grandes familles d'algorithmes (méthodes de valeur, gradient de politique, stratégies d'évolution, méthodes avec modèle) et les benchmarks (POPGym, LunarLander).",
     intro:
-      "Un cours visuel, centré sur les mécanismes : l'équation de Bellman comme système linéaire et comme contraction, puis comment chaque algorithme (clonage de comportement, FQI, LSPI, gradient naturel, stratégies d'évolution, PPO) en tire sa mise à jour, et enfin les benchmarks qui les comparent.",
+      "Un cours visuel, centré sur les mécanismes : l'équation de Bellman comme système linéaire et comme contraction, puis comment chaque famille d'algorithmes (méthodes de valeur, gradient de politique, stratégies d'évolution, méthodes avec modèle) en tire sa mise à jour, et enfin les benchmarks qui les comparent.",
   },
 } as const;
 

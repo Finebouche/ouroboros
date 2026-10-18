@@ -1,9 +1,20 @@
 ---
-// Widget du module 0 : le bloc d'attention étape par étape, de l'embedding au résidu, avec les vrais nombres.
+// Widget du chapitre 0 : le bloc d'attention étape par étape, de l'embedding au résidu, avec les vrais nombres.
+// L'étape 3 (Q, K, V) affiche le widget QKVProjection (choix du mot, matrices W_Q, W_K, W_V, produit pour ce mot).
+import QKVProjection from './QKVProjection.astro';
+import katex from 'katex';
+const tx = (t: string) => katex.renderToString(t, { throwOnError: false });
+// formules rappelées discrètement sous les calculs (RMSNorm aux étapes 2 et 10, MLP aux étapes 11 à 13)
+const EQ = {
+  rms: tx('\\mathrm{RMSNorm}(x) = \\frac{x}{\\sqrt{\\tfrac{1}{d}\\sum_{i=1}^{d} x_i^2 + \\varepsilon}} \\odot g'),
+  mlp: tx('\\mathrm{MLP}(u) = \\sigma(u\\, W_1)\\, W_2'),
+};
 ---
 <div class="widget atsteps" data-widget="att-steps">
   <div class="chips" data-ref="chips"></div>
-  <div class="stage" data-ref="stage"></div>
+  <div class="numsrow"><label class="nums"><input type="checkbox" data-ref="nums" /> afficher les nombres</label></div>
+  <div class="stage" data-ref="stage" data-rms={EQ.rms} data-mlp={EQ.mlp}></div>
+  <div class="qkvslot" data-ref="qkvslot" hidden><QKVProjection /></div>
 </div>
 
 <script>
@@ -61,7 +72,8 @@
     const probs = ez.map((e) => e / ez.reduce((a, b) => a + b, 0));
 
     // --- dessin d'une matrice en disques ---
-    const C = { gray: 'var(--text-2)', q: 'var(--c-q)', k: 'var(--c-k)', v: 'var(--c-v)', p: 'var(--c-w)' };
+    // out : sortie de la tête (poids × V), en gris moyen pour ne pas la confondre avec V (même convention que CausalAttention)
+    const C = { gray: 'var(--text-2)', q: 'var(--c-q)', k: 'var(--c-k)', v: 'var(--c-v)', p: 'var(--c-w)', out: 'var(--c-neutral)' };
     type Opt = { cell: number; rows?: string[]; cols?: string[]; color?: string; vmax?: number; mask?: boolean; hl?: number; shape: string };
     function mat(title: string, m: M, o: Opt) {
       const lw = o.rows ? 36 : 0;
@@ -79,6 +91,7 @@
           const isMasked = o.mask && masked(i, j);
           g += `<rect x="${x0 + 1}" y="${y0 + 1}" width="${o.cell - 2}" height="${o.cell - 2}" rx="3" fill="${isMasked ? 'var(--surface-2)' : 'none'}" stroke="var(--border)" stroke-width="0.5"/>`;
           if (isMasked) return;
+          if (showNums) { g += num(x0 + o.cell / 2, cy, v, o.cell, o.vmax === 1); return; }
           const r = Math.abs(v) < 1e-9 ? 1 : (o.cell / 2 - 2) * Math.sqrt(Math.abs(v) / vmax);
           const style = v < 0 ? `fill="none" stroke="${color}" stroke-width="1.5"` : `fill="${color}"`;
           g += `<circle cx="${x0 + o.cell / 2}" cy="${cy}" r="${r.toFixed(2)}" ${style}><title>${v.toFixed(2)}</title></circle>`;
@@ -88,54 +101,17 @@
       const W = lw + nc * o.cell, Ht = th + nr * o.cell;
       return `<div class="mblk"><div class="mt">${title}</div><svg width="${W}" height="${Ht}" viewBox="0 0 ${W} ${Ht}" role="img" aria-label="${o.shape}">${g}</svg><div class="ms">${o.shape}</div></div>`;
     }
+    // affichage des nombres à la place des disques (1 décimale ; en % pour les probabilités)
+    let showNums = false;
+    const num = (cx: number, cy: number, v: number, cell: number, pct = false) => {
+      const t = pct ? `${Math.round(v * 100)}%` : (Math.abs(v) < 0.05 ? '0.0' : v.toFixed(1)).replace('-', '−');
+      return `<text x="${cx}" y="${cy + 3}" text-anchor="middle" class="mn" style="font-size:${Math.min(10.5, cell * 0.4).toFixed(1)}px">${t}</text>`;
+    };
     const op = (t: string) => `<div class="op">${t}</div>`;
     const br = '<div class="br"></div>';
 
     let zoom = 3;
-    function zoomView(i: number) {
-      const p = P[i];
-      const vmax = Math.max(...Vm.flat().map(Math.abs));
-      const cell = 26, R = cell / 2 - 2;
-      const dot = (cx: number, cy: number, v: number, color: string, scale = vmax) => {
-        const r = Math.abs(v) < 1e-9 ? 1 : R * Math.sqrt(Math.abs(v) / scale);
-        const st = v < 0 ? `fill="none" stroke="${color}" stroke-width="1.5"` : `fill="${color}"`;
-        return `<circle cx="${cx}" cy="${cy}" r="${r.toFixed(2)}" ${st}><title>${v.toFixed(2)}</title></circle>`;
-      };
-      const box = (x: number, y: number, n: number, grayFrom = n, cw = cell) =>
-        Array.from({ length: n }, (_, c) => `<rect x="${x + c * cw + 1}" y="${y + 1}" width="${cw - 2}" height="${cell - 2}" rx="3" fill="${c >= grayFrom ? 'var(--surface-2)' : 'none'}" stroke="var(--border)" stroke-width="0.5"/>`).join('');
-      const cp = 46;
-
-      // 1. le produit : vecteur horizontal (1 × 4) × V (4 × 4) = sortie (1 × 4)
-      const yV = 34, yP = yV + 2 * cell - cell / 2;
-      const xP = 8, xX = xP + 4 * cp + 16, lwV = 40, xV = xX + 14 + lwV, xEq = xV + 4 * cell + 16, xO = xEq + 16;
-      let g = `<text x="${xP + 2 * cp}" y="${yP - 22}" text-anchor="middle" class="hd">softmax(S masqué) de « ${w[i]} »</text>`;
-      g += `<text x="${xV + 2 * cell}" y="${yV - 8}" text-anchor="middle" class="hd">V</text>`;
-      g += `<text x="${xO + 2 * cell}" y="${yP - 22}" text-anchor="middle" class="hd">sortie de « ${w[i]} »</text>`;
-      g += box(xP, yP, 4, i + 1, cp);
-      w.forEach((x, j) => (g += `<text x="${xP + j * cp + cp / 2}" y="${yP - 6}" text-anchor="middle">${x}</text>`));
-      p.forEach((v, j) => {
-        if (j > i) return;
-        g += dot(xP + j * cp + cp / 2, yP + cell / 2, v, C.p, 1);
-        g += `<text x="${xP + j * cp + cp / 2}" y="${yP + cell + 12}" text-anchor="middle">${Math.round(v * 100)} %</text>`;
-      });
-      g += `<text x="${xX}" y="${yP + cell / 2 + 5}" text-anchor="middle" class="big">×</text>`;
-      Vm.forEach((row, j) => {
-        const cy = yV + j * cell + cell / 2;
-        const op = j > i ? ' opacity="0.25"' : '';
-        g += `<g${op}><text x="${xV - 6}" y="${cy + 3.5}" text-anchor="end">${w[j]}</text>${box(xV, yV + j * cell, 4)}${row.map((v, c) => dot(xV + c * cell + cell / 2, cy, v, C.v)).join('')}</g>`;
-      });
-      g += `<text x="${xEq}" y="${yP + cell / 2 + 5}" text-anchor="middle" class="big">=</text>`;
-      g += box(xO, yP, 4);
-      O[i].forEach((v, c) => (g += dot(xO + c * cell + cell / 2, yP + cell / 2, v, C.v)));
-      g += `<rect x="${xO}" y="${yP}" width="${4 * cell}" height="${cell}" rx="4" fill="none" stroke="var(--accent)" stroke-width="1.5"/>`;
-
-      const W = xO + 4 * cell + 8, Ht = yV + 4 * cell + 6;
-      const btns = w.map((x, j) => `<button data-zoom="${j}" class="${j === i ? 'active' : ''}">${x}</button>`).join('');
-      return `<div class="zoom"><div class="zt">Zoom sur un mot : ${btns}</div>
-        <svg width="${W}" height="${Ht}" viewBox="0 0 ${W} ${Ht}" role="img" aria-label="Calcul de la sortie de ${w[i]}">${g}</svg>
-        <p class="zc">Chaque case du vecteur va avec la ligne de V du même mot : la case « ${w[Math.min(1, i)]} » multiplie la ligne « ${w[Math.min(1, i)]} », puis on additionne colonne par colonne. Le résultat est la sortie encadrée en bleu.</p></div>`;
-    }
-
+    const pickWord = () => `<div class="zt pick">Choisis un mot : ${w.map((x, j) => `<button data-zoom="${j}" class="${j === zoom ? 'active' : ''}">${x}</button>`).join('')}</div>`;
     // --- les étapes ---
     type Step = { chip: string; parts: string; view: () => string };
     const STEPS: Step[] = [
@@ -177,15 +153,16 @@
       {
         chip: 'softmax(S masqué) × V', parts: 'attn',
         view: () =>
+          pickWord() +
           mat('softmax(S masqué)', P, { cell: 26, rows: w, cols: w, mask: true, color: C.p, vmax: 1, hl: zoom, shape: '4 × 4' }) + op('×') +
-          mat('V', Vm, { cell: 26, color: C.v, shape: '4 × 4' }) + op('=') +
-          mat('Sortie de la tête', O, { cell: 26, color: C.v, hl: zoom, shape: '4 × 4' }) +
-          zoomView(zoom),
+          mat('V', Vm, { cell: 26, rows: w, color: C.v, shape: '4 × 4' }) + op('=') +
+          mat('Sortie de la tête', O, { cell: 26, color: C.out, hl: zoom, shape: '4 × 4' }),
+
       },
       {
         chip: '× W<sub>O</sub>', parts: 'wo',
         view: () =>
-          mat('Sortie de la tête', O, { cell: 22, rows: w, color: C.v, shape: '4 × 4' }) + op('×') +
+          mat('Sortie de la tête', O, { cell: 22, rows: w, color: C.out, shape: '4 × 4' }) + op('×') +
           mat('W<sub>O</sub>', WO, { cell: 22, shape: '4 × 8' }) + op('=') +
           mat('Sortie de l’attention', A, { cell: 22, shape: '4 × 8' }),
       },
@@ -261,13 +238,27 @@
       cur = Math.max(0, Math.min(STEPS.length - 1, i));
       const st = STEPS[cur];
       chips.forEach((b, j) => b.classList.toggle('active', j === cur));
-      $('stage').innerHTML = st.view();
+      const isQKV = cur === 2;
+      $('stage').hidden = isQKV;
+      $('qkvslot').hidden = !isQKV;
+      // rappel de la formule, discret, au bas de la zone des calculs
+      const kind = cur === 1 || cur === 9 ? 'rms' : cur >= 10 && cur <= 12 ? 'mlp' : '';
+      const sg = $('stage');
+      const eq = kind === 'rms' ? `<div class="eqnote">${sg.dataset.rms}<span> ; ici g = 1 (le gain appris n'est pas représenté)</span></div>` : kind === 'mlp' ? `<div class="eqnote">${sg.dataset.mlp}<span> ; σ = GELU</span></div>` : '';
+      sg.innerHTML = isQKV ? '' : st.view() + eq;
       const label = `Étape ${cur + 1} : ${st.chip.replace(/<[^>]+>/g, '')}`;
       root.dataset.archParts = st.parts;
       root.dataset.archLabel = label;
       if (fromUser) window.dispatchEvent(new CustomEvent('arch:focus', { detail: { parts: st.parts, label } }));
     }
 
+    const numsIn = $('nums') as HTMLInputElement;
+    numsIn.addEventListener('change', () => {
+      showNums = numsIn.checked;
+      const inner = root.querySelector<HTMLInputElement>('[data-widget="qkv"] [data-ref="nums"]');
+      if (inner && inner.checked !== showNums) { inner.checked = showNums; inner.dispatchEvent(new Event('change')); }
+      go(cur, false);
+    });
     $('stage').addEventListener('click', (ev) => {
       const b = (ev.target as Element).closest<HTMLElement>('[data-zoom]');
       if (!b) return;
@@ -279,7 +270,7 @@
 </script>
 
 <style is:global>
-  .atsteps .chips { display: grid; gap: 8px; margin-bottom: 14px; }
+  .atsteps .chips { display: grid; gap: 8px; margin-bottom: 12px; }
   .atsteps .grp { display: grid; grid-template-columns: 78px 1fr; align-items: start; gap: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
   .atsteps .grp:first-child { border-top: 0; padding-top: 0; }
   .atsteps .gn { font-size: 12px; font-weight: 500; color: var(--text-2); text-transform: uppercase; letter-spacing: .04em; padding-top: 6px; }
@@ -293,12 +284,21 @@
   .atsteps .br { flex-basis: 100%; height: 0; }
   .atsteps .op { font-size: 15px; color: var(--text-2); white-space: nowrap; }
   .atsteps svg text { font: 10px var(--font); fill: var(--text-2); }
-  .atsteps .zoom { flex-basis: 100%; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
   .atsteps .zt { font-size: 13px; color: var(--text-2); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; }
   .atsteps .zt button { font-size: 13px; padding: 2px 8px; }
-  .atsteps .zoom svg text { font: 11px var(--font); fill: var(--text-2); }
-  .atsteps .zoom svg text.big { font-size: 15px; }
-  .atsteps .zoom svg text.hd { font-size: 12px; font-weight: 500; fill: var(--text); }
-  .atsteps .zc { font-size: 13px; color: var(--text-2); margin: 6px 0 0; }
+  .atsteps .zc { flex-basis: 100%; font-size: 13px; color: var(--text-2); margin: 6px 0 0; }
+  .atsteps .zt.pick { flex-basis: 100%; margin-bottom: 4px; }
+  /* zone des calculs : légèrement teintée, pour la séparer du menu des étapes */
+  .atsteps .stage, .atsteps .qkvslot { background: color-mix(in srgb, var(--text-2) 4.5%, transparent); border-radius: 10px; padding: 14px; }
+  .atsteps .stage[hidden], .atsteps .qkvslot[hidden] { display: none; }
+  .atsteps .qkvslot .widget.qkv { border: 0; padding: 0; margin: 0; background: none; }
+  .atsteps .qkvslot .qkv .row .nums { display: none; }
+  .atsteps .qkvslot svg.md text.ml { font-size: 10px; }
+  .atsteps .eqnote { flex-basis: 100%; margin: 2px 0 0; font-size: 13px; color: var(--text-2); display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; }
+  .atsteps .eqnote .katex { font-size: 0.95em; }
+  .atsteps .eqnote span { font-size: 12px; }
+  .atsteps .numsrow { display: flex; justify-content: flex-end; margin: -4px 0 6px; }
+  .atsteps .numsrow .nums { font-size: 13px; color: var(--text-2); cursor: pointer; }
+  .atsteps svg text.mn { fill: var(--text); font-variant-numeric: tabular-nums; }
   .atsteps .note { font-size: 12px; color: var(--text-2); margin: 8px 0 0; }
 </style>

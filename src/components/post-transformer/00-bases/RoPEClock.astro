@@ -1,22 +1,21 @@
 ---
-// Module 0 : RoPE — chaque paire de dimensions de q et de k tourne d'un angle proportionnel à sa position.
+// Chapitre 0 : RoPE — chaque paire de dimensions de q et de k tourne d'un angle proportionnel à sa position.
 ---
 <div class="widget rope" data-widget="rope">
   <div class="sl">
-    <label><span>Position du mot qui regarde (q)</span><input type="range" data-ref="i" min="0" max="31" step="1" value="10" /><b data-ref="i-out"></b></label>
-    <label><span>Position du mot regardé (k)</span><input type="range" data-ref="j" min="0" max="31" step="1" value="6" /><b data-ref="j-out"></b></label>
-  </div>
-  <div class="row">
-    <span>Décaler les deux :</span>
-    <button data-ref="minus">− 5</button>
-    <button data-ref="plus">+ 5</button>
-    <label class="pi"><input type="checkbox" data-ref="pi" /> Interpolation des positions (÷ 2)</label>
+    <label><span>Mot qui regarde (q)</span><input type="range" data-ref="i" min="0" max="31" step="1" value="10" /><b data-ref="i-out"></b></label>
+    <label><span>Mot regardé (k)</span><input type="range" data-ref="j" min="0" max="31" step="1" value="6" /><b data-ref="j-out"></b></label>
+    <span class="shift" title="Décaler les deux positions de 5 : le score ne change pas">
+      <button data-ref="minus">− 5</button>
+      <button data-ref="plus">+ 5</button>
+    </span>
+    <label class="pi" title="Interpolation des positions : on comprime les positions d'un facteur 2 pour rester dans la zone apprise"><input type="checkbox" data-ref="pi" /> Interpolation (÷ 2)</label>
   </div>
   <svg data-ref="svg" width="100%" viewBox="0 0 660 250" role="img" aria-label="Rotation de q et k selon leur position, pour trois paires de dimensions"></svg>
   <div class="kpis">
-    <div><span>Écart de position i − j</span><b data-ref="k1"></b></div>
+    <div><span>Écart de position i − j</span><b data-ref="k1"></b><i>le score ne dépend que de cet écart</i></div>
     <div><span>Score q · k</span><b data-ref="k2"></b></div>
-    <div><span>Paire lente (entraînement sur 16 positions)</span><b data-ref="k3"></b></div>
+    <div><span>Paire lente</span><b data-ref="k3"></b><i data-ref="k3s"></i></div>
   </div>
 </div>
 
@@ -69,7 +68,9 @@
       svg.innerHTML = g;
       $('k1').textContent = String(i - j);
       $('k2').textContent = score.toFixed(2);
-      $('k3').innerHTML = outZone ? 'hors zone <small>(angle jamais vu)</small>' : 'dans la zone';
+      $('k3').textContent = outZone ? 'hors zone' : 'dans la zone';
+      $('k3').className = outZone ? 'r' : '';
+      $('k3s').textContent = outZone ? 'angle jamais vu à l\'entraînement (16 positions)' : 'angle déjà vu à l\'entraînement (16 positions)';
     }
 
     const shift = (d: number) => {
@@ -86,14 +87,14 @@
 </script>
 
 <style is:global>
-  .rope .sl { display: grid; gap: 6px; margin-bottom: 8px; }
-  .rope .sl label { display: grid; grid-template-columns: 220px 1fr 40px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); }
+  .rope .sl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto; gap: 6px 20px; align-items: center; margin-bottom: 8px; }
+  .rope .sl label { display: grid; grid-template-columns: auto 1fr 28px; align-items: center; gap: 10px; font-size: 14px; color: var(--text-2); }
   .rope .sl b { text-align: right; color: var(--text); font-weight: 500; }
-  .rope .row button { min-width: 48px; }
-  .rope .row button:disabled { opacity: 0.4; cursor: default; }
-  .rope .pi { margin-left: 12px; cursor: pointer; }
+  .rope .shift button { min-width: 48px; }
+  .rope .shift button:disabled { opacity: 0.4; cursor: default; }
+  .rope .shift { display: flex; gap: 6px; }
+  .rope .pi { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--text-2); cursor: pointer; white-space: nowrap; }
   .rope svg text.tt { font: 500 13px var(--font); fill: var(--text); }
   .rope svg text.ts { font: 12px var(--font); fill: var(--text-2); }
-  .rope .kpis small { font-size: 13px; color: var(--text-2); font-weight: 400; }
-  @media (max-width: 600px) { .rope .sl label { grid-template-columns: 1fr; } }
+  @media (max-width: 700px) { .rope .sl { grid-template-columns: 1fr 1fr; } }
 </style>

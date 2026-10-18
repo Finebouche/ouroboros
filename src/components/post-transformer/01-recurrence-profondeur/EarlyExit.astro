@@ -1,5 +1,5 @@
 ---
-// Module 1 : sortie anticipée mot par mot, avec les quatre règles du tableau (ACT, Huginn, Ouro, MoR).
+// Chapitre 1 : sortie anticipée mot par mot, avec les quatre règles du tableau (ACT, Huginn, Ouro, MoR).
 // Les valeurs par passe (probabilités d'arrêt, KL, scores du routeur) sont des valeurs d'illustration, pas celles d'un modèle entraîné.
 ---
 <div class="widget exitw" data-widget="earlyexit">
@@ -13,7 +13,7 @@
   <div class="kpis">
     <div><span>Passes par mot (moyenne)</span><b data-ref="k1"></b></div>
     <div><span>Entrées K, V (mots actifs)</span><b data-ref="k2"></b></div>
-    <div><span>Calcul économisé</span><b data-ref="k3"></b></div>
+    <div><span>Calcul économisé</span><b data-ref="k3"></b><i>passes évitées par rapport au maximum</i></div>
   </div>
 </div>
 
@@ -173,6 +173,5 @@
   .exitw svg text.tw { font-size: 12px; fill: var(--text); }
   .exitw svg text.cv { font-size: 9.5px; fill: #3d2610; }
   .exitw svg text.cv.ex { fill: #ffffff; font-weight: 500; }
-  .exitw .kpis small { font-size: 13px; color: var(--text-2); font-weight: 400; }
   @media (max-width: 600px) { .exitw .sl label { grid-template-columns: 1fr; } }
 </style>

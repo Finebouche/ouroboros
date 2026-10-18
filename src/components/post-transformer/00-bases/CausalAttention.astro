@@ -1,29 +1,27 @@
 ---
-// Widget du module 0 : matrice d'attention causale, entraînement parallèle vs génération pas à pas.
+// Widget du chapitre 0 : matrice d'attention causale, entraînement parallèle vs génération pas à pas.
 ---
 <div class="widget causal" data-widget="causal-attention">
   <div class="row">
     <button data-mode="train" class="active">Entraînement (teacher forcing)</button>
     <button data-mode="gen">Génération (token par token)</button>
-    <button data-mode="bert">BERT (bidirectionnel)</button>
-  </div>
-  <div class="row">
-    <label>Longueur s <input type="range" data-ref="s" min="4" max="14" step="1" value="8" /></label>
-    <b data-ref="s-out">8</b>
-    <span data-ref="gen-ctl" hidden>
-      <button data-ref="prev">&larr; pas</button>
-      <button data-ref="next">pas suivant &rarr;</button>
-    </span>
-  </div>
-  <div class="mrow">
-    <svg data-ref="mat" viewBox="0 0 410 400" role="img" aria-label="Matrice d'attention causale"></svg>
-    <div class="outp" data-ref="out"></div>
+    <button data-mode="bert" class="bertbtn">BERT (bidirectionnel)</button>
   </div>
   <div class="mcap" data-ref="cap"></div>
+  <div class="mrow">
+    <div class="mleft">
+      <svg data-ref="mat" viewBox="0 0 410 400" role="img" aria-label="Matrice d'attention causale"></svg>
+      <div class="row genctl" data-ref="gen-ctl" hidden>
+        <button data-ref="prev">&larr; pas</button>
+        <button data-ref="next">pas suivant &rarr;</button>
+      </div>
+    </div>
+    <div class="outp" data-ref="out"></div>
+  </div>
   <div class="kpis">
-    <div><span>Étapes séquentielles</span><b data-ref="k-seq">1</b></div>
-    <div><span>Cases calculées</span><b data-ref="k-cells">36</b></div>
-    <div><span>K et V en mémoire</span><b data-ref="k-kv">8</b></div>
+    <div><span>Étapes séquentielles</span><b data-ref="k-seq">1</b><i data-ref="k-seq-s"></i></div>
+    <div><span>Cases calculées</span><b data-ref="k-cells">36</b><i data-ref="k-cells-s"></i></div>
+    <div><span>K et V en mémoire</span><b data-ref="k-kv">8</b><i data-ref="k-kv-s"></i></div>
   </div>
 </div>
 
@@ -33,7 +31,6 @@
   document.querySelectorAll<HTMLElement>('[data-widget="causal-attention"]').forEach((root) => {
     const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
     const svg = $('mat') as unknown as SVGSVGElement;
-    const slider = $('s') as HTMLInputElement;
     const causalW = attentionWeights();
     const Qa = X.map((x) => mul(x, WQ));
     const Ka = X.map((x) => mul(x, WK));
@@ -48,39 +45,60 @@
     const MASKED = 2;
     const label = (j: number) => (mode === 'bert' && j === MASKED ? '[MASK]' : WORDS[j]);
     let mode: 'train' | 'gen' | 'bert' = 'train';
-    let s = 8;
+    const s = 8; // longueur fixe de la phrase
     let t = 1;
     let selRow = 3;
-    const VCOL = 'var(--c-v)';
+    // la sortie de la tête (poids × V) est le nouveau vecteur du mot : gris moyen, plus clair que celui des vecteurs des mots (embeddings), pour ne pas la confondre avec V (orange)
+    const OUTCOL = 'var(--c-neutral)';
     let curCell = 34;
     let curOy = 78;
     const VBW = 410;
+    // tête de sortie non entraînée : d_v × |vocabulaire|, tirage gaussien reproductible
+    const WOUT = (() => {
+      let seed = 41;
+      const r = () => { seed = (seed + 0x6d2b79f5) | 0; let q = Math.imul(seed ^ (seed >>> 15), 1 | seed); q = (q + Math.imul(q ^ (q >>> 7), 61 | q)) ^ q; return ((q ^ (q >>> 14)) >>> 0) / 4294967296; };
+      const g = () => Math.sqrt(-2 * Math.log(1 - r())) * Math.cos(2 * Math.PI * r());
+      return Array.from({ length: V[0].length }, () => Array.from({ length: WORDS.length }, g));
+    })();
     const fx = (v: number) => (Math.abs(v) < 0.005 ? 0 : v).toFixed(2);
 
+    // à droite : la sortie de chaque mot (sa ligne de poids × V), alignée sur les lignes de la matrice
     function renderOut() {
       const el = $('out');
-      if (mode === 'gen' && selRow >= t) {
-        el.innerHTML = '<p class="hint">Clique sur une ligne déjà calculée pour voir ce que ce mot récupère des autres.</p>';
-        return;
-      }
-      const i = selRow;
-      const p = weights[i];
       const dv = V[0].length;
-      const o = Array.from({ length: dv }, (_, c) => p.reduce((a, w, j) => a + w * V[j][c], 0));
-      const vmax = Math.max(...V.flat().map(Math.abs), ...o.map(Math.abs));
-      // une ligne de 4 disques (même échelle pour V et la sortie)
-      const dots = (row: number[], framed = false) =>
+      const outs = weights.slice(0, s).map((p) => Array.from({ length: dv }, (_, c) => p.reduce((a, w, j) => a + w * V[j][c], 0)));
+      const vmax = Math.max(...outs.flat().map(Math.abs));
+      const dots = (row: number[]) =>
         `<svg class="vdots" viewBox="0 0 ${dv * 100} 100" aria-hidden="true">${row
           .map((v, c) => {
             const r = Math.abs(v) < 1e-9 ? 3 : 44 * Math.sqrt(Math.abs(v) / vmax);
-            const st = v < 0 ? `fill="none" stroke="${VCOL}" stroke-width="7"` : `fill="${VCOL}"`;
+            const st = v < 0 ? `fill="none" stroke="${OUTCOL}" stroke-width="7"` : `fill="${OUTCOL}"`;
             return `<circle cx="${50 + c * 100}" cy="50" r="${r.toFixed(1)}" ${st}><title>${fx(v)}</title></circle>`;
           })
-          .join('')}${framed ? `<rect x="3" y="3" width="${dv * 100 - 6}" height="94" rx="14" fill="none" stroke="var(--accent)" stroke-width="7"/>` : ''}</svg>`;
-      const body = p.map((_, j) => `<tr><td class="wd">${label(j)}</td><td class="vd">${dots(V[j])}</td></tr>`).join('');
-      el.innerHTML = `<div class="otitle">Ligne « ${label(i)} » (encadrée) × V</div>
-        <table class="ot"><thead><tr><th>Mot</th><th class="vh">V</th></tr></thead><tbody>${body}
-        <tr class="sum"><td class="wd">= sortie</td><td class="vd">${dots(o, true)}</td></tr></tbody></table>`;
+          .join('')}</svg>`;
+      // tête de sortie tirée au hasard (modèle non entraîné) : elle lit ici directement la sortie de la tête
+      const logits = (o: number[]) => WOUT[0].map((_, k) => o.reduce((a, v, c) => a + v * WOUT[c][k], 0));
+      const argmax = (v: number[]) => v.indexOf(Math.max(...v));
+      const body = outs.map((o, i) => {
+        const done = mode !== 'gen' || i < t, cur = mode === 'gen' && i === t - 1;
+        const used = mode === 'bert' ? i === MASKED : done;
+        const pred = used ? WORDS[argmax(logits(o))] : '';
+        const target = mode === 'bert' ? (i === MASKED ? WORDS[MASKED] : '') : done ? (WORDS[i + 1] ?? '…') : '';
+        const ok = pred && target && pred === target;
+        const predCell = mode === 'bert' && i !== MASKED ? '<td class="pd none">—</td>' : `<td class="pd">${pred}</td>`;
+        const tgtCell = mode === 'gen' ? '' : `<td class="pd tg">${target ? target + (pred ? (ok ? ' <span class="ok">✓</span>' : ' <span class="ko">✗</span>') : '') : mode === 'bert' ? '—' : ''}</td>`;
+        return `<tr class="${cur ? 'cur' : ''}"><td class="wd">${label(i)}</td><td class="vd">${done ? dots(o) : ''}</td>${predCell}${tgtCell}</tr>`;
+      }).join('');
+      const nOk = outs.filter((o, i) => (mode === 'bert' ? i === MASKED : true) && WORDS[argmax(logits(o))] === (mode === 'bert' ? WORDS[MASKED] : WORDS[i + 1])).length;
+      const nAll = mode === 'bert' ? 1 : s;
+      const note = mode === 'bert'
+        ? '<b>Cible</b> : le mot caché sous [MASK].'
+        : mode === 'train'
+        ? `<b>Cible</b> : le vrai mot suivant (${nOk}/${nAll} justes) ; l'entraînement rapproche prédit et cible.`
+        : 'Le mot prédit devient l\'entrée du pas suivant.';
+      el.innerHTML = `<div class="otitle" aria-hidden="true"></div>
+        <table class="ot"><thead><tr><th>Mot</th><th class="vh">sortie de la tête</th><th class="ph">prédit</th>${mode === 'gen' ? '' : '<th class="ph">cible</th>'}</tr></thead><tbody>${body}</tbody></table>
+        <p class="hint"><b>Sortie de la tête</b> : moyenne des V pondérée par la ligne. <b>Prédit</b> : choix d\'un modèle non entraîné. ${note}</p>`;
     }
 
     function draw() {
@@ -89,7 +107,7 @@
       curCell = cell;
       curOy = oy;
       let h = '';
-      h += `<text class="ts" x="${ox}" y="16">Mot regardé →</text>`;
+      h += `<text class="ts" x="${ox}" y="16">Mot regardé</text>`;
       const midY = oy + (s * cell) / 2;
       h += `<text class="ts" x="12" y="${midY}" transform="rotate(-90 12 ${midY})" text-anchor="middle">Mot qui regarde</text>`;
       weights = mode === 'bert' ? fullW(s) : causalW;
@@ -107,26 +125,26 @@
           if (visible) {
             const w = weights[i][j];
             const r = ((cell - 2) / 2 - 1) * Math.sqrt(w);
-            const color = mode === 'bert' ? 'var(--c-w)' : current ? 'var(--hl-stroke)' : mode === 'train' ? 'var(--c-w)' : 'var(--c-w-soft)';
+            const color = mode === 'bert' ? 'var(--c-w)' : current ? 'var(--c-w)' : mode === 'train' ? 'var(--c-w)' : 'var(--c-w-soft)';
             h += `<circle cx="${x0 + (cell - 2) / 2}" cy="${y0 + (cell - 2) / 2}" r="${r.toFixed(2)}" fill="${color}" data-row="${i}"><title>« ${label(i)} » regarde « ${label(j)} » : ${Math.round(w * 100)} %</title></circle>`;
           }
         }
-      }
-      if (!(mode === 'gen' && selRow >= t)) {
-        h += `<rect x="${ox - 3}" y="${oy + selRow * cell - 2}" width="${s * cell + 2}" height="${cell + 2}" rx="5" fill="none" stroke="var(--accent)" stroke-width="1.5" pointer-events="none"/>`;
       }
       $('cap').innerHTML =
         mode === 'bert'
           ? `<p class="tt2">BERT : chaque mot regarde toute la phrase, avant et après lui</p><p>Pas de masque causal : toute la matrice est remplie, et chaque ligne somme à 100 % sur les ${s} mots. À l'entraînement, BERT remplace quelques mots par [MASK] et doit les retrouver grâce au contexte des deux côtés. Il comprend bien une phrase entière, mais ne génère pas mot à mot.</p>`
           : mode === 'train'
           ? `<p class="tt2">Toutes les lignes d'un coup : Q × Kᵀ, puis softmax</p>`
-          : `<p class="tt2">Pas ${t} : « ${WORDS[t - 1]} » regarde ${t === 1 ? 'seulement lui-même' : t <= 5 ? WORDS.slice(0, t).map((w) => `« ${w} »`).join(', ') : `les ${t} mots de « ${WORDS[0]} » à « ${WORDS[t - 1]} »`}</p><p>Ambre = ligne calculée maintenant. Vert clair = lignes déjà faites.</p>`;
+          : `<p class="tt2">Pas ${t} : « ${WORDS[t - 1]} » regarde ${t === 1 ? 'seulement lui-même' : t <= 5 ? WORDS.slice(0, t).map((w) => `« ${w} »`).join(', ') : `les ${t} mots de « ${WORDS[0]} » à « ${WORDS[t - 1]} »`}</p>`;
       svg.setAttribute('viewBox', `0 0 ${VBW} ${oy + s * cell + 8}`);
       svg.innerHTML = h;
       const cells = (s * (s + 1)) / 2;
       $('k-seq').textContent = String(mode === 'gen' ? s : 1);
+      $('k-seq-s').textContent = mode === 'gen' ? 'une par mot généré' : 'toutes les lignes d\'un coup';
       $('k-cells').textContent = mode === 'bert' ? String(s * s) : mode === 'train' ? String(cells) : `${(t * (t + 1)) / 2} / ${cells}`;
+      $('k-cells-s').textContent = mode === 'bert' ? `toute la matrice ${s} × ${s}` : mode === 'train' ? `le triangle, sur ${s * s}` : `le pas ${t} ajoute ${t} cases`;
       $('k-kv').textContent = mode === 'bert' ? '—' : String(mode === 'train' ? s : t);
+      $('k-kv-s').textContent = mode === 'bert' ? 'pas de génération' : mode === 'train' ? 'tous calculés d\'un coup' : 'un de plus par pas (KV cache)';
       renderOut();
       layoutOut();
     }
@@ -155,13 +173,6 @@
         draw();
       }),
     );
-    slider.addEventListener('input', () => {
-      s = +slider.value;
-      $('s-out').textContent = String(s);
-      if (t > s) t = s;
-      if (selRow > s - 1) selRow = s - 1;
-      draw();
-    });
     $('next').addEventListener('click', () => { if (t < s) t++; selRow = t - 1; draw(); });
     $('prev').addEventListener('click', () => { if (t > 1) t--; selRow = t - 1; draw(); });
     svg.addEventListener('click', (ev) => {
@@ -179,7 +190,6 @@
 <style is:global>
   .widget svg text.ts { font: 12px var(--font); fill: var(--text-2); }
   .widget svg text.tt { font: 500 14px var(--font); fill: var(--text); }
-  .causal svg [data-row] { cursor: pointer; }
   .widget.causal { transition: background 0.3s, color 0.3s; }
   .widget.causal.bert {
     --surface: #3d3029; --surface-2: #4d3e35; --text: #fbf6f0; --text-2: #e6dacd; --border: #6e5b4d;
@@ -187,10 +197,14 @@
     --accent: #f3d9a8; --hl-bg: #5e4a3c; --hl-text: #ffffff; --hl-stroke: #f3d9a8;
     background: var(--surface); color: var(--text); border-color: var(--border);
   }
+  .causal .row[hidden] { display: none; }
+  .causal .bertbtn { margin-left: auto; }
   .causal .mrow { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
-  .causal .mrow > svg { flex: 0 1 360px; width: 360px; max-width: 100%; height: auto; }
+  .causal .mrow > .mleft { flex: 0 1 360px; width: 360px; max-width: 100%; }
+  .causal .mleft > svg { display: block; width: 100%; height: auto; }
   .causal .outp { flex: 1 1 260px; min-width: 260px; }
-  .causal .mcap { margin-top: 6px; }
+  .causal .mcap { margin: 0 0 4px; }
+  .causal .genctl { margin: 6px 0 0; justify-content: center; }
   .causal .mcap p { font-size: 12px; color: var(--text-2); margin: 2px 0; line-height: 1.5; }
   .causal .mcap p.tt2 { font-size: 14px; font-weight: 500; color: var(--text); }
   .causal .otitle { font-weight: 500; font-size: 13px; line-height: 1.3; margin: 0; height: calc(var(--top, 0px) - 24px); display: flex; align-items: flex-end; padding-bottom: 4px; }
@@ -198,14 +212,23 @@
   .causal table.ot thead tr { height: 24px; }
   .causal table.ot tbody tr { height: var(--row-h, 24px); }
   .causal .outp.wrapped table.ot tbody tr { height: 24px; }
-  .causal table.ot { border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; width: 100%; }
+  .causal table.ot { margin: 0; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; width: 100%; }
   .causal table.ot th { font-weight: 400; color: var(--text-2); text-align: right; padding: 0 3px; border-bottom: 1px solid var(--border); }
   .causal table.ot th:first-child, .causal table.ot td.wd { text-align: left; }
   .causal table.ot th.vh { text-align: left; }
   .causal table.ot td { text-align: right; padding: 0 3px; line-height: 1.1; }
   .causal table.ot td.vd { text-align: left; }
+  .causal table.ot td, .causal table.ot th { vertical-align: middle; }
+  .causal table.ot td.vd svg { display: block; }
   .causal svg.vdots { display: block; height: calc(var(--row-h, 24px) - 2px); width: calc((var(--row-h, 24px) - 2px) * 4); }
   .causal .outp.wrapped svg.vdots { height: 22px; width: 88px; }
+  .causal tr.cur td { background: var(--hl-bg); }
+  .causal table.ot th.ph { text-align: left; white-space: nowrap; }
+  .causal table.ot td.pd { text-align: left; white-space: nowrap; color: var(--text); font-weight: 500; }
+  .causal table.ot td.pd.none { color: var(--text-2); font-weight: 400; }
+  .causal table.ot td.pd.tg { color: var(--text-2); font-weight: 400; }
+  .causal table.ot .ok { color: var(--c-k); font-weight: 600; }
+  .causal table.ot .ko { color: var(--h-py, #b5523b); font-weight: 600; }
   .causal tr.sum td { border-top: 1px solid var(--border-strong, var(--border)); font-weight: 500; background: var(--hl-bg); color: var(--hl-text); }
   .causal .hint { font-size: 12px; color: var(--text-2); margin: 6px 0 0; }
 </style>

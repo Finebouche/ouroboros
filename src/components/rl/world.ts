@@ -16,13 +16,6 @@ export const Vstar = (() => {
   return V;
 })();
 export const qStar = (r: number, c: number) => DIRS.map((_, a) => { const [nr, nc, rw] = step(r, c, a); return rw + g * (terminal(nr, nc) ? 0 : Vstar[nr][nc]); });
-// expert : première des meilleures actions dans l'ordre haut, droite, bas, gauche
-export const expert = (r: number, c: number) => { const q = qStar(r, c), m = Math.max(...q); return q.findIndex((x) => x > m - 1e-9); };
-export const rollout = (start: number[], pol: (r: number, c: number) => number, max = 10) => {
-  const path = [start.slice()]; let [r, c] = start;
-  for (let t = 0; t < max && !terminal(r, c); t++) { const [nr, nc] = step(r, c, pol(r, c)); r = nr; c = nc; path.push([r, c]); }
-  return path;
-};
 const f1 = (v: number) => v.toFixed(1);
 export const center = (x0: number, y0: number, cs: number, r: number, c: number): [number, number] => [x0 + c * cs + (cs - 2) / 2, y0 + r * cs + (cs - 2) / 2];
 // fond de grille : cases, but, piège, mur ; fill(r, c) donne éventuellement une couleur d'accent pour une case libre

@@ -1,0 +1,51 @@
+---
+// Cours RL, chapitre 1 : comment répartir le +1 de l'épisode 1 (voir Horizon.astro) entre ses dix actions.
+// Trois règles simples (tout à la dernière, à parts égales, actualisé γ^k) et la répartition voulue (tout à la 3e action), inconnue de l'agent.
+const T = 10, cw = 44, x0 = 168, sq = 32, W = x0 + (T + 1) * cw + 4, g = 0.9, KEY = 2;
+const acts = ['→', '→', '↑', '→', '↑', '↑', '→', '↑', '→', '→'];
+const cx = (i: number) => x0 + i * cw + cw / 2;
+const fm = (v: number) => (v === 0 ? '0' : v === 1 ? '1' : v.toFixed(2).replace('.', ','));
+const rows: { name: string; sub: string; credit: number[]; ideal?: boolean }[] = [
+  { name: 'tout à la dernière action', sub: '', credit: acts.map((_, i) => (i === T - 1 ? 1 : 0)) },
+  { name: 'à parts égales', sub: 'retour avec γ = 1', credit: acts.map(() => 1) },
+  { name: 'actualisé', sub: 'retour avec γ = 0,9 : γᵏ', credit: acts.map((_, i) => g ** (T - 1 - i)) },
+  { name: 'ce qu\'on voudrait', sub: 'inconnu de l\'agent', credit: acts.map((_, i) => (i === KEY ? 1 : 0)), ideal: true },
+];
+let o = '';
+const top = 6, rowH = 50;
+// l'épisode 1, rappelé en tête
+o += `<text x="${x0 - 12}" y="${top + sq / 2 + 4}" text-anchor="end" class="an">épisode 1</text>`;
+acts.forEach((a, i) => {
+  o += `<rect x="${cx(i) - sq / 2}" y="${top}" width="${sq}" height="${sq}" rx="7" fill="var(--text-2)" fill-opacity="0.1" stroke="${i === KEY ? 'var(--hl-stroke)' : 'var(--border)'}"${i === KEY ? ' stroke-dasharray="4 3"' : ''}/>`;
+  o += `<text x="${cx(i)}" y="${top + sq / 2 + 6}" text-anchor="middle" class="aa">${a}</text>`;
+});
+o += `<rect x="${cx(T) - sq / 2}" y="${top}" width="${sq}" height="${sq}" rx="7" fill="var(--hl-stroke)" fill-opacity="0.3" stroke="var(--hl-stroke)"/><text x="${cx(T)}" y="${top + sq / 2 + 4.5}" text-anchor="middle" class="av">+1</text>`;
+o += `<line x1="${x0 - 150}" y1="${top + sq + 14}" x2="${cx(T) + sq / 2}" y2="${top + sq + 14}" stroke="var(--border)"/>`;
+o += `<text x="${x0 - 150}" y="${top + sq + 32}" class="ah">crédit donné à chaque action</text>`;
+// les règles de répartition
+rows.forEach((row, k) => {
+  const y = top + sq + 42 + k * rowH;
+  o += `<text x="${x0 - 12}" y="${y + sq / 2 + (row.sub ? -1 : 4)}" text-anchor="end" class="an">${row.name}</text>`;
+  if (row.sub) o += `<text x="${x0 - 12}" y="${y + sq / 2 + 12}" text-anchor="end" class="as">${row.sub}</text>`;
+  row.credit.forEach((v, i) => {
+    o += `<rect x="${cx(i) - sq / 2}" y="${y}" width="${sq}" height="${sq}" rx="7" fill="var(--hl-stroke)" fill-opacity="${(0.04 + 0.42 * v).toFixed(2)}" stroke="${row.ideal && v ? 'var(--hl-stroke)' : 'var(--border)'}"${row.ideal ? ' stroke-dasharray="4 3"' : ''}/>`;
+    o += `<text x="${cx(i)}" y="${y + sq / 2 + 4}" text-anchor="middle" class="${v ? 'ac' : 'az'}">${fm(v)}</text>`;
+  });
+});
+const H = top + sq + 42 + rows.length * rowH - 10;
+---
+<figure class="rlf rlf-attrib">
+  <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Quatre façons de répartir la récompense de l'épisode 1 entre ses dix actions : tout à la dernière, à parts égales, actualisé, et la répartition voulue, tout à la troisième action" set:html={o} />
+  <figcaption>Comment répartir le +1 de l'épisode 1 entre ses dix actions ? Tout donner à la dernière oublie la 3e, qui a tout décidé. Le retour <i>G<sub>t</sub></i> donne à chaque action la récompense qui la suit : à parts égales avec γ = 1, davantage aux actions proches de la fin avec γ &lt; 1. Aucune règle ne désigne la 3e action à partir d'un seul épisode : c'est en moyennant sur beaucoup d'épisodes que les actions décisives ressortent, parce qu'elles sont suivies d'un +1 plus souvent que les autres.</figcaption>
+</figure>
+
+<style is:global>
+  .rlf-attrib svg { max-width: 660px; }
+  .rlf-attrib svg .an { font: 600 11.5px var(--font); fill: var(--text); }
+  .rlf-attrib svg .as { font: 10.5px var(--font); fill: var(--text-2); }
+  .rlf-attrib svg .ah { font: 600 11px var(--font); fill: var(--text-2); }
+  .rlf-attrib svg .aa { font: 600 15px var(--font); fill: var(--text); }
+  .rlf-attrib svg .av { font: 600 13px var(--font); fill: var(--text); }
+  .rlf-attrib svg .ac { font: 600 11px var(--font); fill: var(--text); }
+  .rlf-attrib svg .az { font: 11px var(--font); fill: var(--text-2); opacity: 0.6; }
+</style>

@@ -166,10 +166,21 @@ button.active { border-color: var(--accent); color: var(--accent); }
 .reveal:not(.shown):hover .ans > * { filter: blur(2.5px); opacity: 0.7; }
 .reveal .ans > :first-child { margin-top: 0; }
 .reveal .ans > :last-child { margin-bottom: 0; }
-.widget .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-top: 8px; }
-.widget .kpis > div { background: var(--surface-2); border-radius: var(--radius); padding: 0.75rem 1rem; }
-.widget .kpis span { display: block; font-size: 13px; color: var(--text-2); }
-.widget .kpis b { font-size: 24px; font-weight: 500; }
+/* indicateurs : petites cartes (libellé à gauche, valeur à droite, ligne d'explication facultative en <i>) ; .r rouge pour une valeur qui alerte (pas de vert : le vert est la couleur de K dans le cours Post-Transformer) */
+/* curseurs : nom à gauche et valeur à droite au-dessus, curseur en dessous (tous les cours) */
+.widget label:has(> input[type="range"]) { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 2px 8px; font-size: 14px; color: var(--text-2); margin: 0; }
+.widget label:has(> input[type="range"])[hidden] { display: none; }
+.widget label:has(> input[type="range"]) > b { grid-column: 2; grid-row: 1; text-align: right; color: var(--text); font-weight: 500; }
+.widget label:has(> input[type="range"]) > input[type="range"] { grid-column: 1 / -1; grid-row: 2; width: 100%; }
+/* conteneurs de curseurs : plusieurs par ligne quand il y a la place (poids nul : un widget peut imposer ses colonnes) */
+:where(.widget) :where(div.sl, .sliders) { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); column-gap: 24px; }
+.widget .kpis { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.widget .kpis > div { flex: 1 1 170px; display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 0 8px; background: var(--surface-2); border-radius: 8px; padding: 0.4rem 0.6rem; }
+.widget .kpis > div > span { font-size: 12px; color: var(--text-2); }
+.widget .kpis b { font-size: 14px; font-weight: 600; }
+.widget .kpis b small { font-size: 12px; font-weight: 400; color: var(--text-2); }
+.widget .kpis i { grid-column: 1 / -1; font-style: normal; font-size: 11px; color: var(--text-2); }
+.widget .kpis .r { color: var(--h-py); }
 /* cours Preprocessing : indicateurs compacts, sur une ligne, sans cartes */
 .widget.pp .kpis, .widget.hp .kpis { display: flex; flex-wrap: wrap; gap: 4px 22px; margin-top: 10px; }
 .widget.pp .kpis > div, .widget.hp .kpis > div { background: none; padding: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 6px; }

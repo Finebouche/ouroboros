@@ -1,4 +1,4 @@
-// Données partagées par les widgets du module 0 : mêmes embeddings, mêmes matrices W.
+// Données partagées par les widgets du chapitre 0 : mêmes embeddings, mêmes matrices W.
 // Valeurs tirées au hasard, comme à l'initialisation d'un modèle : rien n'est entraîné.
 // E : embeddings bruts (échelle différente selon le mot). X = RMSNorm(E) : entrée de l'attention.
 export const WORDS = ["Le", "chat", "noir", "dort", "sur", "le", "canapé", "du", "salon", "depuis", "ce", "matin", "car", "il"];

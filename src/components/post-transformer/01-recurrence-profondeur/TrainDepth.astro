@@ -1,5 +1,5 @@
 ---
-// Module 1 : nombre de passes tiré au hasard à l'entraînement (loi log-normale Poisson de Huginn) et rétropropagation tronquée.
+// Chapitre 1 : nombre de passes tiré au hasard à l'entraînement (loi log-normale Poisson de Huginn) et rétropropagation tronquée.
 ---
 <div class="widget tdepth" data-widget="tdepth">
   <div class="row">
@@ -19,7 +19,7 @@
   <div class="kpis">
     <div><span>Moyenne de r</span><b data-ref="k1"></b></div>
     <div><span>Médiane de r</span><b data-ref="k2"></b></div>
-    <div><span>Passes avec gradient</span><b data-ref="k3"></b></div>
+    <div><span>Passes avec gradient</span><b data-ref="k3"></b><i>seules les k dernières passes sont rétropropagées</i></div>
   </div>
 </div>
 
@@ -143,6 +143,5 @@
   .tdepth .td-row i.nog, .tdepth .lg .sq.nog { background: var(--c-reach-soft); }
   .tdepth .lg { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: 12px; color: var(--text-2); margin: 0 0 8px; }
   .tdepth .lg .sq { margin-right: 4px; vertical-align: -1px; }
-  .tdepth .kpis small { font-size: 13px; color: var(--text-2); font-weight: 400; }
   @media (max-width: 600px) { .tdepth .sl label { grid-template-columns: 1fr; } }
 </style>

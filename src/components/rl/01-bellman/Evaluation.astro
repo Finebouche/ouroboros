@@ -1,0 +1,114 @@
+---
+// Cours RL, chapitre 1 : méthodes d'évaluation d'une politique fixe, même mise en forme que Methods.astro (groupes arrondis, axe
+// retour complet (vert) ↔ bootstrapping (bleu)), avec à droite l'équation de mise à jour (KaTeX rendu à la construction).
+import katex from 'katex';
+const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
+type Algo = { n: string; course?: boolean };
+type Glyph = 'all' | 'step' | 'mix' | 'group' | 'expert';
+type Row = { glyph?: [Glyph, string]; name: string; sub?: string; kind: 'mc' | 'td' | 'mix' | 'none'; labels?: [string, string]; eq: string[]; note?: string; algos: Algo[] };
+const groups: Row[][] = [
+  [
+    { glyph: ['all', 'crédit en un coup'], name: 'Monte-Carlo', sub: 'every-visit', kind: 'mc', eq: ['V(s_t) \\leftarrow V(s_t) + \\alpha\\,\\big(G_t - V(s_t)\\big)'], algos: [{ n: 'Contrôle Monte-Carlo' }, { n: 'REINFORCE' }, { n: 'MCTS' }] },
+    { name: 'Monte-Carlo', sub: 'first-visit', kind: 'mc', eq: ['V(s) = \\text{moyenne des } G_t \\text{ (1re visite de } s \\text{)}'], algos: [{ n: 'Contrôle Monte-Carlo' }] },
+    { name: 'Monte-Carlo', sub: 'échantillonnage d\'importance', kind: 'mc', eq: ['V(s) = \\text{moyenne des } \\rho_t\\, G_t', '\\rho_t = \\prod_{k \\ge t} \\dfrac{\\pi(a_k \\mid s_k)}{b(a_k \\mid s_k)}'], algos: [{ n: 'Contrôle Monte-Carlo hors politique' }] },
+  ],
+  [
+    { glyph: ['step', 'remonte un pas à la fois'], name: 'TD(0)', kind: 'td', eq: ['V(s_t) \\leftarrow V(s_t) + \\alpha\\,\\big(r_{t+1} + \\gamma V(s_{t+1}) - V(s_t)\\big)'], algos: [{ n: 'SARSA' }, { n: 'Q-learning' }, { n: 'DQN' }] },
+    { name: 'LSTD', sub: 'lot de transitions, V = wᵀφ', kind: 'td', eq: ['w = A^{-1} b', 'A = \\sum_t \\phi(s_t)\\big(\\phi(s_t) - \\gamma\\,\\phi(s_{t+1})\\big)^\\top', 'b = \\sum_t r_{t+1}\\,\\phi(s_t)'], algos: [{ n: 'LSPI' }] },
+    { name: 'FQE', sub: 'régression', kind: 'td', eq: ['Q_{k+1} = \\arg\\min_Q \\sum_i \\big(Q(s_i, a_i) - y_i\\big)^2', 'y_i = r_i + \\gamma \\sum_{a\'} \\pi(a\' \\mid s\'_i)\\, Q_k(s\'_i, a\')'], algos: [{ n: 'FQI' }] },
+  ],
+  [
+    { name: 'TD à n pas, TD(λ)', kind: 'mix', labels: ['λ = 1', 'λ = 0'], eq: ['G_t^{(n)} = r_{t+1} + \\dots + \\gamma^{n-1} r_{t+n} + \\gamma^n V(s_{t+n})', 'V(s_t) \\leftarrow V(s_t) + \\alpha\\,\\big(G_t^{(n)} - V(s_t)\\big)', 'G_t^\\lambda = (1-\\lambda)\\sum_{n \\ge 1} \\lambda^{n-1} G_t^{(n)}'], algos: [{ n: 'SARSA(λ)' }] },
+    { glyph: ['mix', 'via l\'avantage, selon λ'], name: 'Critique (acteur-critique)', sub: 'TD + GAE', kind: 'mix', labels: ['λ = 1', 'λ = 0'], eq: ['\\delta_t = r_{t+1} + \\gamma V(s_{t+1}) - V(s_t)', '\\hat A_t = \\sum_{l \\ge 0} (\\gamma\\lambda)^l\\, \\delta_{t+l}'], algos: [{ n: 'A2C' }, { n: 'NAC' }, { n: 'TRPO' }, { n: 'PPO' }] },
+  ],
+  [
+    { glyph: ['group', 'politique entière'], name: 'Pas de valeur', sub: 'politique jugée en entier', kind: 'none', eq: [], note: 'stratégie d\'évolution : juge l\'épisode entier, sans crédit par action', algos: [{ n: 'OpenAI-ES' }, { n: 'CMA-ES' }] },
+    { glyph: ['expert', 'aucune (l\'expert l\'a faite)'], name: 'Pas de récompense', sub: 'un expert montre les actions', kind: 'none', eq: [], note: 'copie les actions de l\'expert', algos: [{ n: 'BC (clonage de comportement)' }] },
+  ],
+];
+const MC = 'var(--a-es)', TD = 'var(--a-fqi)', AW = 150, ax0 = 8, ax1 = AW - 8;
+let uid = 0;
+const axis = (r: Row) => {
+  const id = `evg${uid++}`;
+  let o = `<svg viewBox="0 0 ${AW} 18" class="evax" aria-hidden="true">`;
+  if (r.kind === 'none') return '';
+  if (r.kind === 'mix') o += `<defs><linearGradient id="${id}" x1="0" x2="1"><stop offset="0" stop-color="${MC}"/><stop offset="1" stop-color="${TD}"/></linearGradient></defs><rect x="${ax0 - 6}" y="2" width="${ax1 - ax0 + 12}" height="14" rx="7" fill="url(#${id})"/><text x="${ax0 + 10}" y="12.5" class="evl">${r.labels![0]}</text><text x="${ax1 - 10}" y="12.5" text-anchor="end" class="evl">${r.labels![1]}</text>`;
+  else {
+    o += `<line x1="${ax0}" y1="9" x2="${ax1}" y2="9" stroke="var(--border)" stroke-width="3" stroke-linecap="round"/>`;
+    o += r.kind === 'mc' ? `<circle cx="${ax0}" cy="9" r="6.5" fill="${MC}"/>` : `<circle cx="${ax1}" cy="9" r="6.5" fill="${TD}"/>`;
+  }
+  return o + '</svg>';
+};
+// schéma du crédit sur 6 pas : comment il remonte vers les actions passées
+const glyph = (g: Glyph) => {
+  const dx = 13, x0 = 8, cy = 9, dot = (k: number, fill: string, op = 1, dashed = false) => `<circle cx="${x0 + k * dx}" cy="${cy}" r="4.2" fill="${dashed ? 'none' : fill}" fill-opacity="${op}"${dashed ? ' stroke="var(--text-2)" stroke-width="1.3" stroke-dasharray="2 1.6"' : ''}/>`;
+  let o = `<svg viewBox="0 0 ${x0 + 5 * dx + 8} 18" class="evgl" aria-hidden="true">`;
+  if (g === 'step') o += `<defs><marker id="evmk" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="${TD}"/></marker></defs>`;
+  if (g === 'group') o += `<rect x="1" y="1" width="${x0 + 5 * dx + 6}" height="16" rx="8" fill="none" stroke="var(--text-2)" stroke-width="1.2"/>`;
+  for (let k = 0; k < 6; k++) {
+    if (g === 'all') o += dot(k, MC, 0.35 + 0.13 * k);
+    if (g === 'step') { o += dot(k, TD, 0.35 + 0.13 * k); if (k > 0) o += `<line x1="${x0 + k * dx - 4.6}" y1="${cy}" x2="${x0 + (k - 1) * dx + 4.8}" y2="${cy}" stroke="${TD}" stroke-width="1.1" marker-end="url(#evmk)"/>`; }
+    if (g === 'mix') o += dot(k, k % 2 ? TD : MC, 0.35 + 0.13 * k);
+    if (g === 'group') o += dot(k, 'var(--text-2)', 0.45);
+    if (g === 'expert') o += dot(k, '', 1, true);
+    }
+  return o + '</svg>';
+};
+---
+<figure class="ev">
+  <div class="evhd">
+    <div></div>
+    <div class="evaxh"><span style={`color:${MC}`}><b>retour complet</b><i>(Monte-Carlo)</i></span><span style={`color:${TD}`}><b>bootstrapping</b><i>(Bellman)</i></span></div>
+    <div class="evqh"><b>équation d'évaluation de politique</b></div>
+    <div class="evqh"><b>amélioration de la politique l'utilisant</b></div>
+  </div>
+  {groups.map((g) => (
+    <div class="evg">
+      {g.map((r) => (
+        <div class="evr">
+          <div class="evn">{r.name}{r.sub && <small>{r.sub}</small>}</div>
+          <div class="evx"><div set:html={axis(r)} />{r.glyph && <div class="evg2"><div set:html={glyph(r.glyph[0])} /><span>{r.glyph[1]}</span></div>}</div>
+          <div class="eve">{r.eq.map((e) => <div set:html={tx(e)} />)}{r.note && <em>{r.note}</em>}</div>
+          <div class="eva">{r.algos.map((a) => <span style={a.course ? 'font-weight:700' : ''}>{a.n}</span>)}</div>
+        </div>
+      ))}
+    </div>
+  ))}
+  <figcaption>Sous l'axe : comment le crédit remonte vers les actions passées. Colonne de droite : les algorithmes qui, en plus d'évaluer, améliorent la politique avec cette technique. Les stratégies d'évolution sont des algorithmes évolutifs (optimisation sans gradient en boîte noire) : elles sortent de l'axe. Le clonage de comportement n'utilise pas la récompense.</figcaption>
+</figure>
+
+<style is:global>
+  .ev { margin: 1.4rem 0; font-family: var(--font); }
+  .ev .evhd, .ev .evr { display: grid; grid-template-columns: 108px 150px minmax(0, 1fr) 132px; column-gap: 12px; align-items: center; }
+  .ev .evhd { padding: 0 14px 8px; font-size: 11.5px; }
+  .ev .evaxh { display: flex; justify-content: space-between; gap: 6px; }
+  .ev .evaxh span { display: flex; flex-direction: column; white-space: nowrap; }
+  .ev .evaxh b { font-size: 10px; }
+  .ev .evaxh i { font-size: 9.5px; }
+  .ev .evaxh span:last-child { align-items: flex-end; }
+  .ev .evaxh b, .ev .evqh b { font-weight: 600; }
+  .ev .evqh b { font-size: 11.5px; }
+  .ev .evqh b { color: var(--text); }
+  .ev .evaxh i { font-style: normal; color: var(--text-2); }
+  .ev .evg { border-radius: 8px; background: color-mix(in srgb, var(--text-2) 7%, transparent); padding: 4px 14px; margin-bottom: 8px; }
+  .ev .evg:nth-of-type(even) { background: color-mix(in srgb, var(--text-2) 3.5%, transparent); }
+  .ev .evr { padding: 8px 0; }
+  .ev .evn { font-size: 12.5px; color: var(--text); }
+  .ev .evn small { display: block; font-size: 10.5px; color: var(--text-2); margin-top: 1px; }
+  .ev .evax { width: 100%; display: block; }
+  .ev .evg2 { margin-top: 5px; }
+  .ev .evgl { display: block; width: 100px; height: auto; }
+  .ev .evg2 span { display: block; font-size: 10.5px; line-height: 1.3; color: var(--text-2); margin-top: 2px; }
+  .ev .evl { font: 600 9.5px var(--font); fill: #fff; }
+  .ev .eve { overflow-x: auto; overflow-y: hidden; font-size: 0.88rem; }
+  .ev .eve > div + div { margin-top: 2px; }
+  .ev .eve .katex { font-size: 1em; }
+  .ev .eve em { font-size: 11px; color: var(--text-2); }
+  .ev .eva { font-size: 12px; display: flex; flex-direction: column; gap: 1px; }
+  .ev figcaption { font-size: 12px; color: var(--text-2); margin-top: 6px; }
+  @media (max-width: 760px) {
+    .ev .evhd { display: none; }
+    .ev .evr { grid-template-columns: 1fr; row-gap: 4px; }
+    .ev .evx { max-width: 150px; }
+  }
+</style>

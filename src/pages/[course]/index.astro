@@ -14,7 +14,7 @@ const chapters = await chaptersOf(course);
   <h1>{meta.title}</h1>
   <p>{meta.intro}</p>
   <h2>Carte de progression</h2>
-  <ol class="modules">
+  <ol class="chapters">
     {chapters.map((m) => (
       <li>
         <a href={chapterUrl(m.id)}>{meta.unit} {m.data.num} · {m.data.title}</a>
@@ -25,8 +25,8 @@ const chapters = await chaptersOf(course);
   </ol>
 </Base>
 <style>
-  .modules { list-style: none; padding: 0; }
-  .modules li { border-bottom: 1px solid var(--border); padding: 0.8rem 0; }
-  .modules a { font-weight: 500; margin-right: 0.6rem; }
+  .chapters { list-style: none; padding: 0; }
+  .chapters li { border-bottom: 1px solid var(--border); padding: 0.8rem 0; }
+  .chapters a { font-weight: 500; margin-right: 0.6rem; }
   .sum { color: var(--text-2); font-size: 15px; }
 </style>

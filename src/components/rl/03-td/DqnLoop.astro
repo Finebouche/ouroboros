@@ -1,0 +1,39 @@
+---
+// Cours RL, chapitre 3 : la boucle de DQN. L'agent joue ε-greedy avec Q_θ, range chaque transition dans la mémoire de relecture,
+// tire des mini-lots au hasard ; la cible vient d'une copie figée du réseau (réseau cible θ⁻), recopiée tous les C pas.
+const W = 680, H = 270;
+const TEAL = 'var(--a-fqi)';
+const box = (x: number, y: number, w: number, h: number, title: string, sub: string, fill: string, op: number, dash = false) =>
+  `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="10" fill="${fill}" fill-opacity="${op}" stroke="${fill}" stroke-opacity="0.8"${dash ? ' stroke-dasharray="5 3"' : ''}/>` +
+  `<text x="${x + w / 2}" y="${y + h / 2 - (sub ? 3 : -4)}" text-anchor="middle" class="dt">${title}</text>` +
+  (sub ? `<text x="${x + w / 2}" y="${y + h / 2 + 13}" text-anchor="middle" class="ds">${sub}</text>` : '');
+const arrow = (d: string, dash = false) => `<path d="${d}" fill="none" stroke="var(--text-2)" stroke-width="1.4"${dash ? ' stroke-dasharray="4 3"' : ''} marker-end="url(#dqa)"/>`;
+const lab = (x: number, y: number, t: string, a = 'middle') => `<text x="${x}" y="${y}" text-anchor="${a}" class="dl">${t}</text>`;
+let o = `<defs><marker id="dqa" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--text-2)"/></marker></defs>`;
+// boîtes
+o += box(10, 110, 120, 56, 'Environnement', '', 'var(--text-2)', 0.1);
+o += box(190, 106, 140, 64, 'Mémoire de relecture', 'dernières transitions', 'var(--hl-stroke)', 0.18);
+o += box(400, 18, 150, 58, 'Réseau Q<tspan baseline-shift="sub" font-size="9">θ</tspan>', 'appris', TEAL, 0.2);
+o += box(400, 196, 150, 58, 'Réseau cible Q<tspan baseline-shift="sub" font-size="9">θ⁻</tspan>', 'copie figée', TEAL, 0.08, true);
+o += box(590, 108, 84, 60, 'Perte', '(y − Q)²', 'var(--text-2)', 0.1);
+// flèches
+o += arrow('M 130 138 L 186 138') + lab(158, 130, '(s, a, r, s′)');
+o += arrow('M 330 124 C 360 110, 370 60, 396 50') + lab(352, 88, 'mini-lot', 'end');
+o += arrow('M 330 152 C 360 166, 370 214, 396 222');
+o += arrow('M 550 50 C 575 52, 600 80, 622 104') + lab(600, 66, 'Q(s, a)', 'start');
+o += arrow('M 550 222 C 575 220, 600 196, 622 172') + lab(676, 262, 'cible y = r + γ max Q(s′, ·)', 'end');
+o += arrow('M 475 76 L 475 192', true) + lab(481, 140, 'copie tous', 'start') + lab(481, 153, 'les C pas', 'start');
+o += arrow('M 400 36 L 70 36 L 70 106') + lab(235, 30, 'action ε-greedy');
+o += arrow('M 632 108 C 640 30, 600 8, 552 30', true) + lab(648, 20, 'gradient sur θ', 'end');
+---
+<figure class="rlf rlf-dqn">
+  <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Boucle de DQN : l'agent joue avec le réseau Q, range les transitions dans une mémoire de relecture, tire des mini-lots, et calcule la cible avec une copie figée du réseau" set:html={o} />
+  <figcaption>La boucle de DQN : jouer avec Q<sub>θ</sub>, ranger la transition, tirer un mini-lot au hasard, calculer la cible avec la copie figée Q<sub>θ⁻</sub>, puis descendre le gradient de la perte en θ.</figcaption>
+</figure>
+
+<style is:global>
+  .rlf-dqn svg { max-width: 680px; }
+  .rlf-dqn svg .dt { font: 600 12px var(--font); fill: var(--text); }
+  .rlf-dqn svg .ds { font: 10.5px var(--font); fill: var(--text-2); }
+  .rlf-dqn svg .dl { font: 10.5px var(--font); fill: var(--text-2); }
+</style>
