@@ -28,7 +28,7 @@ Un **agent** observe un **état** $s$, choisit une **action** $a$ ; l'**environn
 - Les **règles de l'environnement** sont la probabilité de transition $P(s'|s,a)$ et la récompense $r(s,a,s')$. L'agent ne les connaît généralement pas.
 - Un tel problème s'appelle un **processus de décision markovien** (MDP) : l'état suivant ne dépend que de l'état et de l'action courants, pas de tout le passé.
 
-## 2. Le retour, le crédit et l'évaluation d'une politique
+## 2. Le retour, le crédit
 
 Dans la plupart des tâches, la récompense arrive **tard** : on gagne une partie, on atteint un but. Parmi les dizaines d'actions passées, lesquelles ont mérité ce crédit, lesquelles sont fautives ? C'est le problème de l'**attribution du crédit** : le cœur du RL.
 
@@ -46,12 +46,13 @@ $\gamma \in [0, 1]$ est le **facteur d'actualisation** : avec $\gamma = 0$ seule
 
 <Attribution />
 
+## 3. L'évaluation d'une politique
+
 Avant de chercher une meilleure politique, il faut savoir **évaluer** celle qu'on a : estimer la **valeur** de chaque état, c'est-à-dire le retour moyen obtenu en partant de cet état et en suivant la politique. C'est l'**évaluation de politique**, et c'est là que se joue l'attribution du crédit : la valeur d'un état dit combien rapporte, en moyenne, ce qui vient après lui. Deux façons de la faire :
 
 - **Le retour complet** (méthode de Monte-Carlo) : attendre la fin de l'épisode, puis donner à chaque état visité le retour $G_t$ observé après lui. C'est simple et sans biais, mais bruité (tout le hasard de la suite entre dans le crédit) et il faut des épisodes entiers.
 - **Bellman** : chaque état hérite de l'estimation de l'état suivant : « ce que je vaux = ma récompense + $\gamma$ × ce que vaut la suite ». La cible contient donc une estimation au lieu du retour observé : c'est le **bootstrapping**. Le crédit remonte d'**un pas à chaque mise à jour**, sans attendre la fin, et peut même se recombiner entre épisodes différents. La méthode la plus simple de ce type s'appelle **TD(0)** (*temporal difference*).
 
-<RunWidget />
 
 Les deux estiment la même **valeur** $V^\pi(s) = \mathbb{E}[\, G_t \mid s_t = s \,]$. Ils diffèrent par l'équation qu'ils en tirent.
 
@@ -77,11 +78,11 @@ $$
 V^\pi(s) = \sum_a \pi(a \mid s) \sum_{s'} P(s' \mid s, a)\,\big[\, r(s, a, s') + \gamma\, V^\pi(s') \,\big]
 $$
 
-La somme sur $s'$ est la **valeur d'une action**, $Q^\pi(s,a) = \sum_{s'} P(s' \mid s, a)\,[\, r + \gamma\, V^\pi(s') \,]$, et $V^\pi(s) = \sum_a \pi(a \mid s)\, Q^\pi(s,a)$. Le diagramme se lit de bas en haut :
+La somme sur $s'$ est la **valeur d'une action**, $Q^\pi(s,a) = \sum_{s'} P(s' \mid s, a)\,[\, r + \gamma\, V^\pi(s') \,]$, et $V^\pi(s) = \sum_a \pi(a \mid s)\, Q^\pi(s,a)$.
 
 <Tree />
 
-### Les deux mises à jour
+### Deux exemples concret d'algorithmes d'évaluation
 
 Chaque équation donne une règle de mise à jour : on rapproche $V(s_t)$ d'une **cible**, d'une fraction $\alpha$ de l'écart ($\alpha = 0{,}1$ dans le widget).
 
@@ -98,7 +99,9 @@ $$
 G_t = r_{t+1} + \underbrace{\gamma\, r_{t+2} + \gamma^2 r_{t+3} + \dots}_{\text{TD(0) le remplace par } \gamma\, V(s_{t+1})}
 $$
 
-## 3. De l'évaluation à l'amélioration
+<RunWidget />
+
+## 4. De l'évaluation à l'amélioration
 
 Évaluer ne suffit pas : pour apprendre, il faut aussi **améliorer** la politique, ce qu'on appelle le **contrôle**. Chaque algorithme d'amélioration s'appuie sur une technique d'évaluation. Le tableau met côte à côte les techniques (à gauche, avec leur équation) et les algorithmes qui les utilisent (à droite).
 
@@ -141,7 +144,7 @@ L'itération de valeur calcule chaque moyenne avec $P$. Sans $P$, on apprend à 
 - **Plus d'exploration** ($\varepsilon$ plus grand) aide le contrôle Monte-Carlo à essayer les autres actions et à sortir de ces politiques.
 - **Avec de la glissade**, les deux restent un peu sous l'optimum : leurs estimations dépendent du hasard des épisodes joués.
 
-## 4. Ce qui reste à résoudre
+## 5. Ce qui reste à résoudre
 
 Ce chapitre a tout fait sur de petits mondes (un couloir de 7 cases, une grille de 16), avec une table de valeurs et autant d'épisodes qu'on veut. Les algorithmes de RL lèvent ces simplifications :
 
