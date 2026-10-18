@@ -28,7 +28,7 @@ src/
     shared/                    composants communs à tous les cours : Quiz, Reveal, Refs
     post-transformer/          composants propres au cours Post-Transformer : ArchSidebar, ArchMarker, DotLegend, ReachCone
       00-bases/                widgets du chapitre 0 (+ qkvData.ts, données partagées par ces widgets)
-      01-recurrence-profondeur/  widgets du chapitre 1
+      02-recurrence-temps/ … 06-recurrence-profondeur/  widgets des chapitres 2, 3 et 6
     preprocessing/
       01-mfcc/                 widgets du chapitre MFCC
     hpc/                       Legend (code couleur du type de travail), hw.ts (matériel de référence), widgets par chapitre
@@ -49,7 +49,7 @@ Les imports dans les `.mdx` utilisent l'alias `@/` (= `src/`) : `import Quiz fro
 
 ## Conventions
 
-- Un chapitre = un fichier dans `src/content/chapters/<cours>/`. Le frontmatter donne `num`, `title`, `summary` et `status` (`a-venir`, `en-cours`, `termine`). `num` est propre à chaque cours. La carte de progression du cours se met à jour toute seule.
+- Un chapitre = un fichier dans `src/content/chapters/<cours>/`. Le frontmatter donne `num`, `title`, `summary` et `status`, l'état de l'écriture : `plan` (plan seulement), `premier-jet` (rédigé, pas encore relu), `en-relecture` (relu et retouché par l'utilisateur), `termine` (validé ; seul l'utilisateur pose ce statut). `num` est propre à chaque cours. La carte de progression du cours se met à jour toute seule.
 - Un visuel interactif = un composant dans `src/components/<cours>/<chapitre>/`, importé dans le `.mdx` du chapitre ; ce qui sert à plusieurs chapitres du même cours va dans `src/components/<cours>/`, et ce qui sert à plusieurs cours dans `src/components/shared/`. Chaque widget s'accroche à son propre `data-widget` et n'utilise que les variables de `global.css`.
 - Le cours est une fiche de révision personnelle : texte court, pas d'analogies longues, formulations précises.
 - Structure d'un concept dans un chapitre : visuel, intuition en 2-3 phrases, équations courtes, encadré `.retain` « À retenir » (3-5 puces), puis les questions de vérification. Les questions vont dans un `<Quiz>` (replié par défaut) ; chaque question est suivie de sa réponse dans un `<Reveal>` (floutée, nette d'un clic).

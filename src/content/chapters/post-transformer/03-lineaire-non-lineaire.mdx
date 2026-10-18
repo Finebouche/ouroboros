@@ -1,0 +1,168 @@
+---
+num: 3
+title: "Linéaire contre non linéaire"
+summary: "Pourquoi un état linéaire se calcule par scan parallèle et pas un tanh ; l'attention linéaire comme RNN à état matriciel ; le calcul par chunks entre les deux."
+status: premier-jet
+---
+import Reveal from '@/components/shared/Reveal.astro';
+import Quiz from '@/components/shared/Quiz.astro';
+import Refs from '@/components/shared/Refs.astro';
+import ComposeFig from '@/components/post-transformer/03-lineaire-non-lineaire/ComposeFig.astro';
+import ScanWidget from '@/components/post-transformer/03-lineaire-non-lineaire/ScanWidget.astro';
+import LinearAttn from '@/components/post-transformer/03-lineaire-non-lineaire/LinearAttn.astro';
+import ChunkWidget from '@/components/post-transformer/03-lineaire-non-lineaire/ChunkWidget.astro';
+
+Un RNN a un avantage sur l'attention : son état a une taille fixe, donc la génération coûte autant à chaque token. Mais il doit aussi **s'entraîner en parallèle** sur toute la séquence, sans quoi l'entraînement est trop lent. Tout dépend de la forme de la récurrence.
+
+## 1. Pourquoi un tanh impose l'ordre
+
+$$
+h_t = \tanh(W_h\, h_{t-1} + W_x\, x_t)
+$$
+
+Pour calculer $h_t$, il faut $h_{t-1}$ **en entier**, donc tous les états précédents : $s$ étapes l'une après l'autre. On ne parallélise que sur le batch et sur les dimensions de $h$, jamais sur le temps. C'est le problème du RNN et du LSTM (chapitre 2).
+
+Pour calculer tous les états d'un coup, il faudrait résumer « les pas de $i$ à $j$ » par un objet de taille fixe, combinable avec le résumé d'un autre intervalle :
+
+<ComposeFig />
+
+## 2. Le scan associatif
+
+Si la récurrence est **linéaire en l'état** :
+
+$$
+h_t = a_t \odot h_{t-1} + b_t, \qquad h_0 = 0
+$$
+
+où $a_t$ et $b_t$ ne dépendent que de l'entrée $x_t$ (pas de $h$). Chaque pas est une application affine $h \mapsto a_t h + b_t$, notée $(a_t, b_t)$, et la composition de deux pas est un opérateur **associatif** :
+
+$$
+(a_2, b_2) \circ (a_1, b_1) = (a_2 a_1,\; a_2 b_1 + b_2)
+$$
+
+L'associativité permet de regrouper les combinaisons dans l'ordre qu'on veut : c'est un **scan** (somme préfixe) parallèle. Chaque case garde la composition des derniers pas ; à chaque niveau, elle se combine avec celle située $2^k$ pas avant.
+
+<ScanWidget />
+
+- **Profondeur** : $\lceil \log_2 s \rceil$ niveaux au lieu de $s - 1$ étapes ; chaque niveau est parallèle sur tous les $t$. Le prix : plus de calcul au total ($s \log s$ pour cette variante, de Hillis et Steele ; la variante de Blelloch ramène le travail à $O(s)$ avec une profondeur doublée). En JAX, c'est `lax.associative_scan` ; le cours [HPC, chapitre 3](/hpc/03-transformations/) le relie au parallélisme du matériel.
+- **$a_t$ et $b_t$ peuvent dépendre de $x_t$**, de façon non linéaire (une porte, un softplus…) : on les calcule d'abord, en parallèle sur $t$. Seule la dépendance à l'état $h$ doit être linéaire.
+- **Élément par élément** : avec $a_t \odot h$ (un $a_t$ par composante), chaque dimension est un scan indépendant. Avec une vraie matrice $A_t$, la composition demande des produits matriciels $d \times d$ : c'est pourquoi les modèles récents utilisent des matrices diagonales ou structurées (chapitre 4).
+
+<div class="retain">
+
+**À retenir**
+
+- Un tanh impose $s$ étapes séquentielles : $h_t$ a besoin de $h_{t-1}$ en entier.
+- Un pas linéaire $h \mapsto a h + b$ se résume par la paire $(a, b)$ ; la composition est associative.
+- Donc un scan donne tous les états en $\lceil \log_2 s \rceil$ niveaux parallèles, avec les mêmes valeurs que le calcul séquentiel.
+- Linéaire en l'**état**, pas en l'entrée : $a_t$, $b_t$ peuvent être des fonctions quelconques de $x_t$.
+
+</div>
+
+<Refs items={[["Parallelizing Linear Recurrent Neural Nets Over Sequence Length", "Martin & Cundy", 2017, "1709.04057"]]} />
+
+## 3. L'attention linéaire est un RNN
+
+Dans l'attention causale, retirons le softmax : le score reste le produit scalaire $q_t \cdot k_j$. La sortie du mot $t$ devient
+
+$$
+o_t = \sum_{j \le t} (q_t \cdot k_j)\, v_j = \Big( \sum_{j \le t} v_j\, k_j^{\top} \Big)\, q_t = S_t\, q_t
+$$
+
+où $S_t = \sum_{j \le t} v_j k_j^\top$ est une matrice $d \times d$ : la somme des **produits extérieurs** $v_j k_j^\top$. On l'obtient mot par mot :
+
+$$
+S_t = S_{t-1} + v_t\, k_t^{\top}, \qquad o_t = S_t\, q_t
+$$
+
+C'est une récurrence linéaire (ici $a = 1$, $b_t = v_t k_t^\top$), donc un scan fonctionne aussi. Le widget calcule les deux formes sur les mots du chapitre 0.
+
+<LinearAttn />
+
+- **$S$ est une mémoire associative** : on y écrit une association clé → valeur par un produit extérieur, et on la lit avec une requête.
+- **Taille fixe** : $d \times d$ nombres, quel que soit le nombre de mots lus. Le KV cache d'une attention softmax, lui, gagne une paire $(k, v)$ par mot (chapitre 0, section 3).
+- **Ce qu'on perd** : sans softmax, les scores ne sont plus normalisés ni « concentrés » sur quelques mots ; toutes les associations s'additionnent dans $S$ et peuvent se brouiller. L'attention linéaire d'origine remplace $\exp(q \cdot k)$ par un produit de transformées $\phi(q) \cdot \phi(k)$ et divise la sortie par $\phi(q_t) \cdot z_t$, où $z_t = \sum_{j \le t} \phi(k_j)$ s'accumule lui aussi à chaque mot ; les variantes récentes ajoutent des portes ou une règle de mise à jour plus fine (chapitre 4).
+
+<Refs items={[["Transformers are RNNs: Fast Autoregressive Transformers with Linear Attention", "Katharopoulos et al.", 2020, "2006.16236"]]} />
+
+## 4. Calcul par chunks : entre les deux
+
+Deux façons de calculer la même sortie, aux deux extrêmes :
+
+- **Récurrente** : $s$ étapes séquentielles, peu de calcul, mais des opérations vecteur-matrice qui exploitent mal un GPU.
+- **Parallèle** : une seule étape, mais $s(s+1)/2$ cases, comme l'attention.
+
+On découpe la séquence en **chunks** de $C$ mots. Dans un chunk, on calcule tout d'un coup avec des produits matriciels (la forme parallèle, sur $C \times C$ cases). Entre deux chunks, l'état $S$ passe de l'un à l'autre (la forme récurrente, avec $s/C$ étapes). $C = 1$ redonne la récurrence ; $C = s$ redonne l'attention parallèle.
+
+<ChunkWidget />
+
+- Le résultat est **exactement le même** que les deux formes précédentes (vérifié sur un exemple numérique) : seul l'ordre des calculs change.
+- Un grand $C$ exploite mieux les produits matriciels des GPU, un petit $C$ réduit le calcul dans les chunks : les implémentations choisissent $C$ selon le matériel.
+- Cette forme est celle des implémentations modernes de l'attention linéaire à portes (GLA) ; la dualité entre cette forme matricielle et les modèles à espace d'états fait l'objet de Mamba-2.
+
+<Refs items={[["Gated Linear Attention Transformers with Hardware-Efficient Training", "Yang et al.", 2023, "2312.06635"], ["Transformers are SSMs: Generalized Models and Efficient Algorithms Through Structured State Space Duality", "Dao & Gu", 2024, "2405.21060"]]} />
+
+## 5. Le prix de la linéarité
+
+Un tanh a plus d'expressivité à chaque pas, mais ne s'entraîne qu'en séquence. Un état linéaire s'entraîne en parallèle, mais :
+
+- **la non-linéarité se déplace** : elle vit dans $a_t$, $b_t$ (fonctions de $x_t$) et entre les couches (MLP), pas dans l'état.
+- **l'expressivité est limitée** : Merrill et al. montrent que des modèles à espace d'états ne sont pas plus expressifs que les transformers pour suivre un état (par exemple composer des permutations), malgré leur forme récurrente.
+- **l'état est de taille fixe** : le rappel exact d'un mot lointain est limité par $d \times d$ nombres (chapitre 4).
+
+<div class="retain">
+
+**À retenir**
+
+- Sans softmax, l'attention causale vaut $o_t = S_t q_t$ avec $S_t = S_{t-1} + v_t k_t^\top$ : un RNN à état matriciel de taille fixe.
+- Trois façons de calculer la même chose : récurrente ($s$ étapes), parallèle ($s^2$ cases), par chunks (le meilleur compromis).
+- Entraîner en parallèle exige une récurrence linéaire **en l'état** ; la non-linéarité passe dans les entrées, les portes et les couches.
+- Le prix : un état de taille fixe, donc un rappel limité.
+
+</div>
+
+<Refs items={[["The Illusion of State in State-Space Models", "Merrill, Petty & Sabharwal", 2024, "2404.08819"]]} />
+
+<Quiz>
+
+**Q1.** Pour $s = 1000$, combien d'étapes séquentielles pour une récurrence en tanh, et combien de niveaux pour un scan sur une récurrence linéaire ?
+
+<Reveal>
+
+1000 étapes (chacune attend la précédente) contre $\lceil \log_2 1000 \rceil = 10$ niveaux. Chaque niveau du scan est parallèle sur tous les mots.
+
+</Reveal>
+
+**Q2.** On compose le pas $(a_1, b_1) = (0{,}5;\ 1)$ puis le pas $(a_2, b_2) = (2;\ -1)$. Quel est le pas résultant ?
+
+<Reveal>
+
+$(a_2 a_1,\ a_2 b_1 + b_2) = (1;\ 2 \times 1 - 1) = (1;\ 1)$. On vérifie : $h \mapsto 2(0{,}5\,h + 1) - 1 = h + 1$.
+
+</Reveal>
+
+**Q3.** Pourquoi $a_t$ peut-il être une fonction non linéaire de $x_t$ sans empêcher le scan ?
+
+<Reveal>
+
+Parce que $a_t$ et $b_t$ ne dépendent que de l'entrée : on les calcule d'abord, en parallèle sur tous les $t$. La récurrence reste linéaire en l'état $h$, et c'est ce qui rend la composition associative.
+
+</Reveal>
+
+**Q4.** Pourquoi l'état $S$ de l'attention linéaire a-t-il une taille fixe, alors que le KV cache d'une attention softmax grandit ?
+
+<Reveal>
+
+Sans softmax, les termes $v_j k_j^\top$ s'additionnent en une seule matrice $d \times d$ : on n'a plus besoin de garder les $k_j$ et $v_j$ séparément pour les comparer ensuite à chaque nouvelle requête. Avec le softmax, chaque score doit être recalculé puis normalisé sur tous les mots, donc il faut garder toutes les paires.
+
+</Reveal>
+
+**Q5.** Avec $s = 16$ mots et des chunks de $C = 4$, combien d'étapes séquentielles et combien de cases calculées dans les chunks ?
+
+<Reveal>
+
+$16 / 4 = 4$ étapes séquentielles, et $4 \times \tfrac{4 \times 5}{2} = 40$ cases (contre $16 \times 17 / 2 = 136$ pour l'attention entière).
+
+</Reveal>
+
+</Quiz>

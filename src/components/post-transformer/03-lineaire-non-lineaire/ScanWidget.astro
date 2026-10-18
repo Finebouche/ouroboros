@@ -1,0 +1,87 @@
+---
+// Chapitre 3 : h_t = a_t h_{t-1} + b_t calculé en T − 1 étapes séquentielles, ou par scan de Hillis-Steele en ⌈log₂ T⌉ niveaux.
+// Chaque case garde une paire (A, B) = la composition des derniers pas ; quand elle couvre tout le début, B est l'état h_t.
+import katex from 'katex';
+const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
+const F = tx('(a_2, b_2) \\circ (a_1, b_1) = (a_2 a_1,\\; a_2 b_1 + b_2)');
+---
+<div class="widget scanw" data-widget="scanw">
+  <div class="row"><span>Longueur s :</span><span class="seg" data-ref="tt"></span><span class="seg" data-ref="ctl"></span></div>
+  <div class="fm" set:html={F} />
+  <svg data-ref="svg" role="img" aria-label="Scan parallèle : niveau par niveau, chaque case combine sa paire avec celle située 2^k pas avant"></svg>
+  <div class="kpis">
+    <div><span>Séquentiel</span><b data-ref="ks"></b><i>un pas après l'autre : h<sub>t</sub> attend h<sub>t−1</sub></i></div>
+    <div><span>Scan parallèle</span><b data-ref="kp"></b><i>⌈log₂ s⌉ niveaux, chacun parallèle sur les t</i></div>
+    <div><span>Travail</span><b data-ref="kw"></b><i>combinaisons au total (scan de Hillis-Steele)</i></div>
+  </div>
+  <p class="note">Valeurs a<sub>t</sub> et b<sub>t</sub> tirées au hasard. Case grise : paire encore partielle (les derniers pas seulement). Case bleue : la paire couvre tout le début de la séquence, son B est l'état h<sub>t</sub>, identique à celui du calcul séquentiel.</p>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="scanw"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const AB = [0.9, 0.5, 1.1, 0.7, 0.8, 0.6, 1.0, 0.4, 0.9, 1.2, 0.5, 0.8, 0.7, 1.0, 0.6, 0.9];
+    const BB = [1, -2, 0.5, 1.5, -1, 2, 0.3, -0.5, 1.2, -0.8, 1.6, -1.1, 0.4, 0.9, -1.4, 0.7];
+    let T = 8, lvl = 0;
+    let levels: [number, number][][] = [];
+    const fm = (v: number) => (Math.abs(v) < 0.005 ? '0' : v.toFixed(1)).replace('-', '−');
+    const comb = (l: [number, number], r: [number, number]): [number, number] => [l[0] * r[0], l[0] * r[1] + l[1]];
+    function build() {
+      let cur: [number, number][] = Array.from({ length: T }, (_, i) => [AB[i], BB[i]]);
+      levels = [cur.map((c) => [...c] as [number, number])];
+      for (let k = 1; k < T; k *= 2) { cur = cur.map((c, i) => (i >= k ? comb(c, cur[i - k]) : c)); levels.push(cur.map((c) => [...c] as [number, number])); }
+    }
+    const nlev = () => levels.length - 1;
+    const mk = (label: string, f: () => void) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', f); $('ctl').appendChild(b); return b; };
+    [4, 8, 16].forEach((n) => { const b = document.createElement('button'); b.textContent = String(n); b.dataset.n = String(n); b.addEventListener('click', () => { T = n; lvl = 0; build(); draw(); }); $('tt').appendChild(b); });
+    mk('niveau suivant', () => { if (lvl < nlev()) lvl++; draw(); });
+    mk('tout calculer', () => { lvl = nlev(); draw(); });
+    mk('recommencer', () => { lvl = 0; draw(); });
+    function draw() {
+      $('tt').querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.n === String(T)));
+      const cw = Math.min(40, Math.floor(600 / T)), ch = 40, ox = 100, oy = 24, rowH = 62;
+      const nl = nlev();
+      const W = ox + T * cw + 10, H = oy + (nl + 1) * rowH + 6;
+      let o = `<defs><marker id="sca" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--text-2)"/></marker></defs>`;
+      const cx = (i: number) => ox + i * cw + cw / 2;
+      for (let i = 0; i < T; i++) o += `<text x="${cx(i)}" y="${oy - 8}" text-anchor="middle" class="sl">t = ${i + 1}</text>`;
+      for (let k = 0; k <= nl; k++) {
+        const y = oy + k * rowH;
+        o += `<text x="${ox - 8}" y="${y + ch / 2 + 4}" text-anchor="end" class="sl2">${k === 0 ? 'entrée (a, b)' : 'niveau ' + k}</text>`;
+        const shown = k <= lvl;
+        for (let i = 0; i < T; i++) {
+          const [A, B] = levels[k][i];
+          const full = i + 1 <= 2 ** k;
+          const x = ox + i * cw + 2, w = cw - 4;
+          if (!shown) { o += `<rect x="${x}" y="${y}" width="${w}" height="${ch}" rx="5" fill="none" stroke="var(--border)" stroke-dasharray="3 3"/>`; continue; }
+          o += `<rect x="${x}" y="${y}" width="${w}" height="${ch}" rx="5" fill="${full && k > 0 ? 'var(--c-w)' : 'var(--text-2)'}" fill-opacity="${full && k > 0 ? 0.22 : 0.1}" stroke="${full && k > 0 ? 'var(--c-w)' : 'var(--border)'}"/>`;
+          o += `<text x="${cx(i)}" y="${y + 16}" text-anchor="middle" class="sa">${full && k > 0 ? '' : fm(A)}</text>`;
+          o += `<text x="${cx(i)}" y="${y + 31}" text-anchor="middle" class="sb${full && k > 0 ? ' fin' : ''}">${fm(B)}</text>`;
+          if (k > 0 && k === lvl) {
+            const step = 2 ** (k - 1);
+            if (i >= step) o += `<line x1="${cx(i - step)}" y1="${y - rowH + ch + 1}" x2="${cx(i) - 2}" y2="${y - 1}" stroke="var(--text-2)" stroke-width="1" marker-end="url(#sca)" opacity="0.7"/>`;
+          }
+        }
+      }
+      const svg = $('svg') as unknown as SVGSVGElement;
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.innerHTML = o;
+      $('ks').textContent = `${T - 1} étapes`;
+      $('kp').textContent = `${lvl} / ${nl} niveaux`;
+      let w = 0; for (let k = 1; k < T; k *= 2) w += T - k;
+      $('kw').innerHTML = `${w} <small>contre ${T - 1} en séquentiel</small>`;
+    }
+    build(); draw();
+  });
+</script>
+
+<style is:global>
+  .scanw .row { gap: 8px 14px; }
+  .scanw .row > .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .scanw .fm { margin: 2px 0 6px; font-size: 0.95rem; overflow-x: auto; overflow-y: hidden; }
+  .scanw svg { max-width: 680px; margin: 6px auto 0; }
+  .scanw svg text.sl { font: 10.5px var(--font); fill: var(--text-2); }
+  .scanw svg text.sl2 { font: 11px var(--font); fill: var(--text-2); }
+  .scanw svg text.sa { font: 11px var(--font); fill: var(--text-2); }
+  .scanw svg text.sb { font: 600 12px var(--font); fill: var(--text); }
+  .scanw svg text.sb.fin { fill: var(--c-w); }
+</style>

@@ -1,0 +1,81 @@
+---
+// Chapitre 2 : une cellule LSTM sur un pas. Les trois portes (f, i, o) sont des robinets entre 0 et 1 ;
+// la cellule c est un convoyeur : c_t = f · c_{t-1} + i · g, puis h_t = o · tanh(c_t).
+import katex from 'katex';
+const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
+const F = tx('c_t = f_t \\odot c_{t-1} + i_t \\odot g_t, \\qquad h_t = o_t \\odot \\tanh(c_t)');
+---
+<div class="widget lstmc" data-widget="lstmc">
+  <div class="sl">
+    <label><span>Cellule précédente c<sub>t−1</sub></span><input type="range" data-ref="c" min="-2" max="2" step="0.1" value="1.5" /><b data-ref="c-out"></b></label>
+    <label><span>Candidat g<sub>t</sub> (nouvelle info)</span><input type="range" data-ref="g" min="-1" max="1" step="0.1" value="-0.8" /><b data-ref="g-out"></b></label>
+    <label><span>Porte d'oubli f<sub>t</sub></span><input type="range" data-ref="f" min="0" max="1" step="0.05" value="0.9" /><b data-ref="f-out"></b></label>
+    <label><span>Porte d'entrée i<sub>t</sub></span><input type="range" data-ref="i" min="0" max="1" step="0.05" value="0.3" /><b data-ref="i-out"></b></label>
+    <label><span>Porte de sortie o<sub>t</sub></span><input type="range" data-ref="o" min="0" max="1" step="0.05" value="0.8" /><b data-ref="o-out"></b></label>
+  </div>
+  <div class="fm" set:html={F} />
+  <svg data-ref="svg" role="img" aria-label="Cellule LSTM : la cellule précédente est multipliée par la porte d'oubli, on y ajoute le candidat multiplié par la porte d'entrée, puis la sortie est filtrée par la porte de sortie"></svg>
+  <div class="kpis">
+    <div><span>Cellule c<sub>t</sub></span><b data-ref="k1"></b><i data-ref="k1s"></i></div>
+    <div><span>État caché h<sub>t</sub></span><b data-ref="k2"></b><i data-ref="k2s"></i></div>
+  </div>
+  <p class="note">Les portes valent entre 0 (fermée) et 1 (ouverte) ; dans un vrai LSTM, ce sont des sigmoïdes de l'entrée et de l'état précédent, apprises. Ici on les règle à la main.</p>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="lstmc"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const v = (r: string) => +($(r) as HTMLInputElement).value;
+    const fm = (x: number) => x.toFixed(2).replace('.', ',').replace('-', '−');
+    function draw() {
+      const c0 = v('c'), g = v('g'), f = v('f'), i = v('i'), ot = v('o');
+      ['c', 'g', 'f', 'i', 'o'].forEach((r) => ($(r + '-out').textContent = fm(v(r)).replace(/,00$/, '').replace(/(,\d)0$/, '$1')));
+      const keep = f * c0, add = i * g, c1 = keep + add, h1 = ot * Math.tanh(c1);
+      const W = 640, H = 250, y = 120, vmax = 3;
+      const bar = (cx: number, val: number, label: string) => {
+        const h = (Math.abs(val) / vmax) * 52, up = val >= 0;
+        return `<rect x="${cx - 13}" y="${up ? y - h : y}" width="26" height="${Math.max(1, h)}" rx="3" fill="var(--c-model-loop)" fill-opacity="${up ? 0.8 : 0.35}" stroke="var(--c-model-loop)"/>` +
+          `<text x="${cx}" y="${y + 70}" text-anchor="middle" class="ls">${label}</text><text x="${cx}" y="${y + 84}" text-anchor="middle" class="lv">${fm(val)}</text>`;
+      };
+      const gate = (cx: number, cy: number, name: string, val: number) =>
+        `<circle cx="${cx}" cy="${cy}" r="17" fill="var(--accent)" fill-opacity="${(0.08 + 0.5 * val).toFixed(2)}" stroke="var(--accent)"/><text x="${cx}" y="${cy + 4}" text-anchor="middle" class="lg">${name}</text><text x="${cx}" y="${cy - 24}" text-anchor="middle" class="lv">${fm(val)}</text>`;
+      let o = `<defs><marker id="lsa" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--text-2)"/></marker></defs>`;
+      o += `<line x1="20" y1="${y}" x2="${W - 20}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
+      // c_{t-1}
+      o += `<text x="60" y="${y - 62}" text-anchor="middle" class="lh">c<tspan baseline-shift="sub" font-size="8">t−1</tspan></text>` + bar(60, c0, 'c précédente');
+      o += `<line x1="86" y1="${y}" x2="150" y2="${y}" stroke="var(--text-2)" marker-end="url(#lsa)"/>`;
+      // × f
+      o += gate(190, y, '×f', f) + `<line x1="207" y1="${y}" x2="262" y2="${y}" stroke="var(--text-2)" marker-end="url(#lsa)"/>`;
+      o += bar(300, keep, 'conservé');
+      // + i·g
+      o += `<line x1="326" y1="${y}" x2="372" y2="${y}" stroke="var(--text-2)" marker-end="url(#lsa)"/><text x="385" y="${y + 5}" text-anchor="middle" class="lg2">+</text>`;
+      o += bar(430, add, 'ajouté i·g') + gate(430, y - 90, '×i', i);
+      o += `<text x="480" y="${y - 88}" text-anchor="start" class="ls">g = ${fm(g)}</text>`;
+      o += `<line x1="430" y1="${y - 71}" x2="430" y2="${y - 56}" stroke="var(--text-2)" marker-end="url(#lsa)"/>`;
+      o += `<line x1="456" y1="${y}" x2="520" y2="${y}" stroke="var(--text-2)" marker-end="url(#lsa)"/>`;
+      // c_t
+      o += bar(560, c1, 'c suivante') + `<text x="560" y="${y - 62}" text-anchor="middle" class="lh">c<tspan baseline-shift="sub" font-size="8">t</tspan></text>`;
+      // sortie
+      o += gate(610, y + 100, '×o', ot) + `<text x="560" y="${y + 126}" text-anchor="middle" class="ls">h = o · tanh(c) = ${fm(h1)}</text>`;
+      const svg = $('svg') as unknown as SVGSVGElement;
+      svg.setAttribute('viewBox', `0 0 ${W} ${H + 10}`); svg.innerHTML = o;
+      $('k1').textContent = fm(c1);
+      $('k1s').textContent = f > 0.95 && i < 0.1 ? 'la cellule est presque inchangée : l\'information voyage sans perte' : f < 0.1 ? 'la cellule est effacée avant l\'ajout' : `${fm(f)} × ${fm(c0)} conservé + ${fm(add)} ajouté`;
+      $('k2').textContent = fm(h1);
+      $('k2s').textContent = ot < 0.1 ? 'porte de sortie fermée : rien n\'est exposé à la couche suivante' : 'ce que la cellule montre au reste du réseau';
+    }
+    root.querySelectorAll('input[type=range]').forEach((r) => r.addEventListener('input', draw));
+    draw();
+  });
+</script>
+
+<style is:global>
+  .lstmc .sl { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 6px 24px; }
+  .lstmc .fm { margin: 4px 0 2px; font-size: 0.95rem; overflow-x: auto; overflow-y: hidden; }
+  .lstmc svg { max-width: 680px; margin: 2px auto 0; }
+  .lstmc svg text.ls { font: 10.5px var(--font); fill: var(--text-2); }
+  .lstmc svg text.lv { font: 600 11px var(--font); fill: var(--text); }
+  .lstmc svg text.lh { font: 600 12px var(--font); fill: var(--text); }
+  .lstmc svg text.lg { font: 600 11px var(--font); fill: var(--text); }
+  .lstmc svg text.lg2 { font: 600 20px var(--font); fill: var(--text-2); }
+</style>

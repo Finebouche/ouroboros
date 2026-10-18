@@ -7,6 +7,7 @@ Ce dépôt est le site de cours personnel de l'utilisateur (Astro + MDX). La str
 - **Ne jamais commiter**, pousser ni ouvrir de PR dans ce dépôt sans demande explicite. Modifier les fichiers, laisser l'arbre de travail non commité.
 - Tout en **français** : le contenu, les réponses, les commentaires de code.
 - L'utilisateur relit et **supprime lui-même** des paragraphes. Ne pas remettre ce qu'il a retiré. Relire le fichier avant chaque modification : il a pu changer depuis.
+- **Statut d'un chapitre** = état de l'écriture : `plan`, puis `premier-jet` quand tu viens de le rédiger. `en-relecture` quand l'utilisateur l'a relu et retouché. **Ne jamais mettre `termine`** : seul l'utilisateur pose ce statut.
 
 ## Le lecteur et le ton
 
@@ -16,6 +17,12 @@ Ce dépôt est le site de cours personnel de l'utilisateur (Astro + MDX). La str
 - Ne pas supposer de bases : si une notion n'est pas acquise (ex. Bellman), partir de zéro.
 - Termes officiels (en anglais entre parenthèses à la première apparition). Quand un nom de famille ou de catégorie est une invention de ta part, le dire à l'utilisateur.
 - Éviter les doublons entre le texte, la légende d'une figure et la note d'un widget : chaque information à un seul endroit.
+
+## Notations, renvois et vérifications
+
+- **Notations** : respecter celles du cours (Post-Transformer : tableau « Notations du cours » au début du chapitre 0 ; $s$ longueur, $L$ couches, $T$ passes en profondeur, $W$ fenêtre, $W_h$ et $W_x$ pour un RNN). Ne pas réutiliser un symbole avec un autre sens.
+- **Renvois** : « chapitre N, section M » se vérifie à chaque réorganisation (numéros et titres). Les liens entre cours sont en Markdown : `[HPC, chapitre 3](/hpc/03-transformations/)`.
+- **Points non vérifiés** : les noter dans `A_VERIFIER.md` (racine du dépôt), et les retirer quand ils sont vérifiés.
 
 ## Structure d'un chapitre
 

@@ -1,23 +1,23 @@
 ---
-num: 1
+num: 6
 title: "Récurrence en profondeur"
 summary: "Looped transformers : un bloc partagé bouclé T fois, coûts, champ réceptif T·W, nombre de passes variable, sortie anticipée, stabilité."
-status: en-cours
+status: en-relecture
 sidebar: loop
 ---
 import ArchMarker from '@/components/shared/ArchMarker.astro';
 import Reveal from '@/components/shared/Reveal.astro';
 import Quiz from '@/components/shared/Quiz.astro';
 import Refs from '@/components/shared/Refs.astro';
-import LoopStack from '@/components/post-transformer/01-recurrence-profondeur/LoopStack.astro';
+import LoopStack from '@/components/post-transformer/06-recurrence-profondeur/LoopStack.astro';
 import ReachCone from '@/components/post-transformer/ReachCone.astro';
-import TrainDepth from '@/components/post-transformer/01-recurrence-profondeur/TrainDepth.astro';
-import EarlyExit from '@/components/post-transformer/01-recurrence-profondeur/EarlyExit.astro';
-import Stability from '@/components/post-transformer/01-recurrence-profondeur/Stability.astro';
+import TrainDepth from '@/components/post-transformer/06-recurrence-profondeur/TrainDepth.astro';
+import EarlyExit from '@/components/post-transformer/06-recurrence-profondeur/EarlyExit.astro';
+import Stability from '@/components/post-transformer/06-recurrence-profondeur/Stability.astro';
 
 <ArchMarker parts="block loop" label="Un bloc partagé, répété T fois sur chaque token" />
 
-Au lieu d'empiler $N$ couches différentes, on réutilise **le même bloc** (mêmes poids) plusieurs fois de suite. Exemples : Universal Transformer (2018), ALBERT (2019, poids partagés entre couches), et plus récemment Huginn (2025), Ouro (2025) et Parcae (2026).
+Au lieu d'empiler $L$ couches différentes, on réutilise **le même bloc** (mêmes poids) plusieurs fois de suite. Exemples : Universal Transformer (2018), ALBERT (2019, poids partagés entre couches), et plus récemment Huginn (2025), Ouro (2025) et Parcae (2026).
 
 <Refs items={[["Universal Transformers", "Dehghani et al.", 2018, "1807.03819"], ["ALBERT", "Lan et al.", 2019, "1909.11942"], ["Scaling up Test-Time Compute with Latent Reasoning: A Recurrent Depth Approach (Huginn)", "Geiping et al.", 2025, "2502.05171"], ["Scaling Latent Reasoning via Looped Language Models (Ouro)", "Zhu et al.", 2025, "2510.25741"], ["Parcae: Scaling Laws For Stable Looped Language Models", "Prairie et al.", 2026, "2604.12946"]]} />
 
@@ -39,7 +39,7 @@ $$
 
 ### Ce que ça coûte
 
-- Un bloc a environ $12\,d^2$ paramètres ($4d^2$ d'attention, $8d^2$ de MLP ; chapitre 0, section 7) et coûte environ 2 opérations par paramètre et par token. Les barres du widget le montrent : boucler divise les **paramètres** par $T$, mais le **calcul**, la **mémoire d'activations** et le **KV cache** restent ceux d'un modèle de $kT$ couches (chaque passe a ses propres $K$, $V$).
+- Un bloc a environ $12\,d^2$ paramètres ($4d^2$ d'attention, chapitre 0, section 5 ; $8d^2$ de MLP avec $d_{\text{ff}} = 4d$) et coûte environ 2 opérations par paramètre et par token. Les barres du widget le montrent : boucler divise les **paramètres** par $T$, mais le **calcul**, la **mémoire d'activations** et le **KV cache** restent ceux d'un modèle de $kT$ couches (chaque passe a ses propres $K$, $V$).
 - Le KV cache peut être réduit : Ouro, au décodage, ne garde que celui de la dernière passe (4 fois moins, perte de 0,1 à 2 points selon le benchmark), mais pas au prefill, où chaque passe garde le sien (section 4). Et on peut ne rétropropager qu'à travers les dernières passes (section 3).
 
 <div class="retain">
@@ -103,7 +103,7 @@ Un bloc : $12 \times 2048^2 \approx 50$ millions. Classique 12 couches : environ
 
 ## 2. Champ réceptif avec une fenêtre : T·W
 
-Avec une attention à fenêtre glissante $W$ (chapitre 0, section 5), une passe permet à un token de voir $W - 1$ tokens en arrière. Chaque passe repart des vecteurs de la passe précédente, qui ont eux-mêmes déjà regardé $W - 1$ tokens plus loin : la portée s'élargit à chaque passe.
+Avec une attention à fenêtre glissante $W$ (chapitre 0, section 4), une passe permet à un token de voir $W - 1$ tokens en arrière. Chaque passe repart des vecteurs de la passe précédente, qui ont eux-mêmes déjà regardé $W - 1$ tokens plus loin : la portée s'élargit à chaque passe.
 
 <ReachCone />
 

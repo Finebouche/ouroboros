@@ -2,7 +2,7 @@
 num: 3
 title: "Transformations et matériel : vmap, scan, grad"
 summary: "Ce que chaque transformation fait au matériel : vmap réutilise les données, scan reste séquentiel (sauf récurrence linéaire), grad garde la passe avant en mémoire."
-status: en-cours
+status: en-relecture
 ---
 import Reveal from '@/components/shared/Reveal.astro';
 import Quiz from '@/components/shared/Quiz.astro';
@@ -42,7 +42,7 @@ $$
 (a, b) \circ (a', b') = (a' a,\ a' b + b'),
 $$
 
-et cette opération est **associative**. On peut donc regrouper les pas deux à deux : `lax.associative_scan` calcule les $T$ états avec une profondeur $O(\log T)$. C'est la raison d'être des modèles récurrents linéaires (Mamba, RWKV, DeltaNet…) : voir le cours Post-Transformer, chapitre 3.
+et cette opération est **associative**. On peut donc regrouper les pas deux à deux : `lax.associative_scan` calcule les $T$ états avec une profondeur $O(\log T)$. C'est la raison d'être des modèles récurrents linéaires (Mamba, RWKV, DeltaNet…) : voir le cours [Post-Transformer](/post-transformer/03-lineaire-non-lineaire/), chapitres 3 et 4.
 - **Brent** : avec $P$ voies, temps $\approx \text{travail}/P + \text{profondeur}$. Le scan parallèle fait plus de travail que le scan séquentiel ; il ne gagne que si $P$ est grand.
 
 ## 3. `grad` : la mémoire du mode inverse

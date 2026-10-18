@@ -2,7 +2,7 @@
 num: 0
 title: Bases
 summary: Modèle autoregressif, teacher forcing, attention causale, KV cache, fenêtre glissante, multi-têtes, encodage des positions.
-status: en-cours
+status: en-relecture
 sidebar: transformer
 ---
 import CausalAttention from '@/components/post-transformer/00-bases/CausalAttention.astro';
@@ -19,7 +19,7 @@ import MultiHead from '@/components/post-transformer/00-bases/MultiHead.astro';
 import ReachCone from '@/components/post-transformer/ReachCone.astro';
 import RoPEClock from '@/components/post-transformer/00-bases/RoPEClock.astro';
 
-<ArchMarker label="Vue d'ensemble : un transformer décodeur, un bloc répété N fois" />
+<ArchMarker label="Vue d'ensemble : un transformer décodeur, un bloc répété L fois" />
 
 <ArchMarker parts="attn" label="Attention causale : Q, K, V et le masque M" />
 
@@ -34,6 +34,19 @@ $$
 - $\sqrt{d_k}$ : normalisation, avec $d_k$ la dimension d'une tête de l'attention.
 
 <Refs items={[["Attention Is All You Need", "Vaswani et al.", 2017, "1706.03762"]]} />
+
+### Notations du cours
+
+| Symbole | Sens |
+|---|---|
+| $s$ | longueur de la séquence (nombre de tokens) ; $t$ : position, ou pas de temps |
+| $L$ | nombre de couches empilées |
+| $d_{\text{model}}$, $d_k$, $d_v$, $d_{\text{ff}}$ | dimension du vecteur d'un token, d'une clé, d'une valeur, de la couche cachée du MLP |
+| $h$, $h_{kv}$ | nombre de têtes d'attention, de têtes de clés et valeurs (sans indice de temps) |
+| $W$ | taille de la fenêtre glissante |
+| $W_Q$, $W_K$, $W_V$, $W_O$ | matrices de projection de l'attention ; $W_h$, $W_x$ : matrices d'un RNN (chapitre 2) |
+| $h_t$, $S_t$ | état récurrent au pas $t$ : vecteur (RNN) ou matrice (attention linéaire, chapitre 3) |
+| $T$, $k$ | nombre de passes et nombre de blocs d'une boucle en profondeur (chapitre 6) |
 
 <ArchMarker parts="attn kv" label="KV cache : K et V gardés en mémoire à la génération" />
 
@@ -272,7 +285,7 @@ $$
 - Exemple réaliste : avec $L = 32$ couches et $W = 4096$, la portée est de $32 \times 4095 + 1 = 131\,041$ tokens.
 - Le mot du début n'est pas lu directement : son information passe de vecteur en vecteur, une couche à la fois.
 - La plupart des LLM (de type GPT ou Llama) n'ont pas de fenêtre : $W = s$, et chaque mot lit directement tout le contexte. La fenêtre glissante est un choix de certains modèles, pour économiser le KV cache.
-- Avec une boucle de $T$ passes au lieu de $L$ couches, c'est le même cône (chapitre 1, section 2).
+- Avec une boucle de $T$ passes au lieu de $L$ couches, c'est le même cône (chapitre 6, section 2).
 
 <div class="retain">
 
@@ -308,7 +321,7 @@ Avec une seule couche, non : il est hors de la fenêtre. Avec plusieurs couches,
 
 <Reveal>
 
-Au-delà de la portée des fenêtres empilées, l'attention ne peut plus rien voir. Un état qui passe de token en token est alors la seule route pour garder une information plus ancienne, avec une mémoire de taille fixe. On le détaillera aux chapitres 7 et 8.
+Au-delà de la portée des fenêtres empilées, l'attention ne peut plus rien voir. Un état qui passe de token en token est alors la seule route pour garder une information plus ancienne, avec une mémoire de taille fixe. On le détaillera aux chapitres 2 à 4.
 
 </Reveal>
 
@@ -336,7 +349,7 @@ $$
 - $W_Q^{(m)}, W_K^{(m)}, W_V^{(m)} \in \mathbb{R}^{d_{\text{model}} \times d_k}$, avec $d_k = d_{\text{model}} / h$.
 - $[\dots]$ : les $h$ sorties ($s \times d_k$ chacune) mises bout à bout donnent une matrice $s \times d_{\text{model}}$.
 - Paramètres : $4\, d_{\text{model}}^2$, quel que soit $h$. Couper en têtes ne coûte rien de plus.
-- KV cache : on garde $K$ et $V$ de chaque tête. Avec la GQA (section 4), plusieurs têtes de requête partagent les mêmes $K$, $V$.
+- KV cache : on garde $K$ et $V$ de chaque tête. Avec la GQA (section 3), plusieurs têtes de requête partagent les mêmes $K$, $V$.
 
 <div class="retain">
 

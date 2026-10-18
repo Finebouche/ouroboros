@@ -1,0 +1,81 @@
+---
+// Chapitre 2 : le gradient à travers N pas est un produit de N facteurs. Trois récurrences :
+// RNN linéaire (facteur w, exact), RNN tanh (facteur w·(1 − h²), simulé sur une entrée fixe), cellule LSTM (facteur f, la porte d'oubli).
+import katex from 'katex';
+const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
+const F = tx('\\frac{\\partial h_N}{\\partial h_1} = \\prod_{t=2}^{N} \\frac{\\partial h_t}{\\partial h_{t-1}}');
+---
+<div class="widget gradw" data-widget="gradw">
+  <div class="sl">
+    <label><span>Poids récurrent w (RNN)</span><input type="range" data-ref="w" min="0.5" max="1.5" step="0.01" value="0.9" /><b data-ref="w-out"></b></label>
+    <label><span>Porte d'oubli f (LSTM)</span><input type="range" data-ref="f" min="0.5" max="1" step="0.01" value="0.98" /><b data-ref="f-out"></b></label>
+  </div>
+  <div class="fm" set:html={F} />
+  <svg data-ref="svg" role="img" aria-label="Norme du gradient en fonction de la distance N, en échelle logarithmique, pour un RNN linéaire, un RNN tanh et une cellule LSTM"></svg>
+  <div class="kpis">
+    <div><span>RNN linéaire à N = 50</span><b data-ref="k1"></b><i>w<sup>N</sup> : s'évanouit sous 1, explose au-dessus</i></div>
+    <div><span>RNN tanh à N = 50</span><b data-ref="k2"></b><i>chaque facteur contient en plus (1 − h²) ≤ 1</i></div>
+    <div><span>Cellule LSTM à N = 50</span><b data-ref="k3"></b><i>le facteur est f : une porte apprise, proche de 1</i></div>
+  </div>
+  <p class="note">Axe vertical : log₁₀ de la norme du gradient (échelle logarithmique). En dessous de 10⁻⁶ le gradient est négligeable ; au-dessus de 10⁶ il fait diverger l'apprentissage. Le RNN tanh est simulé sur une entrée fixe (x<sub>t</sub> petit) ; pour la cellule LSTM on suit le chemin direct de la cellule, c<sub>t</sub> = f c<sub>t−1</sub> + …, où ∂c<sub>t</sub>/∂c<sub>t−1</sub> = f.</p>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="gradw"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const NMAX = 50, LMAX = 8;
+    const xs = Array.from({ length: NMAX + 1 }, (_, t) => 0.3 * (Math.sin(0.7 * t) + 0.5 * Math.cos(1.9 * t)));
+    const fm = (v: number) => v.toFixed(2).replace('.', ',');
+    const sci = (lg: number) => {
+      if (lg < -300) return '≈ 0';
+      const e = Math.floor(lg), m = Math.pow(10, lg - e);
+      return `${m.toFixed(1).replace('.', ',')} × 10${String(e).replace(/-/g, '⁻').replace(/\d/g, (d) => '⁰¹²³⁴⁵⁶⁷⁸⁹'[+d])}`;
+    };
+    function curves(w: number, f: number) {
+      const lin: number[] = [], tan: number[] = [], lstm: number[] = [];
+      let h = 0, l2 = 0;
+      for (let n = 1; n <= NMAX; n++) {
+        // n pas = n − 1 facteurs : ∂h_n/∂h_1 est un produit de t = 2 à n
+        lin.push((n - 1) * Math.log10(w));
+        h = Math.tanh(w * h + xs[n]);
+        if (n >= 2) l2 += Math.log10(Math.abs(w * (1 - h * h)) + 1e-300);
+        tan.push(l2);
+        lstm.push((n - 1) * Math.log10(f));
+      }
+      return { lin, tan, lstm };
+    }
+    function draw() {
+      const w = +($('w') as HTMLInputElement).value, f = +($('f') as HTMLInputElement).value;
+      $('w-out').textContent = fm(w); $('f-out').textContent = fm(f);
+      const c = curves(w, f);
+      const W = 640, H = 230, px = 52, py = 12, pw = 560, ph = 170;
+      const X = (n: number) => px + ((n - 1) / (NMAX - 1)) * pw;
+      const Y = (lg: number) => py + ph - ((Math.max(-LMAX, Math.min(LMAX, lg)) + LMAX) / (2 * LMAX)) * ph;
+      let o = `<rect x="${px}" y="${py}" width="${pw}" height="${ph}" rx="6" fill="var(--text-2)" fill-opacity="0.05" stroke="var(--border)"/>`;
+      [-6, 0, 6].forEach((g) => (o += `<line x1="${px}" y1="${Y(g)}" x2="${px + pw}" y2="${Y(g)}" stroke="${g === 0 ? 'var(--border)' : 'var(--text-2)'}" stroke-width="${g === 0 ? 1 : 0.8}" stroke-dasharray="${g === 0 ? '' : '3 4'}" opacity="${g === 0 ? 1 : 0.6}"/>`));
+      [-8, -6, -3, 0, 3, 6, 8].forEach((g) => (o += `<text x="${px - 6}" y="${Y(g) + 3}" text-anchor="end" class="gs">${g === 0 ? '1' : '10' + (g < 0 ? '⁻' : '') + '⁰¹²³⁴⁵⁶⁷⁸⁹'[Math.abs(g)]}</text>`));
+      o += `<text x="${px + pw - 4}" y="${Y(6) - 4}" text-anchor="end" class="gs">explose</text><text x="${px + pw - 4}" y="${Y(-6) + 11}" text-anchor="end" class="gs">s'évanouit</text>`;
+      [1, 10, 20, 30, 40, 50].forEach((n) => (o += `<text x="${X(n)}" y="${py + ph + 14}" text-anchor="middle" class="gs">${n}</text>`));
+      o += `<text x="${px + pw / 2}" y="${py + ph + 28}" text-anchor="middle" class="gs">distance N (pas)</text>`;
+      const line = (v: number[], col: string, dash = '') => `<polyline points="${v.map((g, i) => `${X(i + 1).toFixed(1)},${Y(g).toFixed(1)}`).join(' ')}" fill="none" stroke="${col}" stroke-width="2.4" ${dash ? `stroke-dasharray="${dash}"` : ''} stroke-linejoin="round"/>`;
+      o += line(c.lin, 'var(--c-model-loop)') + line(c.tan, 'var(--c-model-classic)', '5 3') + line(c.lstm, 'var(--accent)');
+      // légende
+      const lg = (x: number, col: string, t: string, dash = '') => `<line x1="${x}" y1="${py + ph + 44}" x2="${x + 22}" y2="${py + ph + 44}" stroke="${col}" stroke-width="2.4" ${dash ? `stroke-dasharray="${dash}"` : ''}/><text x="${x + 28}" y="${py + ph + 48}" class="gs">${t}</text>`;
+      o += lg(px, 'var(--c-model-loop)', 'RNN linéaire') + lg(px + 150, 'var(--c-model-classic)', 'RNN tanh', '5 3') + lg(px + 290, 'var(--accent)', 'cellule LSTM');
+      const svg = $('svg') as unknown as SVGSVGElement;
+      svg.setAttribute('viewBox', `0 0 ${W} ${H + 24}`); svg.innerHTML = o;
+      const last = (a: number[]) => a[a.length - 1];
+      $('k1').textContent = sci(last(c.lin)); $('k2').textContent = sci(last(c.tan)); $('k3').textContent = sci(last(c.lstm));
+    }
+    ['w', 'f'].forEach((r) => $(r).addEventListener('input', draw));
+    draw();
+  });
+</script>
+
+<style is:global>
+  .gradw .sl { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; margin-bottom: 4px; }
+  .gradw .fm { margin: 2px 0 4px; font-size: 0.95rem; overflow-x: auto; overflow-y: hidden; }
+  .gradw svg { max-width: 680px; margin: 4px auto 0; }
+  .gradw svg text.gs { font: 10.5px var(--font); fill: var(--text-2); }
+  @media (max-width: 600px) { .gradw .sl { grid-template-columns: 1fr; } }
+</style>

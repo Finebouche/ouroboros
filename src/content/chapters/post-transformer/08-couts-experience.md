@@ -2,7 +2,7 @@
 num: 8
 title: "Coûts et plan d'expérience"
 summary: "Pourquoi (a1) est launch-bound, prefill contre décodage, lecture du plan d'expérience."
-status: a-venir
+status: plan
 ---
 
 ## Au programme

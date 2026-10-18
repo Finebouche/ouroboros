@@ -8,7 +8,9 @@ const chapters = defineCollection({
     num: z.number(),
     title: z.string(),
     summary: z.string(),
-    status: z.enum(['a-venir', 'en-cours', 'termine']).default('a-venir'),
+    // état de l'écriture : plan (plan seulement), premier-jet (rédigé, pas encore relu), en-relecture (relu et retouché par l'utilisateur),
+    // termine (validé par l'utilisateur ; lui seul met ce statut)
+    status: z.enum(['plan', 'premier-jet', 'en-relecture', 'termine']).default('plan'),
     sidebar: z.enum(['transformer', 'loop', 'mfcc']).optional(),
   }),
 });

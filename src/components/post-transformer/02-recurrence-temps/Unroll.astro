@@ -1,0 +1,41 @@
+---
+// Chapitre 2 : récurrence dans le temps contre récurrence en profondeur (chapitre 6). Même cellule, deux directions de répétition.
+const W = 680, H = 250;
+const GRAY = 'var(--text-2)', LOOP = 'var(--c-model-loop)';
+const arrow = (x1: number, y1: number, x2: number, y2: number, c = GRAY, dash = false) =>
+  `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="1.5"${dash ? ' stroke-dasharray="4 3"' : ''} marker-end="url(#una)"/>`;
+const box = (x: number, y: number, w: number, h: number, t: string, c = GRAY, op = 0.1) =>
+  `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="7" fill="${c}" fill-opacity="${op}" stroke="${c}" stroke-opacity="0.7"/><text x="${x + w / 2}" y="${y + h / 2 + 4}" text-anchor="middle" class="ut">${t}</text>`;
+let o = `<defs><marker id="una" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--text-2)"/></marker></defs>`;
+// haut : profondeur (un token, le bloc répété)
+o += `<text x="10" y="18" class="uh">Chapitre 6 : en profondeur — un seul token, le même bloc répété</text>`;
+o += box(18, 74, 54, 28, 'e');
+for (let k = 0; k < 4; k++) {
+  const x = 112 + k * 112;
+  o += arrow(k === 0 ? 72 : x - 40, 88, x, 88) + box(x, 70, 70, 36, 'bloc θ', LOOP, 0.18) + `<text x="${x + 35}" y="${64}" text-anchor="middle" class="us">passe ${k + 1}</text>`;
+}
+o += arrow(112 + 3 * 112 + 70, 88, 112 + 3 * 112 + 118, 88) + box(112 + 3 * 112 + 118, 74, 56, 28, 'h');
+// séparateur
+o += `<line x1="10" y1="126" x2="${W - 10}" y2="126" stroke="var(--border)"/>`;
+// bas : temps (T tokens, la même cellule)
+o += `<text x="10" y="146" class="uh">Chapitre 2 : dans le temps — un token par pas, la même cellule, un état transporté</text>`;
+for (let t = 0; t < 4; t++) {
+  const x = 112 + t * 112;
+  o += box(x, 176, 70, 36, 'cellule θ', LOOP, 0.18) + `<text x="${x + 35}" y="${170}" text-anchor="middle" class="us">pas ${t + 1}</text>`;
+  o += arrow(x + 35, 236, x + 35, 214, GRAY) + `<text x="${x + 35}" y="246" text-anchor="middle" class="us">x<tspan baseline-shift="sub" font-size="8">${t + 1}</tspan></text>`;
+  if (t > 0) o += arrow(x - 42, 194, x, 194, LOOP) + (t === 1 ? `<text x="${x - 21}" y="186" text-anchor="middle" class="us" style="fill:${LOOP}">h</text>` : '');
+}
+o += box(18, 180, 54, 28, 'h₀') + arrow(72, 194, 112, 194, LOOP);
+o += arrow(112 + 3 * 112 + 70, 194, 112 + 3 * 112 + 118, 194, LOOP) + box(112 + 3 * 112 + 118, 180, 56, 28, 'h₄');
+---
+<figure class="rlf rlf-unroll">
+  <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="En haut, un bloc répété sur un seul token (profondeur) ; en bas, une même cellule répétée sur les tokens successifs, avec un état transporté de pas en pas (temps)" set:html={o} />
+  <figcaption>Les poids sont partagés dans les deux cas (même teinte). En profondeur, on répète pour un même token ; dans le temps, la répétition suit la séquence et l'état <i>h</i> est tout ce que la cellule sait du passé.</figcaption>
+</figure>
+
+<style is:global>
+  .rlf-unroll svg { max-width: 680px; }
+  .rlf-unroll svg .ut { font: 600 11.5px var(--font); fill: var(--text); }
+  .rlf-unroll svg .us { font: 10.5px var(--font); fill: var(--text-2); }
+  .rlf-unroll svg .uh { font: 600 12px var(--font); fill: var(--text); }
+</style>

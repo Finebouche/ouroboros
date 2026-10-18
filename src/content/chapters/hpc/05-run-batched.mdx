@@ -2,7 +2,7 @@
 num: 5
 title: "Étude de cas : run_batched"
 summary: "Exécuter des réservoirs reservoirpy.jax sur des milliers de séquences de longueurs variables : vmap, scan, masque, formes en paliers, coûts."
-status: en-cours
+status: en-relecture
 ---
 import Reveal from '@/components/shared/Reveal.astro';
 import Quiz from '@/components/shared/Quiz.astro';
@@ -34,7 +34,7 @@ $$
 s_{t+1} = (1 - lr)\, s_t + lr \cdot f\big(W s_t + W_{in}\, u_{t+1} + \text{bias}\big)
 $$
 
-$s$ : état ($N$ neurones), $u$ : entrée ($D$), $f$ : activation (`tanh` par défaut).
+$s$ : état ($N$ neurones), $u$ : entrée ($D$), $f$ : activation (`tanh` par défaut). C'est un RNN dont on n'entraîne pas $W$ ; les RNN entraînés et leur gradient sont dans le cours [Post-Transformer, chapitre 2](/post-transformer/02-recurrence-temps/).
 
 | RNN classique | `reservoirpy.jax` | Rôle |
 |---|---|---|

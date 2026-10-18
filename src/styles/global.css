@@ -141,7 +141,8 @@ button.active { border-color: var(--accent); color: var(--accent); }
 .quiz .qbody > :last-child { margin-bottom: 0; }
 .badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-2); white-space: nowrap; }
 .badge.termine { background: var(--ok-soft); color: #04342c; border-color: transparent; }
-.badge.en-cours { background: var(--warn); color: #412402; border-color: transparent; }
+.badge.en-relecture { background: var(--warn); color: #412402; border-color: transparent; }
+.badge.premier-jet { background: color-mix(in srgb, var(--warn) 30%, transparent); color: var(--text); border-color: transparent; }
 
 .shell.wide { max-width: 1100px; }
 .layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 2.5rem; align-items: start; }
@@ -188,9 +189,14 @@ button.active { border-color: var(--accent); color: var(--accent); }
 .widget.pp .kpis b, .widget.hp .kpis b { font-size: 15px; }
 .widget.pp .kpis b small, .widget.pp .kpis b sub, .widget.hp .kpis b small, .widget.hp .kpis b sub { font-size: 12px; }
 
-article table { border-collapse: collapse; width: 100%; margin: 1.2rem 0; font-size: 15px; }
-article th, article td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
-article thead th { background: var(--surface-2); font-weight: 500; font-size: 14px; }
+/* tableaux du texte (Markdown) : même style que les tableaux en composant, bandes arrondies alternées ; seulement les tableaux directs du chapitre, pas ceux des widgets */
+article > table { border-collapse: separate; border-spacing: 0 6px; width: 100%; margin: 1rem 0; font-size: 14px; }
+article > table th, article > table td { text-align: left; padding: 8px 12px; vertical-align: top; }
+article > table thead th { font-weight: 600; font-size: 12.5px; color: var(--text); padding-bottom: 2px; }
+article > table tbody td { background: color-mix(in srgb, var(--text-2) 7%, transparent); }
+article > table tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--text-2) 3.5%, transparent); }
+article > table tbody td:first-child { border-radius: 8px 0 0 8px; font-weight: 600; font-size: 13px; }
+article > table tbody td:last-child { border-radius: 0 8px 8px 0; }
 /* cours HPC : légende du code couleur */
   .hlegend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--text-2); margin: 0 0 8px; }
   .hlegend small { font-size: 12px; }

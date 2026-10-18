@@ -1,0 +1,39 @@
+---
+// Chapitre 2 : LSTM, sLSTM et mLSTM côte à côte (mise en forme des tableaux du site : bandes arrondies, en-têtes colorés).
+import katex from 'katex';
+const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
+const cols = [
+  { name: 'LSTM', sub: '1997', col: 'var(--c-model-classic)' },
+  { name: 'sLSTM', sub: 'xLSTM, 2024', col: 'var(--c-model-loop)' },
+  { name: 'mLSTM', sub: 'xLSTM, 2024', col: 'var(--accent)' },
+];
+const rows: [string, string, string, string][] = [
+  ['Mémoire', 'un scalaire par cellule', 'un scalaire par cellule', 'une matrice ' + tx('d \\times d') + ' par tête'],
+  ['Mise à jour', tx('c_t = f_t\\, c_{t-1} + i_t\\, g_t'), 'comme le LSTM, avec des portes exponentielles et un terme de normalisation', tx('C_t = f_t\\, C_{t-1} + i_t\\, v_t k_t^{\\top}')],
+  ['Les portes lisent', tx('x_t') + ' et ' + tx('h_{t-1}') + ' (mélange de mémoire)', tx('x_t') + ' et ' + tx('h_{t-1}') + ' (mélange de mémoire)', 'seulement ' + tx('x_t'), ],
+  ['Entraînement', '<b>séquentiel</b> : le pas t attend h<sub>t−1</sub>', '<b>séquentiel</b> : même raison', '<b>parallélisable</b> : forme parallèle ou par chunks (chapitre 3)'],
+];
+---
+<figure class="xt">
+  <div class="xr xhd"><div></div>{cols.map((c) => <div style={`color:${c.col}`}><b>{c.name}</b><i>{c.sub}</i></div>)}</div>
+  {rows.map(([k, a, b, c], i) => (
+    <div class={`xr xg${i % 2 ? ' alt' : ''}`}>
+      <div class="xk">{k}</div>
+      <div class="xc" set:html={a} /><div class="xc" set:html={b} /><div class="xc" set:html={c} />
+    </div>
+  ))}
+</figure>
+
+<style is:global>
+  .xt { margin: 1.4rem 0; font-family: var(--font); }
+  .xt .xr { display: grid; grid-template-columns: 110px repeat(3, minmax(0, 1fr)); column-gap: 14px; align-items: center; }
+  .xt .xhd { padding: 0 14px 8px; }
+  .xt .xhd b { display: block; font-size: 13px; font-weight: 600; }
+  .xt .xhd i { font-style: normal; font-size: 11px; color: var(--text-2); }
+  .xt .xg { border-radius: 8px; background: color-mix(in srgb, var(--text-2) 7%, transparent); padding: 9px 14px; margin-bottom: 6px; }
+  .xt .xg.alt { background: color-mix(in srgb, var(--text-2) 3.5%, transparent); }
+  .xt .xk { font-size: 12px; font-weight: 600; color: var(--text); }
+  .xt .xc { font-size: 12.5px; color: var(--text); line-height: 1.45; overflow-x: auto; overflow-y: hidden; }
+  .xt .xc .katex { font-size: 1em; }
+  @media (max-width: 700px) { .xt .xr { grid-template-columns: 1fr; row-gap: 4px; } .xt .xhd { display: none; } }
+</style>

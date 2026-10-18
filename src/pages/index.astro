@@ -5,7 +5,7 @@ import { COURSES, courseIds, chaptersOf } from '../lib/courses';
 const courses = await Promise.all(
   courseIds.map(async (id) => {
     const chapters = await chaptersOf(id);
-    return { id, ...COURSES[id], total: chapters.length, done: chapters.filter((c) => c.data.status === 'termine').length, current: chapters.filter((c) => c.data.status === 'en-cours').length };
+    return { id, ...COURSES[id], total: chapters.length, done: chapters.filter((c) => c.data.status === 'termine').length, review: chapters.filter((c) => c.data.status === 'en-relecture').length, draft: chapters.filter((c) => c.data.status === 'premier-jet').length };
   }),
 );
 ---
@@ -17,7 +17,7 @@ const courses = await Promise.all(
       <li>
         <a class="ct" href={`/${c.id}/`}>{c.title}</a>
         <div class="sum">{c.tagline}</div>
-        <div class="meta">{c.total} {c.unit.toLowerCase()}{c.total > 1 ? 's' : ''} · {c.done} terminé{c.done > 1 ? 's' : ''}{c.current > 0 && ` · ${c.current} en cours`}</div>
+        <div class="meta">{c.total} {c.unit.toLowerCase()}{c.total > 1 ? 's' : ''} · {c.done} terminé{c.done > 1 ? 's' : ''}{c.review > 0 && ` · ${c.review} en relecture`}{c.draft > 0 && ` · ${c.draft} en premier jet`}</div>
       </li>
     ))}
   </ul>

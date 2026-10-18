@@ -1,0 +1,70 @@
+---
+// Chapitre 3 : calcul par chunks de taille C sur s = 16 mots. C = 1 : récurrence pure (s étapes). C = s : attention parallèle (s(s+1)/2 cases).
+// À l'intérieur d'un chunk : produit matriciel (parallèle). Entre chunks : l'état S passe de l'un au suivant (séquentiel).
+import katex from 'katex';
+const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
+const F = tx('O_c = \\underbrace{Q_c\\, S_{c-1}^{\\top}}_{\\text{le passé, via l\'état}} + \\underbrace{\\big( (Q_c K_c^{\\top}) \\odot M \\big)\\, V_c}_{\\text{dans le chunk}}, \\qquad S_c = S_{c-1} + V_c^{\\top} K_c');
+---
+<div class="widget chunkw" data-widget="chunkw">
+  <div class="row"><span>Taille de chunk C :</span><span class="seg" data-ref="cc"></span></div>
+  <div class="fm" set:html={F} />
+  <svg data-ref="svg" role="img" aria-label="Seize mots découpés en chunks : calcul parallèle dans chaque chunk, état transmis d'un chunk au suivant"></svg>
+  <div class="kpis">
+    <div><span>Étapes séquentielles</span><b data-ref="k1"></b><i>un chunk après l'autre, via l'état S</i></div>
+    <div><span>Cases dans les chunks</span><b data-ref="k2"></b><i>triangles C × C, tous parallèles</i></div>
+    <div><span>États S à transmettre</span><b data-ref="k3"></b><i>un par frontière de chunk</i></div>
+  </div>
+  <p class="note" data-ref="cap"></p>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="chunkw"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const T = 16;
+    let C = 4;
+    [1, 2, 4, 8, 16].forEach((c) => {
+      const b = document.createElement('button'); b.textContent = c === 1 ? '1 (récurrence)' : c === T ? '16 (attention)' : String(c); b.dataset.c = String(c);
+      b.addEventListener('click', () => { C = c; draw(); }); $('cc').appendChild(b);
+    });
+    function draw() {
+      $('cc').querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.c === String(C)));
+      const n = T / C, ox = 10, W = 640, cw = (W - 2 * ox) / T, tokY = 150, triH = 118;
+      let o = `<defs><marker id="cha" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--c-model-loop)"/></marker></defs>`;
+      for (let c = 0; c < n; c++) {
+        const x = ox + c * C * cw, wch = C * cw, h = Math.max(14, (triH * C) / T);
+        // triangle inférieur gauche : les cases (i, j ≤ i) du chunk, calculées en parallèle
+        o += `<polygon points="${x + 1},${tokY - h} ${x + 1},${tokY - 2} ${x + wch - 1},${tokY - 2}" fill="var(--c-w)" fill-opacity="0.28" stroke="var(--c-w)"/>`;
+        o += `<text x="${x + wch / 2}" y="${tokY - 2 - h - 6}" text-anchor="middle" class="cl">${C === 1 ? 'pas ' + (c + 1) : 'chunk ' + (c + 1)}</text>`;
+        // mots du chunk
+        for (let i = 0; i < C; i++) o += `<rect x="${x + i * cw + 1}" y="${tokY + 4}" width="${cw - 2}" height="12" rx="2" fill="var(--text-2)" fill-opacity="0.18"/>`;
+        // état transmis au chunk suivant
+        if (c < n - 1) {
+          const xe = x + wch, y0 = tokY + 34;
+          o += `<path d="M ${xe - Math.min(wch / 2, 20)} ${tokY + 18} C ${xe - 4} ${y0 + 8}, ${xe + 4} ${y0 + 8}, ${xe + Math.min(wch / 2, 20)} ${tokY + 18}" fill="none" stroke="var(--c-model-loop)" stroke-width="1.8" marker-end="url(#cha)"/>`;
+        }
+      }
+      o += `<text x="${ox}" y="${tokY + 46}" class="cl2">mots t = 1 … ${T}</text>`;
+      if (n > 1) o += `<text x="${W - ox}" y="${tokY + 46}" text-anchor="end" class="cl2" style="fill:var(--c-model-loop)">flèches : l'état S passe d'un chunk au suivant</text>`;
+      const svg = $('svg') as unknown as SVGSVGElement;
+      svg.setAttribute('viewBox', `0 0 ${W} ${tokY + 56}`); svg.innerHTML = o;
+      const cells = n * ((C * (C + 1)) / 2);
+      $('k1').innerHTML = `${n} <small>au lieu de ${T} pas à pas</small>`;
+      $('k2').innerHTML = `${cells} <small>(${T}(${T}+1)/2 = ${(T * (T + 1)) / 2} pour l'attention entière)</small>`;
+      $('k3').textContent = String(Math.max(0, n - 1));
+      $('cap').textContent = C === 1
+        ? 'C = 1 : un mot par chunk, aucun calcul parallèle : c\'est la récurrence pure, avec s étapes.'
+        : C === T
+        ? 'C = s : un seul chunk, aucune étape entre chunks : c\'est l\'attention parallèle, avec le plus grand nombre de cases.'
+        : `C = ${C} : ${n} étapes séquentielles seulement, et chaque chunk se calcule d'un coup avec des produits matriciels. C'est le réglage des implémentations pratiques.`;
+    }
+    draw();
+  });
+</script>
+
+<style is:global>
+  .chunkw .row > .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .chunkw .fm { margin: 4px 0 6px; font-size: 0.9rem; overflow-x: auto; overflow-y: hidden; }
+  .chunkw svg { max-width: 660px; margin: 6px auto 0; }
+  .chunkw svg text.cl { font: 600 10.5px var(--font); fill: var(--text-2); }
+  .chunkw svg text.cl2 { font: 10.5px var(--font); fill: var(--text-2); }
+</style>

@@ -5,7 +5,7 @@ export const COURSES = {
   'post-transformer': {
     title: 'Post-Transformer',
     unit: 'Chapitre',
-    tagline: 'Le transformer, puis ce qui vient après : récurrence en profondeur, récurrence dans le temps, modèles linéaires, hybrides, et leur couplage (projet de recherche Ouroboros).',
+    tagline: 'Le transformer et FlashAttention, puis ce qui vient après : récurrence dans le temps, modèles linéaires, hybrides, récurrence en profondeur, et leur couplage (projet de recherche Ouroboros).',
     intro:
       "Un cours visuel pour comprendre comment une récurrence en profondeur (un bloc bouclé T fois) et une récurrence dans le temps (un état transporté d'un token au suivant) peuvent coexister, et pourquoi certains couplages gardent l'entraînement parallèle.",
   },
@@ -35,7 +35,8 @@ export const COURSES = {
 export type CourseId = keyof typeof COURSES;
 export const courseIds = Object.keys(COURSES) as CourseId[];
 
-export const STATUS_LABELS = { 'a-venir': 'à venir', 'en-cours': 'en cours', termine: 'terminé' } as const;
+// état de l'écriture d'un chapitre ; « terminé » n'est posé que par l'utilisateur
+export const STATUS_LABELS = { plan: 'plan', 'premier-jet': 'premier jet', 'en-relecture': 'en relecture', termine: 'terminé' } as const;
 
 export const courseOf = (id: string) => id.split('/')[0] as CourseId;
 export const slugOf = (id: string) => id.split('/').slice(1).join('/');

@@ -1,0 +1,47 @@
+---
+// Chapitre 3 : composer deux pas d'une récurrence. Deux pas affines donnent encore un pas affine (deux nombres suffisent) ;
+// deux pas tanh donnent une courbe qui n'est plus décrite par deux nombres.
+const W = 680, H = 262, px = 16, pw = 300, ph = 140, py = 32, gap = 48;
+const lo = -3, hi = 3;
+const X = (h: number, o: number) => o + ((h - lo) / (hi - lo)) * pw;
+const Y = (v: number, vmin: number, vmax: number) => py + ph - ((v - vmin) / (vmax - vmin)) * ph;
+const pts = (f: (h: number) => number, o: number, vmin: number, vmax: number) =>
+  Array.from({ length: 61 }, (_, i) => lo + (i / 60) * (hi - lo)).map((h) => `${X(h, o).toFixed(1)},${Y(f(h), vmin, vmax).toFixed(1)}`).join(' ');
+// pas affine : h ↦ a h + b ; composition (a2, b2) après (a1, b1)
+const a1 = 0.8, b1 = 0.3, a2 = 0.9, b2 = -0.2;
+const aff = (h: number) => a2 * (a1 * h + b1) + b2;
+// pas tanh : h ↦ tanh(w h + u)
+const t1 = (h: number) => Math.tanh(1.6 * h + 0.3), tt = (h: number) => Math.tanh(1.6 * t1(h) - 0.2);
+const o1 = px, o2 = px + pw + gap;
+const grid = (o: number, vmin: number, vmax: number, mid: number) =>
+  `<rect x="${o}" y="${py}" width="${pw}" height="${ph}" rx="6" fill="var(--text-2)" fill-opacity="0.05" stroke="var(--border)"/>` +
+  `<line x1="${o}" y1="${Y(mid, vmin, vmax)}" x2="${o + pw}" y2="${Y(mid, vmin, vmax)}" stroke="var(--border)"/><line x1="${X(0, o)}" y1="${py}" x2="${X(0, o)}" y2="${py + ph}" stroke="var(--border)"/>`;
+let s = '';
+s += grid(o1, -2.5, 2.5, 0) + grid(o2, -1.3, 1.3, 0);
+s += `<polyline points="${pts(aff, o1, -2.5, 2.5)}" fill="none" stroke="var(--c-model-loop)" stroke-width="2.6"/>`;
+// meilleure droite sur la courbe tanh∘tanh, en pointillé : elle ne colle pas
+const xs = Array.from({ length: 61 }, (_, i) => lo + (i / 60) * (hi - lo)), ys = xs.map(tt);
+const mx = xs.reduce((a, b) => a + b, 0) / xs.length, my = ys.reduce((a, b) => a + b, 0) / ys.length;
+const sl = xs.reduce((a, x, i) => a + (x - mx) * (ys[i] - my), 0) / xs.reduce((a, x) => a + (x - mx) ** 2, 0);
+s += `<polyline points="${pts((h) => my + sl * (h - mx), o2, -1.3, 1.3)}" fill="none" stroke="var(--text-2)" stroke-width="1.4" stroke-dasharray="5 4"/>`;
+s += `<polyline points="${pts(tt, o2, -1.3, 1.3)}" fill="none" stroke="var(--c-model-loop)" stroke-width="2.6"/>`;
+const ttl = (o: number, t: string) => `<text x="${o}" y="16" class="ct">${t}</text>`;
+s += ttl(o1, 'Deux pas affines') + ttl(o2, 'Deux pas tanh');
+for (const o of [o1, o2]) {
+  s += `<text x="${o + pw / 2}" y="${py + ph + 14}" text-anchor="middle" class="cs">état avant (h)</text><text x="${o + 6}" y="${py + 12}" class="cs">état après</text>`;
+}
+s += `<text x="${o1}" y="${py + ph + 34}" class="cs" style="fill:var(--text)">h ↦ a₂(a₁h + b₁) + b₂ : encore une droite</text>`;
+s += `<text x="${o1}" y="${py + ph + 50}" class="cs">résumée par deux nombres (a₂a₁, a₂b₁ + b₂)</text>`;
+s += `<text x="${o2}" y="${py + ph + 34}" class="cs" style="fill:var(--text)">h ↦ tanh(w₂ tanh(w₁h + u₁) + u₂) : une courbe</text>`;
+s += `<text x="${o2}" y="${py + ph + 50}" class="cs">aucune paire (a, b) ne la décrit (pointillé : la meilleure droite)</text>`;
+---
+<figure class="rlf rlf-compose">
+  <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Composer deux pas affines donne une droite, décrite par deux nombres ; composer deux pas tanh donne une courbe qui n'est pas une droite" set:html={s} />
+  <figcaption>Pour calculer tous les états en parallèle, on veut résumer « les pas de i à j » par un objet de taille fixe, qu'on pourra combiner avec un autre. Les pas affines le permettent ; les pas non linéaires, non.</figcaption>
+</figure>
+
+<style is:global>
+  .rlf-compose svg { max-width: 640px; }
+  .rlf-compose svg .ct { font: 600 12px var(--font); fill: var(--text); }
+  .rlf-compose svg .cs { font: 10.5px var(--font); fill: var(--text-2); }
+</style>

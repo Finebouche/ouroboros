@@ -1,0 +1,138 @@
+---
+num: 2
+title: "Récurrence dans le temps"
+summary: "RNN déroulé dans le temps, BPTT et gradient qui s'évanouit ou explose, LSTM (portes et cellule), TBPTT, xLSTM."
+status: premier-jet
+---
+import Reveal from '@/components/shared/Reveal.astro';
+import Quiz from '@/components/shared/Quiz.astro';
+import Refs from '@/components/shared/Refs.astro';
+import Unroll from '@/components/post-transformer/02-recurrence-temps/Unroll.astro';
+import GradientWidget from '@/components/post-transformer/02-recurrence-temps/GradientWidget.astro';
+import LstmCell from '@/components/post-transformer/02-recurrence-temps/LstmCell.astro';
+import Tbptt from '@/components/post-transformer/02-recurrence-temps/Tbptt.astro';
+import XlstmTable from '@/components/post-transformer/02-recurrence-temps/XlstmTable.astro';
+
+Ici, la répétition suit la **séquence** : un état $h$ est transporté de token en token, et c'est tout ce que le modèle sait du passé. Le chapitre 6 répétera au contraire un bloc **en profondeur**, pour un même token.
+
+## 1. Un état transporté de pas en pas
+
+<Unroll />
+
+$$
+h_t = \tanh(W_h\, h_{t-1} + W_x\, x_t + b), \qquad h_0 = 0
+$$
+
+- $h_t$ est le résumé du passé : de taille **fixe**, quelle que soit la longueur lue (contrairement au KV cache, chapitre 0, section 3).
+- Les poids $W_h$, $W_x$, $b$ sont les mêmes à chaque pas : le réseau déroulé est une suite de $s$ copies de la même cellule.
+- Générer coûte autant à chaque token (un pas de cellule). En revanche, calculer $h_t$ demande $h_{t-1}$ : on ne parallélise pas sur le temps (chapitre 3).
+
+## 2. Le gradient à travers le temps
+
+Pour apprendre, on déroule le réseau sur $s$ pas et on rétropropage à travers tous : c'est la **BPTT** (*backpropagation through time*). Le gradient de $h_N$ par rapport à un état ancien $h_1$ est un produit de $N-1$ jacobiens :
+
+$$
+\frac{\partial h_N}{\partial h_1} = \prod_{t=2}^{N} \frac{\partial h_t}{\partial h_{t-1}}, \qquad \frac{\partial h_t}{\partial h_{t-1}} = \mathrm{diag}\big(1 - h_t^2\big)\, W_h
+$$
+
+Un produit de $N$ facteurs plus petits que 1 tend vers 0 ; plus grands que 1, il diverge. Le widget le montre sur trois récurrences.
+
+<GradientWidget />
+
+- **Gradient qui s'évanouit** : l'influence d'un pas lointain sur la perte devient trop faible pour être apprise. Le réseau n'apprend pas les dépendances longues. Pour un tanh, la dérivée vaut au plus 1 : si la plus grande valeur singulière de $W_h$ est inférieure à 1, le gradient s'évanouit à coup sûr. C'est le problème d'attribution du crédit du cours [RL](/rl/01-bellman/), ici sur le gradient : quel pas lointain a causé l'erreur ?
+- **Gradient qui explose** : un seul pas lointain peut faire diverger l'apprentissage. Remède courant : **écrêter** la norme du gradient (*gradient clipping*) avant la mise à jour.
+- **Mémoire** : la BPTT garde les activations des $s$ pas, donc un coût qui croît avec $s$.
+
+<Refs items={[["On the difficulty of training Recurrent Neural Networks", "Pascanu, Mikolov & Bengio", 2012, "1211.5063"]]} />
+
+## 3. LSTM : une cellule qui conserve
+
+Le LSTM sépare deux choses : une **cellule** $c_t$, qui transporte l'information, et un **état caché** $h_t$, que le reste du réseau voit. Trois portes, entre 0 et 1, règlent ce qui entre et ce qui sort.
+
+<LstmCell />
+
+- **Porte d'oubli $f_t$** : quelle part de la cellule on garde. C'est le facteur du gradient de la cellule : $\partial c_t / \partial c_{t-1} = f_t$ sur le chemin direct. Un LSTM apprend $f_t$ proche de 1 quand il doit retenir, donc le produit du gradient ne s'évanouit plus (courbe bleue du widget précédent).
+- **Porte d'entrée $i_t$** : quelle part du candidat $g_t$ on écrit.
+- **Porte de sortie $o_t$** : quelle part de la cellule on expose dans $h_t$.
+- La cellule est mise à jour par une **somme** ($f \cdot c + i \cdot g$), pas par un produit matriciel suivi d'un tanh : c'est ce qui laisse passer le gradient.
+- **Ce que le LSTM garde du RNN** : les portes dépendent de $h_{t-1}$, donc l'entraînement reste séquentiel.
+
+<Refs items={[["Long Short-Term Memory (Neural Computation 9(8), 1735–1780)", "Hochreiter & Schmidhuber", 1997, "10.1162/neco.1997.9.8.1735"]]} />
+
+## 4. TBPTT : couper le gradient, pas l'état
+
+Rétropropager à travers une séquence de dizaines de milliers de pas est impossible en mémoire. La **BPTT tronquée** (TBPTT) découpe la séquence en fenêtres de $K$ pas : l'état $h$ passe d'une fenêtre à la suivante (en avant), mais on le **détache** à la frontière, donc le gradient ne la traverse pas.
+
+<Tbptt />
+
+- **Ce qu'on gagne** : la mémoire d'activations ne dépend plus que de $K$, et on met à jour les poids après chaque fenêtre.
+- **Ce qu'on perd** : le gradient ne relie jamais deux pas distants de plus de $K$. Le réseau peut encore *utiliser* une information vieille de plus de $K$ pas (elle est dans l'état), mais on ne l'a jamais pénalisé d'avoir oublié ce qui l'aurait aidé.
+- On retrouvera la même idée au chapitre 6, où l'on ne rétropropage qu'à travers les $k$ dernières passes d'une boucle en profondeur.
+
+## 5. xLSTM : réparer le LSTM
+
+xLSTM (2024) propose deux variantes du LSTM, qui échangent en sens opposés mémoire, mélange de mémoire et parallélisme :
+
+<XlstmTable />
+
+- **sLSTM** garde le mélange de mémoire (les portes lisent $h_{t-1}$) et reste séquentiel, avec des portes exponentielles stabilisées par une normalisation.
+- **mLSTM** supprime ce mélange : les portes ne lisent que $x_t$. La récurrence devient **linéaire en l'état**, avec une mémoire matricielle $C_t = f_t C_{t-1} + i_t v_t k_t^\top$. C'est exactement la forme de l'attention linéaire à porte du chapitre 3 : on peut donc l'entraîner en parallèle, par scan ou par chunks.
+- Le choix résume le chapitre : un état qui **se lit lui-même** (mélange de mémoire, non linéaire) est plus expressif mais séquentiel ; un état qui **ne se lit pas** (linéaire) s'entraîne en parallèle.
+
+<Refs items={[["xLSTM: Extended Long Short-Term Memory", "Beck et al.", 2024, "2405.04517"]]} />
+
+<div class="retain">
+
+**À retenir**
+
+- Un RNN transporte un état $h$ de taille fixe ; $h_t$ dépend de $h_{t-1}$ : entraînement et calcul séquentiels sur le temps.
+- La BPTT donne un gradient produit de $N$ jacobiens : il s'évanouit (facteurs < 1) ou explose (facteurs > 1) ; on écrête contre l'explosion.
+- LSTM : la cellule est mise à jour par somme, $c_t = f_t c_{t-1} + i_t g_t$ ; la porte d'oubli $f_t$ près de 1 conserve l'information et le gradient.
+- TBPTT : l'état traverse les fenêtres, pas le gradient ; mémoire en $K$, dépendances apprises limitées à $K$.
+- xLSTM : sLSTM (mélange de mémoire, séquentiel) contre mLSTM (mémoire matricielle, linéaire en l'état, parallélisable).
+
+</div>
+
+<Quiz>
+
+**Q1.** Dans un RNN linéaire $h_t = w\, h_{t-1} + \dots$ avec $w = 0{,}9$, quelle est l'ordre de grandeur de $\partial h_{50} / \partial h_1$ ?
+
+<Reveal>
+
+$0{,}9^{49} \approx 6 \times 10^{-3}$ : le gradient est environ 170 fois plus petit après 50 pas, et $0{,}9^{200} \approx 10^{-9}$ après 200. À l'inverse, avec $w = 1{,}1$, il croît comme $1{,}1^{49} \approx 107$.
+
+</Reveal>
+
+**Q2.** Pourquoi la mise à jour additive de la cellule LSTM aide-t-elle le gradient ?
+
+<Reveal>
+
+Parce que $\partial c_t / \partial c_{t-1} = f_t$ sur le chemin direct : le gradient est multiplié par un scalaire entre 0 et 1, appris, et non par un produit matriciel suivi d'un tanh. Avec $f_t$ proche de 1, le produit sur de nombreux pas reste proche de 1.
+
+</Reveal>
+
+**Q3.** Si on gèle $f_t = 1$ et $i_t = 0$, que devient la cellule ?
+
+<Reveal>
+
+$c_t = c_{t-1}$ : la cellule ne change plus, elle transporte son contenu sans perte (et sans rien apprendre de nouveau). La porte de sortie règle seulement ce qu'on en expose.
+
+</Reveal>
+
+**Q4.** Avec une séquence de 1 000 pas et des fenêtres de $K = 50$, combien de mises à jour par séquence, et quelle dépendance maximale le gradient relie-t-il ?
+
+<Reveal>
+
+$1\,000 / 50 = 20$ mises à jour ; le gradient relie des pas distants d'au plus 50. L'état transmis d'une fenêtre à l'autre peut quand même porter une information plus ancienne, mais aucun gradient ne l'a entraîné à le faire.
+
+</Reveal>
+
+**Q5.** Pourquoi le mLSTM peut-il s'entraîner en parallèle alors que le sLSTM non ?
+
+<Reveal>
+
+Les portes du mLSTM ne lisent que l'entrée $x_t$, pas l'état : la mise à jour $C_t = f_t C_{t-1} + i_t v_t k_t^\top$ est linéaire en $C$, donc un scan (ou un calcul par chunks) la calcule en parallèle. Les portes du sLSTM lisent $h_{t-1}$ : le pas $t$ attend le pas $t - 1$.
+
+</Reveal>
+
+</Quiz>

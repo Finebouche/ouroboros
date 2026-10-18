@@ -2,7 +2,7 @@
 num: 6
 title: "Moindres carrés : Cholesky, QR, SVD, LSQR"
 summary: "Quatre façons de résoudre min ‖Ax − b‖ : coût, conditionnement, rang, parallélisme, matrices creuses. Expériences numériques en direct."
-status: en-cours
+status: en-relecture
 ---
 import Reveal from '@/components/shared/Reveal.astro';
 import Quiz from '@/components/shared/Quiz.astro';
@@ -116,7 +116,7 @@ Quand $b$ est bruité et $A$ mal conditionnée, le meilleur $x$ n'est pas le der
 
 ## 4. Matériel : vitesse contre robustesse
 
-Une factorisation dense par blocs fait des produits matriciels et approche la crête de calcul tandis que LSQR ne fait que des produits matrice-vecteur, donc il est limité par la bande passante mémoire (intensité $\approx 1/4$ FLOP/octet en CSR float32 avec indices sur 4 octets : $4\,\mathrm{nnz}$ FLOPs pour $16\,\mathrm{nnz}$ octets).
+Une factorisation dense par blocs fait des produits matriciels et approche la crête de calcul tandis que LSQR ne fait que des produits matrice-vecteur, donc il est limité par la bande passante mémoire (intensité $\approx 1/4$ FLOP/octet en CSR float32 avec indices sur 4 octets : $4\,\mathrm{nnz}$ FLOPs pour $16\,\mathrm{nnz}$ octets). La même question de précision (float32, bf16) se pose pour le KV cache d'un transformer : cours [Post-Transformer, chapitre 0](/post-transformer/00-bases/).
 
 <Reach />
 

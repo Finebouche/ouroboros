@@ -1,0 +1,165 @@
+---
+num: 4
+title: "Approximation : FQI, DQN, LSPI"
+summary: "Quand les états sont trop nombreux pour une table : FQI (régression sur des transitions enregistrées), DQN (Q-learning avec un réseau, une mémoire de relecture et un réseau cible), puis LSPI."
+status: premier-jet
+---
+import Reveal from '@/components/shared/Reveal.astro';
+import Quiz from '@/components/shared/Quiz.astro';
+import Refs from '@/components/shared/Refs.astro';
+import Offline from '@/components/rl/04-approximation/Offline.astro';
+import FQITable from '@/components/rl/04-approximation/FQITable.astro';
+import FitWidget from '@/components/rl/04-approximation/FitWidget.astro';
+import DqnLoop from '@/components/rl/04-approximation/DqnLoop.astro';
+
+## 1. Le cadre : trop d'états pour une table
+
+Jusqu'ici, une table donnait une valeur à chaque case. Quand les états sont nombreux ou continus, on remplace la table par une fonction paramétrée qui généralise d'un état à ses voisins. Ce chapitre suit trois façons de le faire : FQI (régression sur des données fixes), DQN (un réseau, en jouant) et LSPI (moindres carrés).
+
+FQI commence par le cas le plus contraint : on n'a plus que des **transitions déjà enregistrées**, de la forme (état $s$, action $a$, récompense $r$, état suivant $s'$), et on n'a pas le droit d'en produire de nouvelles. C'est l'apprentissage **hors ligne** (*offline*). FQI en tire une politique en apprenant la valeur des actions, puis en jouant la meilleure.
+
+<Offline view="data" />
+
+## 2. FQI : itérer Bellman par régression
+
+**FQI** (*fitted Q iteration*) apprend la valeur des actions $Q(s,a)$, pas celle des états. Sans $P$, connaître $V$ ne suffirait pas pour choisir : il faudrait savoir où mène chaque action. Avec $Q$, la meilleure action se lit directement : $\arg\max_a Q(s,a)$.
+
+FQI part de l'équation de Bellman d'optimalité du chapitre 1, écrite pour $Q$ : une action vaut sa récompense, plus $\gamma$ fois la valeur de la meilleure action dans l'état atteint, en moyenne sur les états atteints :
+
+$$
+Q^\star(s,a) = \mathbb{E}\Big[\, r + \gamma \max_{a'} Q^\star(s', a') \,\Big]
+$$
+
+### Étape 1 : une transition donne une cible
+
+L'itération de valeur du chapitre 1 calculait cette moyenne avec $P$. Ici, chaque transition enregistrée $(s, a, r, s')$ est **un échantillon** de la quantité entre crochets. Si on connaît déjà une estimation $Q_k$, la transition fournit une **cible** :
+
+$$
+y = r + \gamma \max_{a'} Q_k(s', a')
+$$
+
+La cible contient l'estimation $Q_k$ au lieu du retour observé : c'est le **bootstrapping** du chapitre 1, comme dans TD(0). Par exemple, une transition de récompense $0$ qui arrive dans une case dont la meilleure action vaut déjà $1$ donne $y = 0 + 0{,}9 \times 1 = 0{,}9$.
+
+### Étape 2 : itérer
+
+1. Partir de $Q_0 = 0$.
+2. Pour chaque transition, calculer la cible $y_i = r_i + \gamma \max_{a'} Q_k(s'_i, a')$.
+3. Ajuster $Q_{k+1}$ pour qu'il colle à ces cibles : $Q_{k+1} \approx \arg\min_Q \sum_i \big(Q(s_i, a_i) - y_i\big)^2$. C'est une **régression** ; c'est elle qui remplace la moyenne sur $P$, en moyennant les cibles des transitions semblables.
+4. Recommencer ; à la fin, jouer $\arg\max_a Q(s,a)$.
+
+C'est la cible de Q-learning (chapitre 2) : Q-learning l'applique une transition à la fois, pendant qu'il joue ; FQI la recalcule sur tout le lot enregistré à chaque itération.
+
+Avec un tableau (une valeur par couple case-action), la régression se réduit à écrire chaque cible dans sa case. Voici les six transitions de la section 1, itération après itération :
+
+<FQITable />
+
+La valeur du but remonte d'une transition à chaque itération, exactement comme elle remontait d'une case par itération dans l'itération de valeur du chapitre 1.
+
+### Étape 3 : pourquoi une régression ?
+
+Quand l'espace d'états est grand ou continu, aucun état ne se répète exactement : un tableau ne servirait à rien. La régression généralise d'un état à ses voisins. Voici un couloir continu : les points sont les cibles, la courbe est la fonction $Q_k$ ajustée.
+
+<FitWidget />
+
+La valeur du but remonte vers la gauche à chaque itération, et la courbe lisse entre les points.
+
+### Limites
+
+- **Hors politique** : le $\max_{a'}$ évalue la meilleure action en $s'$, pas celle que les données ont choisie. Les données peuvent donc venir d'un comportement quelconque, même aléatoire, à condition de **couvrir** les situations utiles.
+- **Cible mouvante** : $y$ dépend de $Q_k$, qui vient elle-même d'une régression : une erreur à l'itération $k$ est recopiée dans les cibles suivantes. La convergence n'est garantie que pour certaines familles de régresseurs ; Ernst et al. ont introduit la méthode avec des arbres de régression.
+- **Couverture** : une action jamais essayée dans un état n'a pas de cible. Le $\max_{a'}$ peut alors choisir une valeur imaginée par le régresseur, trop optimiste.
+
+## 3. DQN : Q-learning en ligne, avec un réseau de neurones
+
+FQI apprend sur des données fixes. DQN fait la même chose **en jouant**, comme Q-learning (chapitre 2) : il remplace la table par un réseau de neurones $Q_\theta(s, a)$, qui prend l'état (par exemple les pixels d'un jeu) et donne une valeur par action. La mise à jour de Q-learning devient une **régression** : on ajuste $\theta$ pour réduire l'écart à la cible.
+
+$$
+L(\theta) = \Big(\, \underbrace{r + \gamma \max_{a'} Q_{\theta^-}(s', a')}_{\text{cible } y} - Q_\theta(s, a) \,\Big)^2
+$$
+
+<DqnLoop />
+
+Les deux ajouts répondent à deux problèmes :
+
+- **Des transitions corrélées** : des pas successifs se ressemblent, et un réseau qui apprend dessus dans l'ordre oublie le reste. La **mémoire de relecture** mélange les transitions et réutilise chacune plusieurs fois. Elle est possible parce que Q-learning est hors politique : une transition ancienne, jouée par une politique dépassée, reste une donnée valable.
+- **Une cible mouvante** : la cible dépend de $\theta$, qui change à chaque pas ; le réseau poursuit une cible qui fuit. Le **réseau cible** $\theta^-$ fige la cible pendant $C$ pas. Entre deux copies, DQN résout une régression à cible fixe : c'est une itération de FQI (section 2), faite par descente de gradient sur des mini-lots.
+
+### Ce qui peut encore mal tourner
+
+- **La triade mortelle** : approximation par une fonction, bootstrapping et apprentissage hors politique. Chacun est utile ; les trois ensemble peuvent faire diverger les valeurs (Sutton & Barto). DQN réunit les trois : la mémoire et le réseau cible le stabilisent en pratique, sans garantie.
+- **La surestimation** : le maximum de valeurs bruitées est en moyenne plus grand que le maximum des vraies valeurs. Le $\max_{a'}$ de la cible choisit donc de préférence les actions surestimées, et l'erreur se propage. **Double DQN** sépare le choix de l'action et son évaluation : $y = r + \gamma\, Q_{\theta^-}\big(s', \arg\max_{a'} Q_\theta(s', a')\big)$.
+
+
+## 4. LSPI : itération de politique approchée
+
+À venir : évaluer une politique par moindres carrés (LSTD), puis prendre l'action de plus grande valeur, et recommencer.
+
+## 5. Qui attribue le crédit ?
+
+C'est la question du chapitre 1 : quelle action mérite la récompense d'une suite lointaine ? FQI et DQN l'attribuent par la cible de Bellman, comme TD(0) et Q-learning. FQI le fait sur un lot de transitions rejouées : à chaque itération, toutes les cibles sont recalculées, et le crédit remonte d'un pas **partout à la fois**. Il faut donc autant d'itérations que la distance au but, mais aucun épisode complet n'est nécessaire, et des morceaux de trajectoires différentes se recombinent.
+
+<div class="retain">
+
+**À retenir**
+
+- Hors ligne : on ne dispose que de transitions enregistrées $(s, a, r, s')$.
+- **FQI** : cible $y = r + \gamma \max_{a'} Q_k(s', a')$, puis régression ; c'est l'itération de valeur du chapitre 1 avec des échantillons à la place de $P$. On apprend $Q$ plutôt que $V$ pour pouvoir choisir l'action sans connaître $P$.
+- La régression permet de généraliser entre états ; l'erreur d'une itération passe dans la cible suivante.
+- **DQN** : Q-learning avec un réseau, une **mémoire de relecture** (décorréler, réutiliser) et un **réseau cible** (figer la cible) ; chaque période du réseau cible est une itération de FQI.
+- Risques : la triade mortelle (approximation, bootstrapping, hors politique) et la surestimation par le $\max$ (corrigée par Double DQN).
+
+</div>
+
+<Refs items={[["Tree-Based Batch Mode Reinforcement Learning (JMLR 6, 503–556)", "Ernst, Geurts & Wehenkel", 2005, "https://jmlr.org/papers/v6/ernst05a.html"], ["Playing Atari with Deep Reinforcement Learning", "Mnih et al.", 2013, "1312.5602"], ["Human-level control through deep reinforcement learning (Nature 518)", "Mnih et al.", 2015, "10.1038/nature14236"], ["Deep Reinforcement Learning with Double Q-learning (AAAI 2016)", "van Hasselt, Guez & Silver", 2015, "1509.06461"]]} />
+
+<Quiz>
+
+**Q1.** Une transition a $r = 0$, $\gamma = 0{,}9$, et la meilleure valeur courante en $s'$ vaut $\max_{a'} Q_k(s', a') = 0{,}9$. Quelle est la cible ?
+
+<Reveal>
+
+$y = 0 + 0{,}9 \times 0{,}9 = 0{,}81$. C'est la valeur qui sera transmise à la case précédente, comme dans la table de la section 2.
+
+</Reveal>
+
+**Q2.** Les transitions enregistrées viennent d'un agent qui jouait au hasard. FQI peut-il quand même apprendre une bonne politique ?
+
+<Reveal>
+
+Oui, à condition que les données couvrent les situations utiles. La cible utilise $\max_{a'}$ : elle évalue la meilleure action en $s'$, pas celle que l'agent aléatoire a jouée ensuite. FQI est hors politique, comme Q-learning.
+
+</Reveal>
+
+**Q3.** Pourquoi remplacer le tableau de $Q$ par une régression dans FQI ?
+
+<Reveal>
+
+Quand les états sont nombreux ou continus, un même état n'apparaît presque jamais deux fois : un tableau n'aurait aucune valeur pour les états non vus. La régression généralise : elle donne une valeur aux états voisins de ceux des données.
+
+</Reveal>
+
+**Q4.** Pourquoi la mémoire de relecture marche-t-elle avec Q-learning, et pas directement avec SARSA ?
+
+<Reveal>
+
+Q-learning est hors politique : une transition jouée par une ancienne politique reste valable, puisque la cible prend le maximum en $s'$ sans dépendre de l'action jouée ensuite. La cible de SARSA utilise l'action que la politique actuelle choisirait : des transitions anciennes, jouées par une autre politique, ne la donnent pas.
+
+</Reveal>
+
+**Q5.** À quoi sert le réseau cible de DQN, et quel lien avec FQI ?
+
+<Reveal>
+
+Il fige la cible $y = r + \gamma \max_{a'} Q_{\theta^-}(s', a')$ pendant $C$ pas, pour que le réseau ne poursuive pas une cible qui bouge à chaque mise à jour. Pendant ces $C$ pas, DQN résout une régression à cible fixe : c'est une itération de FQI.
+
+</Reveal>
+
+**Q6.** Trois actions valent toutes vraiment 0, mais leurs estimations sont bruitées. Que vaut en moyenne le maximum des trois estimations ?
+
+<Reveal>
+
+Plus que 0 : on garde toujours la plus grande des trois erreurs, qui est positive en moyenne. C'est la surestimation que corrige Double DQN, en choisissant l'action avec un réseau et en l'évaluant avec l'autre.
+
+</Reveal>
+
+</Quiz>

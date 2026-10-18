@@ -1,0 +1,63 @@
+---
+// Chapitre 2 : rétropropagation tronquée dans le temps (TBPTT). T = 24 pas découpés en fenêtres de K pas ;
+// l'état passe d'une fenêtre à la suivante (en avant) mais le gradient s'arrête à la frontière.
+---
+<div class="widget tbptt" data-widget="tbptt">
+  <div class="row"><span>Fenêtre K :</span><span class="seg" data-ref="kk"></span></div>
+  <svg data-ref="svg" role="img" aria-label="Vingt-quatre pas découpés en fenêtres ; l'état traverse les frontières vers l'avant, le gradient ne les traverse pas"></svg>
+  <div class="kpis">
+    <div><span>Dépendance maximale apprise</span><b data-ref="k1"></b><i>le gradient relie deux pas au plus de K pas</i></div>
+    <div><span>Activations gardées pour le gradient</span><b data-ref="k2"></b><i>seulement la fenêtre en cours, pas toute la séquence</i></div>
+    <div><span>Mises à jour des poids</span><b data-ref="k3"></b><i>une par fenêtre : plus de mises à jour, plus tôt</i></div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="tbptt"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const T = 24;
+    let K = 6;
+    [3, 6, 8, 12, 24].forEach((k) => {
+      const b = document.createElement('button'); b.textContent = k === T ? '24 (BPTT complète)' : String(k); b.dataset.k = String(k);
+      b.addEventListener('click', () => { K = k; draw(); }); $('kk').appendChild(b);
+    });
+    function draw() {
+      $('kk').querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.k === String(K)));
+      const W = 660, ox = 12, cw = (W - 2 * ox) / T, y = 90, ch = 30, n = T / K;
+      const cx = (t: number) => ox + t * cw + cw / 2;
+      let o = `<defs><marker id="tba" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--text-2)"/></marker><marker id="tbb" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--c-model-loop)"/></marker></defs>`;
+      for (let w = 0; w < n; w++) {
+        const x = ox + w * K * cw;
+        o += `<rect x="${x + 1}" y="${y - 28}" width="${K * cw - 2}" height="${ch + 56}" rx="8" fill="var(--c-model-loop)" fill-opacity="${w % 2 ? 0.05 : 0.11}" stroke="var(--c-model-loop)" stroke-opacity="0.35"/>`;
+        o += `<text x="${x + (K * cw) / 2}" y="${y - 34}" text-anchor="middle" class="tl">fenêtre ${w + 1}</text>`;
+      }
+      for (let t = 0; t < T; t++) {
+        o += `<rect x="${cx(t) - (cw - 10) / 2}" y="${y}" width="${cw - 10}" height="${ch}" rx="4" fill="var(--text-2)" fill-opacity="0.14" stroke="var(--border)"/>`;
+        if (t < T - 1) {
+          const boundary = (t + 1) % K === 0;
+          // état vers l'avant : traverse toujours
+          o += `<line x1="${cx(t) + (cw - 10) / 2}" y1="${y + ch / 2 - 5}" x2="${cx(t + 1) - (cw - 10) / 2 - 1}" y2="${y + ch / 2 - 5}" stroke="var(--text-2)" stroke-width="1.3" marker-end="url(#tba)"${boundary ? ' stroke-dasharray="3 2"' : ''}/>`;
+          // gradient vers l'arrière : s'arrête à la frontière
+          if (!boundary) o += `<line x1="${cx(t + 1) - (cw - 10) / 2 - 1}" y1="${y + ch / 2 + 6}" x2="${cx(t) + (cw - 10) / 2}" y2="${y + ch / 2 + 6}" stroke="var(--c-model-loop)" stroke-width="1.6" marker-end="url(#tbb)"/>`;
+          else o += `<text x="${cx(t) + cw / 2}" y="${y + ch + 18}" text-anchor="middle" class="tx">✕</text>`;
+        }
+      }
+      o += `<text x="${ox}" y="${y + ch + 44}" class="tl2" style="fill:var(--text-2)">→ état transmis vers l'avant (en pointillé : détaché à la frontière)</text>`;
+      o += `<text x="${W - ox}" y="${y + ch + 44}" text-anchor="end" class="tl2" style="fill:var(--c-model-loop)">← gradient, arrêté à chaque ✕</text>`;
+      const svg = $('svg') as unknown as SVGSVGElement;
+      svg.setAttribute('viewBox', `0 0 ${W} ${y + ch + 54}`); svg.innerHTML = o;
+      $('k1').textContent = `${K} pas`;
+      $('k2').innerHTML = `${K} <small>sur ${T} pas</small>`;
+      $('k3').innerHTML = `${n} <small>par séquence de ${T}</small>`;
+    }
+    draw();
+  });
+</script>
+
+<style is:global>
+  .tbptt .row > .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .tbptt svg { max-width: 680px; margin: 6px auto 0; }
+  .tbptt svg text.tl { font: 600 10.5px var(--font); fill: var(--text-2); }
+  .tbptt svg text.tl2 { font: 10.5px var(--font); }
+  .tbptt svg text.tx { font: 600 11px var(--font); fill: var(--c-model-loop); }
+</style>

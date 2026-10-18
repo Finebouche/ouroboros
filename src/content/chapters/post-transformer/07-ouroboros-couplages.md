@@ -2,7 +2,7 @@
 num: 7
 title: "Ouroboros : les options de couplage"
 summary: "Le visualiseur tokens × passes : quand l'état est mis à jour, comment il entre, sur quoi porte l'attention, linéaire ou non."
-status: a-venir
+status: plan
 ---
 
 ## Au programme
