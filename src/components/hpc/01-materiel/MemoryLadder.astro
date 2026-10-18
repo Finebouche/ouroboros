@@ -3,9 +3,6 @@
 // Latences : ordres de grandeur typiques, variables d'une machine à l'autre. Débits : valeurs nominales (voir hw.ts et le texte).
 ---
 <div class="widget mladder hp" data-widget="mladder">
-  <p class="hlegend">
-    <span><i class="sq mem"></i>mémoire et transferts (en gris : ce n'est pas du travail de calcul)</span>
-  </p>
   <div class="ft">Latence : combien de temps avant que la première donnée arrive</div>
   <svg data-ref="lat" width="100%" role="img" aria-label="Échelle logarithmique des latences"></svg>
   <div class="ft">Débit : combien de temps pour déplacer 1 Go <button class="go" data-ref="go">Lancer</button></div>
@@ -17,10 +14,10 @@
 </div>
 
 <script>
-  import { fmtTime, fmtRate } from '../hw';
+  import { fmtTime, fmtRate, hatchDef, overBlock, opBlock } from '../hw';
   document.querySelectorAll<HTMLElement>('[data-widget="mladder"]').forEach((root) => {
     const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
-    // [libellé, secondes, groupe] ; groupe : 0 = calcul, 1 = pilotage (appel, lancement), 2 = mémoire et transferts
+    // [libellé, secondes, groupe] ; groupe : 0 = calcul, 1 = surcoût fixe (appel, lancement), 2 = mémoire (accès, transferts)
     const LAT: [string, number, number][] = [
       ['une FMA (1 cycle à 3 GHz)', 0.33e-9, 0],
       ['cache L1', 1e-9, 2],
@@ -41,13 +38,13 @@
       ['HBM2e (A100 80 Go)', 2.039e12],
       ['HBM3 (H100 SXM)', 3.35e12],
     ];
-    const COL = ['var(--h-calc)', 'var(--h-py)', 'var(--text-2)'];
+    const COL = ['var(--h-calc)', '', 'var(--h-mem)']; // groupe 1 (surcoût) : hachuré, sans couleur
 
     function draw() {
       const W = 640, ox = 230, wpx = W - ox - 80, rowH = 22;
       const lo = -10, hi = -3; // 0,1 ns à 1 ms
       const X = (s: number) => ox + ((Math.log10(s) - lo) / (hi - lo)) * wpx;
-      let g = '';
+      let g = hatchDef('hz-ml');
       for (let e = lo; e <= hi; e++) {
         const x = X(10 ** e);
         g += `<line x1="${x}" y1="0" x2="${x}" y2="${LAT.length * rowH}" stroke="var(--border)" stroke-width="0.5"/>`;
@@ -56,7 +53,7 @@
       LAT.forEach(([l, s, k], i) => {
         const y = i * rowH + 3;
         g += `<text x="${ox - 8}" y="${y + 12}" text-anchor="end" class="ax">${l}</text>`;
-        g += `<rect x="${ox}" y="${y}" width="${Math.max(2, X(s) - ox)}" height="15" rx="3" fill="${COL[k]}"/>`;
+        g += k === 1 ? overBlock('hz-ml', ox, y, Math.max(2, X(s) - ox), 15) : opBlock(ox, y, Math.max(2, X(s) - ox), 15, COL[k]);
         g += `<text x="${X(s) + 6}" y="${y + 12}" class="ax v">${fmtTime(s)}</text>`;
       });
       const a = $('lat') as unknown as SVGSVGElement;
@@ -76,7 +73,7 @@
         const y = i * rowH + 3, t = 1e9 / b, done = Math.min(1, (frac * tmax) / t);
         g += `<text x="${ox - 8}" y="${y + 12}" text-anchor="end" class="ax">${l}</text>`;
         g += `<rect x="${ox}" y="${y}" width="${wpx}" height="15" rx="3" fill="var(--surface-2)" stroke="var(--border)"/>`;
-        g += `<rect x="${ox}" y="${y}" width="${wpx * done}" height="15" rx="3" fill="var(--text-2)"/>`;
+        g += opBlock(ox, y, wpx * done, 15, 'var(--h-mem)');
         g += `<text x="${ox + wpx + 6}" y="${y + 12}" class="ax v">${fmtTime(t)}</text>`;
       });
       const s = $('bw') as unknown as SVGSVGElement;
@@ -95,7 +92,6 @@
 </script>
 
 <style is:global>
-  .mladder .hlegend .sq.mem { background: var(--text-2); }
   .mladder .ft { font-size: 13px; font-weight: 500; margin: 12px 0 4px; display: flex; align-items: center; gap: 10px; }
   .mladder .go { font-size: 12px; padding: 2px 10px; }
   .mladder svg text.ax { font: 11px var(--font); fill: var(--text-2); }

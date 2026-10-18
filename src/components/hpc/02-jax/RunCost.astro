@@ -1,5 +1,5 @@
 ---
-// Chapitre HPC 2 : ce que coûte un lot de run_batched, poste par poste.
+// Chapitre HPC 2 (JAX), partie 5 : ce que coûte un lot de run_batched, poste par poste.
 ---
 <div class="widget runc hp" data-widget="runc">
   <div class="sl">
@@ -12,9 +12,9 @@
   <table class="res">
     <thead><tr><th>Poste</th><th>Formule</th><th>Valeur</th></tr></thead>
     <tbody>
-      <tr><td><i class="sq comp"></i>Compilations</td><td>une par (type de nœud, activation, return_all, n_rows, n_steps, N, D, dtype)</td><td data-ref="v0">≤ tailles de lot × paliers de longueur</td></tr>
+      <tr><td><i class="sq over"></i>Compilations</td><td>une par (type de nœud, activation, return_all, n_rows, n_steps, N, D, dtype)</td><td data-ref="v0">≤ tailles de lot × paliers de longueur</td></tr>
       <tr><td><i class="sq calc"></i>Calcul par lot</td><td>n_steps × 2 · n_rows · N · (N + D)</td><td data-ref="v1"></td></tr>
-      <tr><td><i class="sq py"></i>Pilotage Python</td><td>tri une fois ; par lot : rembourrage, remise en ordre, np.asarray</td><td>proportionnel à la longueur totale des données</td></tr>
+      <tr><td><i class="sq over"></i>Pilotage Python</td><td>tri une fois ; par lot : rembourrage, remise en ordre, np.asarray</td><td>proportionnel à la longueur totale des données</td></tr>
       <tr><td><i class="sq mem"></i>Mémoire de sortie</td><td data-ref="f3"></td><td data-ref="v3"></td></tr>
     </tbody>
   </table>
@@ -59,9 +59,9 @@
   .runc table.res th { text-align: left; font-weight: 500; color: var(--text-2); padding: 4px 8px; border-bottom: 1px solid var(--border); }
   .runc table.res td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
   .runc .sq { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
-  .runc .sq.comp { background: var(--h-comp); }
-  .runc .sq.calc { background: var(--h-calc); }
-  .runc .sq.py { background: var(--h-py); }
+  .runc .sq.over { background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--text-2) 45%, transparent) 0 1.5px, transparent 1.5px 4px); border: 1px solid color-mix(in srgb, var(--text-2) 40%, transparent); }
+  .runc .sq.calc { background: color-mix(in srgb, var(--h-calc) 22%, transparent); border: 1px solid var(--h-calc); }
+  .runc .sq.mem { background: color-mix(in srgb, var(--h-mem) 22%, transparent); border: 1px solid var(--h-mem); }
   .runc .sq.mem { background: var(--text-2); opacity: 0.5; }
   .runc .note { font-size: 13px; color: var(--text-2); margin: 6px 0 0; }
   @media (max-width: 600px) { .runc .sl label { grid-template-columns: 1fr; } }

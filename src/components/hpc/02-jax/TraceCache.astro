@@ -1,11 +1,11 @@
 ---
-// Chapitre HPC 1, section 3 : le premier appel trace et compile ; les appels compatibles réutilisent l'exécutable.
+// Chapitre HPC 2 (JAX), partie 2 : le premier appel trace et compile ; les appels compatibles réutilisent l'exécutable.
 // Ce qui change dans les arguments décide s'il faut recompiler (clé de cache).
 ---
 <div class="widget tcache hp" data-widget="tcache">
   <div class="row"><span>À un moment, on change :</span><span class="seg" data-ref="sc"></span></div>
   <label class="posl"><span>À l'appel n°</span><input type="range" data-ref="at" min="2" max="9" step="1" value="5" /><b data-ref="at-out"></b></label>
-  <p class="hlegend"><span><i class="sq comp"></i>tracer + compiler</span><span><i class="sq exec"></i>exécuter</span></p>
+  <p class="hlegend"><span><i class="sq over"></i>tracer + compiler <small>(surcoût)</small></span><span><i class="sq calc"></i>exécuter <small>(calcul)</small></span></p>
   <svg data-ref="svg" width="100%" role="img" aria-label="Chronologie de 10 appels de la fonction compilée"></svg>
   <table class="key">
     <thead><tr><th>Clé de cache</th><th>Valeur appel 1</th><th>Après le changement</th></tr></thead>
@@ -19,6 +19,7 @@
 </div>
 
 <script>
+  import { hatchDef, overBlock, opBlock } from '../hw';
   document.querySelectorAll<HTMLElement>('[data-widget="tcache"]').forEach((root) => {
     const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
     const inp = (r: string) => $(r) as HTMLInputElement;
@@ -27,7 +28,7 @@
     type S = { id: string; label: string; key: number; after: string; recompile: boolean; note: string };
     const SC: S[] = [
       { id: 'val', label: 'les valeurs de x', key: -1, after: 'mêmes formes, autres nombres', recompile: false, note: 'Les valeurs ne comptent pas : le programme est le même, seul son contenu change. Pas de recompilation.' },
-      { id: 'shape', label: 'la forme (B : 32 → 64)', key: 0, after: 'xs : (64, 200, 128)', recompile: true, note: 'Une autre forme est un autre programme : le jaune revient. Chaque forme garde son exécutable en cache.' },
+      { id: 'shape', label: 'la forme (B : 32 → 64)', key: 0, after: 'xs : (64, 200, 128)', recompile: true, note: 'Une autre forme est un autre programme : la compilation revient. Chaque forme garde son exécutable en cache.' },
       { id: 'dtype', label: 'le dtype (float32 → float64)', key: 1, after: 'float64', recompile: true, note: 'Le type des éléments fait partie de la clé : nouvelle compilation.' },
       { id: 'tree', label: 'la structure du pytree', key: 2, after: '{Wx, Wh, b, Wy, Wz}', recompile: true, note: 'Une feuille de plus dans p change la structure : nouvelle compilation.' },
       { id: 'static', label: 'un argument statique', key: 3, after: 'return_all = True', recompile: true, note: 'Un argument statique est lu au traçage : sa valeur entre dans la clé (il doit donc être hachable).' },
@@ -45,12 +46,12 @@
       const at = +inp('at').value;
       $('at-out').textContent = String(at);
       const W = 640, H = 56, N = 10;
-      let g = '', x = 8, compiles = 0;
+      let g = hatchDef('hz-tc'), x = 8, compiles = 0;
       for (let k = 1; k <= N; k++) {
         const comp = k === 1 || (k === at && sc.recompile);
         if (comp) compiles++;
-        if (comp) { g += `<rect x="${x}" y="8" width="64" height="26" rx="4" fill="var(--h-comp)"/>`; x += 66; }
-        g += `<rect x="${x}" y="8" width="22" height="26" rx="4" fill="var(--h-exec)"/>`;
+        if (comp) { g += overBlock('hz-tc', x, 8, 64, 26, 'compiler'); x += 66; }
+        g += opBlock(x, 8, 22, 26, 'var(--h-calc)', '', k === at);
         g += `<text x="${x + 11}" y="48" text-anchor="middle" class="ax${k === at ? ' hl' : ''}">${k}</text>`;
         x += 26;
       }

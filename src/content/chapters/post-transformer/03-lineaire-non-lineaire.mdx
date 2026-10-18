@@ -44,7 +44,7 @@ L'associativité permet de regrouper les combinaisons dans l'ordre qu'on veut : 
 
 <ScanWidget />
 
-- **Profondeur** : $\lceil \log_2 s \rceil$ niveaux au lieu de $s - 1$ étapes ; chaque niveau est parallèle sur tous les $t$. Le prix : plus de calcul au total ($s \log s$ pour cette variante, de Hillis et Steele ; la variante de Blelloch ramène le travail à $O(s)$ avec une profondeur doublée). En JAX, c'est `lax.associative_scan` ; le cours [HPC, chapitre 3](/hpc/03-transformations/) le relie au parallélisme du matériel.
+- **Profondeur** : $\lceil \log_2 s \rceil$ niveaux au lieu de $s - 1$ étapes ; chaque niveau est parallèle sur tous les $t$. Le prix : plus de calcul au total ($s \log s$ pour cette variante, de Hillis et Steele ; la variante de Blelloch ramène le travail à $O(s)$ avec une profondeur doublée). En JAX, c'est `lax.associative_scan` ; le cours [HPC, chapitre 2, partie 3](/hpc/02-jax/) le relie au parallélisme du matériel.
 - **$a_t$ et $b_t$ peuvent dépendre de $x_t$**, de façon non linéaire (une porte, un softplus…) : on les calcule d'abord, en parallèle sur $t$. Seule la dépendance à l'état $h$ doit être linéaire.
 - **Élément par élément** : avec $a_t \odot h$ (un $a_t$ par composante), chaque dimension est un scan indépendant. Avec une vraie matrice $A_t$, la composition demande des produits matriciels $d \times d$ : c'est pourquoi les modèles récents utilisent des matrices diagonales ou structurées (chapitre 4).
 

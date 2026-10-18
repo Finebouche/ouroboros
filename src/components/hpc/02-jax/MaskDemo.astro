@@ -1,5 +1,5 @@
 ---
-// Chapitre HPC 2 : longueurs variables. Rembourrage à la fin, et l'état d'une séquence finie est figé par jnp.where.
+// Chapitre HPC 2 (JAX), partie 5 : longueurs variables. Rembourrage à la fin, et l'état d'une séquence finie est figé par jnp.where.
 ---
 <div class="widget maskd hp" data-widget="maskd">
   <label class="posl"><span>Pas t</span><input type="range" data-ref="t" min="0" max="12" step="1" value="7" /><b data-ref="t-out"></b></label>
@@ -30,10 +30,12 @@ state = tree_map(lambda new, old: jnp.where(active, new, old), new_state, state)
         g += `<text x="${ox - 8}" y="${oy + r * (ch + 3) + 16}" text-anchor="end" class="ax">${Ti ? `T${r + 1} = ${Ti}` : 'vide'}</text>`;
         for (let s = 0; s < STEPS; s++) {
           const x = ox + s * (cw + 3), y = oy + r * (ch + 3);
-          const fill = Ti === 0 ? 'var(--text-2)' : s < Ti ? 'var(--h-calc)' : 'var(--h-calc)';
-          const op = Ti === 0 ? 0.18 : s < Ti ? 0.92 : 0.25;
-          if (Ti && s < Ti) useful++;
-          g += `<rect x="${x}" y="${y}" width="${cw}" height="${ch}" rx="3" fill="${fill}" opacity="${op}"/>`;
+          // pas utile : teinte et contour (plein au pas en cours) ; calculé puis ignoré : pâle ; ligne vide : gris
+          const use = Ti > 0 && s < Ti;
+          if (use) useful++;
+          if (Ti === 0) g += `<rect x="${x}" y="${y}" width="${cw}" height="${ch}" rx="3" fill="var(--text-2)" fill-opacity="0.1"/>`;
+          else if (use) g += `<rect x="${x}" y="${y}" width="${cw}" height="${ch}" rx="3" fill="var(--h-calc)" fill-opacity="${s === cur ? 0.85 : 0.22}" stroke="var(--h-calc)" stroke-width="1"/>`;
+          else g += `<rect x="${x}" y="${y}" width="${cw}" height="${ch}" rx="3" fill="var(--h-calc)" fill-opacity="0.07" stroke="var(--h-calc)" stroke-opacity="0.3" stroke-dasharray="2 2"/>`;
         }
       });
       const xc = ox + cur * (cw + 3);
@@ -55,8 +57,8 @@ state = tree_map(lambda new, old: jnp.where(active, new, old), new_state, state)
 <style is:global>
   .maskd .posl { display: grid; grid-template-columns: 80px 1fr 40px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); margin: 4px 0 8px; }
   .maskd .posl b { text-align: right; color: var(--text); font-weight: 500; }
-  .maskd .sq.u { background: var(--h-calc); }
-  .maskd .sq.w { background: var(--h-calc); opacity: 0.25; }
+  .maskd .sq.u { background: color-mix(in srgb, var(--h-calc) 22%, transparent); border: 1px solid var(--h-calc); }
+  .maskd .sq.w { background: color-mix(in srgb, var(--h-calc) 7%, transparent); border: 1px dashed color-mix(in srgb, var(--h-calc) 35%, transparent); }
   .maskd .sq.e { background: var(--text-2); opacity: 0.2; }
   .maskd svg text.ax { font: 11px var(--font); fill: var(--text-2); }
   .maskd svg text.ax.hl { fill: var(--text); font-weight: 600; }

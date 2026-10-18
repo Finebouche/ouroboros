@@ -1,5 +1,5 @@
 ---
-// Chapitre HPC 2 : vmap transforme W @ s (GEMV, limité par la mémoire) en GEMM. Intensité arithmétique = FLOPs par octet lu en mémoire.
+// Chapitre HPC 2 (JAX), partie 5 : vmap transforme W @ s (GEMV, limité par la mémoire) en GEMM. Intensité arithmétique = FLOPs par octet lu en mémoire.
 // Hypothèse : W dense. Par défaut reservoirpy.jax stocke W et Win en creux (BCOO, connectivité 0,1) : à mesurer.
 ---
 <div class="widget inten hp" data-widget="inten">
@@ -40,10 +40,10 @@
       const W = 640, ox = 130, wpx = W - ox - 20, rowH = 30, max = Math.max(many, bal * 1.2, 1);
       const X = (v: number) => ox + (v / max) * wpx;
       let g = '';
-      const rows: [string, number, string][] = [['1 série (GEMV)', one, 'var(--h-py)'], [`${B} séries (GEMM)`, many, 'var(--h-calc)']];
+      const rows: [string, number, string][] = [['1 série (GEMV)', one, 'var(--h-mem)'], [`${B} séries (GEMM)`, many, many < bal ? 'var(--h-mem)' : 'var(--h-calc)']]; // couleur : ce qui limite le pas
       rows.forEach(([l, v, c], i) => {
         const y = 6 + i * rowH;
-        g += `<text x="${ox - 8}" y="${y + 16}" text-anchor="end" class="ax">${l}</text><rect x="${ox}" y="${y}" width="${Math.max(2, X(v) - ox)}" height="20" rx="3" fill="${c}" opacity="0.85"/><text x="${X(v) + 6}" y="${y + 15}" class="ax v">${fr(v, 2)}</text>`;
+        g += `<text x="${ox - 8}" y="${y + 16}" text-anchor="end" class="ax">${l}</text><rect x="${ox}" y="${y}" width="${Math.max(2, X(v) - ox)}" height="20" rx="3" fill="${c}" fill-opacity="0.22" stroke="${c}"/><text x="${X(v) + 6}" y="${y + 15}" class="ax v">${fr(v, 2)}</text>`;
       });
       g += `<line x1="${X(bal)}" y1="0" x2="${X(bal)}" y2="${rows.length * rowH + 4}" stroke="var(--hl-stroke)" stroke-dasharray="4 3"/><text x="${X(bal)}" y="${rows.length * rowH + 18}" text-anchor="middle" class="ax hl">équilibre ≈ ${bal}</text>`;
       g += `<text x="${ox}" y="${rows.length * rowH + 18}" class="ax">FLOP / octet →</text>`;

@@ -11,7 +11,7 @@ const chapters = defineCollection({
     // état de l'écriture : plan (plan seulement), premier-jet (rédigé, pas encore relu), en-relecture (relu et retouché par l'utilisateur),
     // termine (validé par l'utilisateur ; lui seul met ce statut)
     status: z.enum(['plan', 'premier-jet', 'en-relecture', 'termine']).default('plan'),
-    sidebar: z.enum(['transformer', 'loop', 'mfcc']).optional(),
+    sidebar: z.enum(['transformer', 'loop', 'mfcc', 'jax']).optional(),
   }),
 });
 

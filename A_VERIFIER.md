@@ -14,6 +14,7 @@ Affirmations écrites dans les cours mais pas encore vérifiées dans une source
 
 - **Chapitre 1** : correspondances du tableau `Evaluation` (LSTD → LSPI, FQE → FQI, SARSA(λ), MCTS dans la famille Monte-Carlo, critique de NAC et rôle de λ) ; noms des familles « itération de valeur / de politique approchée » ; exemples DQN, A2C, TRPO, CMA-ES, Dyna, MCTS / AlphaZero, MuZero.
 - **Chapitre 2** : conditions de convergence de SARSA ; terme « triade mortelle » (édition 2018 de Sutton & Barto, peut-être absent de la version de 2015 citée).
+- **Chapitre 3** : forme du bonus UCB $c\sqrt{\ln t / N}$ avec $c = 2$ (celle de Sutton & Barto ; l'UCB1 d'Auer et al. a une autre constante) ; description des méthodes citées (pseudo-comptes de Bellemare et al., ICM de Pathak et al., RND de Burda et al., Thompson sampling) : seuls titres, auteurs et années ont été vérifiés, pas le contenu des articles ; l'échec du bonus $\beta/\sqrt{N(s')}$ ajouté à un Q-learning tabulaire sur la grille (essai non montré, cause non analysée).
 - **Chapitre 4** : convergence de FQI « pour certaines familles de régresseurs » (Ernst et al.) ; Q-learning comme version une transition à la fois de la cible de FQI.
 
 ## HPC et Preprocessing

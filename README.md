@@ -6,7 +6,7 @@ Site personnel de cours : des fiches de révision visuelles. Il héberge plusieu
 |---|---|---|---|
 | Post-Transformer | `post-transformer` | Chapitre | le transformer et ses successeurs récurrents : récurrence en profondeur, dans le temps, leur couplage (projet de recherche Ouroboros) |
 | Preprocessing | `preprocessing` | Chapitre | prétraitement des données ; chapitre 1 : MFCC |
-| HPC | `hpc` | Chapitre | calcul haute performance : matériel et roofline, NumPy contre JAX, transformations, sharding, étude de cas `run_batched`, moindres carrés (Cholesky, QR, SVD, LSQR) |
+| HPC | `hpc` | Chapitre | calcul haute performance : matériel et roofline ; JAX de Python à l'appareil (exécution, compilation, transformations, sharding, étude de cas `run_batched`) ; moindres carrés (Cholesky, QR, SVD, LSQR) |
 | RL | `rl` | Chapitre | apprentissage par renforcement : mécanismes mathématiques (Bellman), familles d'algorithmes (méthodes de valeur, gradient de politique, stratégies d'évolution, méthodes avec modèle), benchmarks (POPGym, LunarLander) |
 
 ## Lancer
@@ -31,7 +31,7 @@ src/
       02-recurrence-temps/ … 06-recurrence-profondeur/  widgets des chapitres 2, 3 et 6
     preprocessing/
       01-mfcc/                 widgets du chapitre MFCC
-    hpc/                       Legend (code couleur du type de travail), hw.ts (matériel de référence), widgets par chapitre
+    hpc/                       Legend (code couleur : calcul, mémoire, surcoût fixe), JaxSidebar (parties du chapitre 2), hw.ts (matériel de référence), widgets par chapitre
   lib/courses.ts               liste des cours (titre, unité, présentation) et fonctions de lecture de la collection
   layouts/Base.astro           mise en page commune (en-tête : Cours / <cours>)
   pages/                       index (liste des cours), [course]/index (carte de progression), [course]/[...slug] (page d'un chapitre)

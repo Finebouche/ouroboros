@@ -1,5 +1,5 @@
 ---
-// Chapitre HPC 3 : la mémoire pendant grad. Le mode inverse garde les valeurs de la passe avant (les résidus) jusqu'à la passe arrière.
+// Chapitre HPC 2 (JAX), partie 3 : la mémoire pendant grad. Le mode inverse garde les valeurs de la passe avant (les résidus) jusqu'à la passe arrière.
 // Avec jax.checkpoint par segments : on ne garde que les frontières, on recalcule l'intérieur d'un segment juste avant de le remonter.
 // Unités : un pas avant = 1, un pas arrière = 2 (ordre de grandeur courant) ; un état gardé = 1 unité de mémoire.
 ---
@@ -63,8 +63,9 @@
       const X = (t: number) => ox + (t / Math.max(tEnd, tRef)) * pw, Y = (m: number) => oy + ph - (m / T) * ph;
       let g = '';
       // bande des phases
-      const CL: Record<string, [string, number, string]> = { fwd: ['var(--h-calc)', 0.55, 'avant'], rec: ['var(--h-calc)', 0.25, 'recalcul'], bwd: ['var(--h-calc)', 0.95, 'arrière'] };
-      segs.forEach((s) => { if (s.t1 > s.t0) g += `<rect x="${X(s.t0)}" y="4" width="${Math.max(0.5, X(s.t1) - X(s.t0))}" height="10" fill="${CL[s.ph][0]}" opacity="${CL[s.ph][1]}"/>`; });
+      // phases : tout est du calcul ; avant en teinte, arrière en plein, recalcul en teinte à contour pointillé
+      const PH: Record<string, string> = { fwd: 'fill-opacity="0.22" stroke="var(--h-calc)" stroke-width="0.8"', rec: 'fill-opacity="0.1" stroke="var(--h-calc)" stroke-width="0.8" stroke-dasharray="2 2"', bwd: 'fill-opacity="0.85"' };
+      segs.forEach((s) => { if (s.t1 > s.t0) g += `<rect x="${X(s.t0)}" y="3" width="${Math.max(0.5, X(s.t1) - X(s.t0))}" height="12" rx="1.5" fill="var(--h-calc)" ${PH[s.ph]}/>`; });
       // courbe de mémoire
       let path = `M${X(0)} ${Y(0)}`;
       segs.forEach((s) => { path += `L${X(s.t1)} ${Y(s.m1)}`; });
@@ -73,7 +74,7 @@
       g += `<line x1="${ox}" y1="${Y(0)}" x2="${ox + pw}" y2="${Y(0)}" stroke="var(--border)"/><text x="${ox - 6}" y="${Y(T) + 4}" text-anchor="end" class="ax">${T}</text><text x="${ox - 6}" y="${Y(0) + 4}" text-anchor="end" class="ax">0</text>`;
       g += `<text x="${ox + pw / 2}" y="${H - 4}" text-anchor="middle" class="ax">temps (un pas avant = 1)</text>`;
       g += `<text x="${ox}" y="${H - 16}" class="ax">mémoire : états gardés</text>`;
-      [['avant', 0.55], ['recalcul', 0.25], ['arrière', 0.95]].forEach(([l, o], i) => { g += `<rect x="${ox + pw - 210 + i * 72}" y="${H - 26}" width="10" height="10" fill="var(--h-calc)" opacity="${o}"/><text x="${ox + pw - 196 + i * 72}" y="${H - 17}" class="ax">${l}</text>`; });
+      [['avant', 'fwd'], ['recalcul', 'rec'], ['arrière', 'bwd']].forEach(([l, o], i) => { g += `<rect x="${ox + pw - 210 + i * 72}" y="${H - 26}" width="10" height="10" rx="2" fill="var(--h-calc)" ${PH[o]}/><text x="${ox + pw - 196 + i * 72}" y="${H - 17}" class="ax">${l}</text>`; });
       const s = $('svg') as unknown as SVGSVGElement;
       s.setAttribute('viewBox', `0 0 ${W} ${H}`);
       s.innerHTML = g;

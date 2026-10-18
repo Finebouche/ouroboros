@@ -32,3 +32,16 @@ export const fmtTime = (s: number) => {
   if (s >= 1e-6) return `${(s * 1e6).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} µs`;
   return `${(s * 1e9).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} ns`;
 };
+
+// Code couleur du cours : une opération est colorée par ce qui la limite (--h-calc, --h-mem) ; le surcoût est hachuré en gris, sans couleur.
+// Motif hachuré à placer une fois dans chaque SVG (id propre au widget, pour ne pas dépendre d'un autre SVG de la page).
+export const hatchDef = (id: string) =>
+  `<defs><pattern id="${id}" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="var(--surface)"/><line x1="0" y1="0" x2="0" y2="5" stroke="var(--text-2)" stroke-opacity="0.5" stroke-width="1.6"/></pattern></defs>`;
+// Bloc de surcoût : hachures grises, étiquette facultative (compilation…)
+export const overBlock = (id: string, x: number, y: number, w: number, h: number, label = '') =>
+  `<rect x="${x}" y="${y}" width="${Math.max(0.8, w)}" height="${h}" rx="2" fill="url(#${id})" stroke="var(--text-2)" stroke-opacity="0.35" stroke-width="0.8"/>` +
+  (label && w > label.length * 5.6 + 8 ? `<text x="${x + w / 2}" y="${y + h / 2 + 3.8}" text-anchor="middle" style="font:500 10.5px var(--font);fill:var(--text)">${label}</text>` : '');
+// Bloc d'opération : teinte claire et contour ; plein pour l'élément actif ; nom écrit dedans s'il tient
+export const opBlock = (x: number, y: number, w: number, h: number, col: string, label = '', strong = false) =>
+  `<rect x="${x}" y="${y}" width="${Math.max(0.8, w)}" height="${h}" rx="2" fill="${col}" fill-opacity="${strong ? 0.85 : 0.2}" stroke="${col}" stroke-width="1"/>` +
+  (label && w > label.length * 5.6 + 6 ? `<text x="${x + w / 2}" y="${y + h / 2 + 3.8}" text-anchor="middle" style="font:500 10.5px var(--font);fill:${strong ? 'var(--surface)' : col}">${label}</text>` : '');

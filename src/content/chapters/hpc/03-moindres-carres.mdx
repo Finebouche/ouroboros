@@ -1,5 +1,5 @@
 ---
-num: 6
+num: 3
 title: "Moindres carrés : Cholesky, QR, SVD, LSQR"
 summary: "Quatre façons de résoudre min ‖Ax − b‖ : coût, conditionnement, rang, parallélisme, matrices creuses. Expériences numériques en direct."
 status: en-relecture
@@ -7,11 +7,11 @@ status: en-relecture
 import Reveal from '@/components/shared/Reveal.astro';
 import Quiz from '@/components/shared/Quiz.astro';
 import Refs from '@/components/shared/Refs.astro';
-import Tri from '@/components/hpc/06-moindres-carres/Tri.astro';
-import Eq from '@/components/hpc/06-moindres-carres/Eq.astro';
-import PrecisionCliff from '@/components/hpc/06-moindres-carres/PrecisionCliff.astro';
-import Stop from '@/components/hpc/06-moindres-carres/Stop.astro';
-import Reach from '@/components/hpc/06-moindres-carres/Reach.astro';
+import Tri from '@/components/hpc/03-moindres-carres/Tri.astro';
+import Eq from '@/components/hpc/03-moindres-carres/Eq.astro';
+import PrecisionCliff from '@/components/hpc/03-moindres-carres/PrecisionCliff.astro';
+import Stop from '@/components/hpc/03-moindres-carres/Stop.astro';
+import Reach from '@/components/hpc/03-moindres-carres/Reach.astro';
 
 Ce chapitre est indépendant de JAX. Un seul problème, quatre algorithmes : trouver $x \in \mathbb{R}^n$ qui minimise $\lVert Ax - b \rVert_2$, avec $A \in \mathbb{R}^{m \times n}$ et $m \ge n$.
 

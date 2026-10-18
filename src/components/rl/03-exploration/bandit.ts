@@ -20,7 +20,7 @@ export const argmaxTie = (v: number[], r: () => number) => {
 export type Strat = 'glouton' | 'eps' | 'soft' | 'opt' | 'ucb';
 export const STRATS: Strat[] = ['glouton', 'eps', 'soft', 'opt', 'ucb'];
 export const LABELS: Record<Strat, string> = { glouton: 'Glouton', eps: 'ε-greedy', soft: 'Softmax', opt: 'Optimiste', ucb: 'UCB' };
-export const COLORS: Record<Strat, string> = { glouton: 'var(--c-neutral)', eps: 'var(--a-bc)', soft: 'var(--a-nac)', opt: 'var(--a-ppo)', ucb: 'var(--a-lspi)' };
+export const COLORS: Record<Strat, string> = { glouton: 'var(--c-neutral)', eps: 'var(--a-bc)', soft: 'var(--a-fqi)', opt: 'var(--a-ppo)', ucb: 'var(--a-lspi)' };
 export const EPS = 0.1, TAU = 0.25, UCB_C = 2, Q0_OPT = 5, ALPHA_OPT = 0.1;
 export const softmax = (Q: number[], tau: number) => {
   const m = Math.max(...Q), w = Q.map((v) => Math.exp((v - m) / tau)), s = w.reduce((a, b) => a + b, 0);

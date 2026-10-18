@@ -1,5 +1,5 @@
 ---
-// Chapitre HPC 3 : vmap et la réutilisation des données. B produits W @ s : boucle (B GEMV) contre vmap (un GEMM).
+// Chapitre HPC 2 (JAX), partie 3 : vmap et la réutilisation des données. B produits W @ s : boucle (B GEMV) contre vmap (un GEMM).
 // La carte de chaleur compte combien de fois chaque coefficient de W est lu depuis la mémoire principale.
 ---
 <div class="widget vreuse hp" data-widget="vreuse">
@@ -49,7 +49,7 @@
       let g = '';
       for (let i = 0; i < G; i++) for (let j = 0; j < G; j++) {
         const op = 0.15 + 0.85 * Math.log(reads) / Math.log(64);
-        g += `<rect x="${j * cs}" y="${i * cs}" width="${cs - 1.5}" height="${cs - 1.5}" rx="2" fill="${reads > 1 ? 'var(--text)' : 'var(--h-calc)'}" opacity="${reads > 1 ? op : 0.5}"/>`;
+        g += `<rect x="${j * cs}" y="${i * cs}" width="${cs - 1.5}" height="${cs - 1.5}" rx="2" fill="var(--h-mem)" fill-opacity="${(reads > 1 ? op : 0.15) * 0.8}" stroke="var(--h-mem)" stroke-opacity="0.5" stroke-width="0.6"/>`;
       }
       const h = $('heat') as unknown as SVGSVGElement;
       h.setAttribute('viewBox', `0 0 ${G * cs} ${G * cs}`);
@@ -62,7 +62,7 @@
       const flops = 2 * B * N * N;
       const ai = flops / (bytes + 8 * B * N);
       const W = 300, X = (v: number) => (Math.log2(v) + 2) / 9 * W; // 1/4 … 128
-      let s = `<rect x="0" y="6" width="${Math.max(2, X(ai))}" height="16" rx="3" fill="${ai < 20 ? 'var(--text-2)' : 'var(--h-calc)'}" opacity="0.85"/>`;
+      let s = `<rect x="0" y="6" width="${Math.max(2, X(ai))}" height="16" rx="3" fill="${ai < 20 ? 'var(--h-mem)' : 'var(--h-calc)'}" fill-opacity="0.22" stroke="${ai < 20 ? 'var(--h-mem)' : 'var(--h-calc)'}"/>`;
       s += `<line x1="${X(20)}" y1="0" x2="${X(20)}" y2="28" stroke="var(--hl-stroke)" stroke-dasharray="3 3"/><text x="${X(20) + 4}" y="40" class="ax hl">équilibre 20</text><text x="${Math.min(W - 40, X(ai) + 4)}" y="18" class="ax v">${fr(ai, 1)}</text>`;
       const bar = $('bar') as unknown as SVGSVGElement;
       bar.setAttribute('viewBox', `0 0 ${W} 44`);
@@ -84,7 +84,7 @@
   .vreuse .cols { display: grid; grid-template-columns: 220px 1fr; gap: 20px; }
   .vreuse .ft { font-size: 13px; font-weight: 500; margin: 6px 0 4px; }
   .vreuse .scale { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); margin: 4px 0 0; }
-  .vreuse .ramp { display: inline-block; width: 80px; height: 8px; border-radius: 3px; background: linear-gradient(to right, var(--surface-2), var(--text)); }
+  .vreuse .ramp { display: inline-block; width: 80px; height: 8px; border-radius: 3px; background: linear-gradient(to right, color-mix(in srgb, var(--h-mem) 30%, transparent), var(--h-mem)); }
   .vreuse pre.code { background: var(--surface-2); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; line-height: 1.55; margin: 0; white-space: pre-wrap; }
   .vreuse svg text.ax { font: 11px var(--font); fill: var(--text-2); }
   .vreuse svg text.ax.v { fill: var(--text); }

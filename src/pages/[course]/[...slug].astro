@@ -3,6 +3,7 @@ import { render } from 'astro:content';
 import Base from '../../layouts/Base.astro';
 import ArchSidebar from '../../components/post-transformer/ArchSidebar.astro';
 import PipelineSidebar from '../../components/preprocessing/PipelineSidebar.astro';
+import JaxSidebar from '../../components/hpc/JaxSidebar.astro';
 import { COURSES, courseIds, chaptersOf, chapterUrl, slugOf } from '../../lib/courses';
 
 export async function getStaticPaths() {
@@ -24,6 +25,7 @@ const { Content } = await render(entry);
 <Base title={`${meta.unit} ${entry.data.num} · ${entry.data.title}`} wide={!!entry.data.sidebar} course={course}>
   <div class:list={[{ layout: !!entry.data.sidebar }]}>
     {entry.data.sidebar === 'mfcc' && <PipelineSidebar />}
+    {entry.data.sidebar === 'jax' && <JaxSidebar />}
     {(entry.data.sidebar === 'transformer' || entry.data.sidebar === 'loop') && <ArchSidebar variant={entry.data.sidebar} />}
     <article>
       <p><a href={`/${course}/`}>&larr; {meta.title}</a></p>

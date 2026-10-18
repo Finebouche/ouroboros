@@ -21,7 +21,7 @@ export const COURSES = {
     unit: 'Chapitre',
     tagline: 'Calcul haute performance, vu par JAX contre NumPy : matériel, compilation, transformations, plusieurs appareils.',
     intro:
-      "Ce qui coûte vraiment dans un calcul numérique (déplacer les données), et ce que JAX change par rapport à NumPy : compilation et fusion, exécution asynchrone sur l'appareil, transformations (vmap, scan, grad) et découpage sur plusieurs appareils. Chapitre 5 : un vrai code lu avec ces outils. Chapitre 6 (indépendant de JAX) : moindres carrés, Cholesky contre QR, SVD et LSQR.",
+      "Ce qui coûte vraiment dans un calcul numérique (déplacer les données), et ce que JAX change par rapport à NumPy. Chapitre 2, en cinq parties : exécution asynchrone sur l'appareil, compilation et fusion, transformations (vmap, scan, grad), découpage sur plusieurs appareils, puis un vrai code lu avec ces outils. Chapitre 3 (indépendant de JAX) : moindres carrés, Cholesky contre QR, SVD et LSQR.",
   },
   rl: {
     title: 'RL',

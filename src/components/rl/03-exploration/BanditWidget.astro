@@ -39,7 +39,7 @@ const FUPD: [string, string][] = [
     const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
     const MU = [0.3, -0.6, 1.3, 0.9, -1.1, 0.6], K = MU.length, BEST = 2, MSTAR = Math.max(...MU);
     const fm = (v: number, d = 2) => v.toFixed(d).replace('.', ',').replace('-', '−');
-    let strat: Strat = 'glouton', seed = 41, rnd = rng(seed);
+    let strat: Strat = 'glouton', seed = 43, rnd = rng(seed);
     type Last = { a: number; r: number; qOld: number; qNew: number; msg: string };
     let Q: number[], N: number[], t = 0, cum = 0, regret = 0, last: Last | null = null;
     let timer: number | null = null, playB: HTMLButtonElement | null = null;
@@ -104,7 +104,7 @@ const FUPD: [string, string][] = [
     mk('recommencer', () => reset(true));
     STRATS.forEach((s) => {
       const b = document.createElement('button'); b.textContent = LABELS[s]; b.dataset.v = s;
-      b.addEventListener('click', () => { strat = s; seed = 41; reset(); }); $('strat').appendChild(b);
+      b.addEventListener('click', () => { strat = s; seed = 43; reset(); }); $('strat').appendChild(b);
     });
 
     function draw() {

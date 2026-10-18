@@ -1,5 +1,5 @@
 ---
-// Chapitre HPC 2 : radiographie de jit. Python → jaxpr (primitives) → noyaux après fusion par XLA.
+// Chapitre HPC 2 (JAX), partie 2 : radiographie de jit. Python → jaxpr (primitives) → noyaux après fusion par XLA.
 // Le découpage en noyaux est typique d'XLA sur GPU, pas garanti : il dépend de la version, du matériel et des formes.
 ---
 <div class="widget xray hp" data-widget="xray">
@@ -9,6 +9,7 @@
       <div class="ft">1. Python</div>
       <pre class="code py" data-ref="py"></pre>
       <div class="ft">3. Noyaux après XLA <span>(clique pour voir leurs primitives)</span></div>
+      <p class="hlegend"><span><i class="sq calc"></i>limité par le calcul (produit matriciel)</span><span><i class="sq mem"></i>limité par la mémoire (élément par élément, réduction)</span></p>
       <div class="kern" data-ref="kern"></div>
     </div>
     <div>
@@ -89,7 +90,8 @@
         note: 'Les deux produits restent des appels de bibliothèque ; l’addition, le biais et tanh deviennent un noyau. Sous scan, ce pas est répété T fois dans la même boucle compilée.',
       },
     ];
-    const KC: Record<string, string> = { lib: 'var(--h-calc)', loop: 'var(--h-exec)', red: 'var(--p-mel)' };
+    // couleur = ce qui limite le noyau : le calcul pour un produit matriciel, la mémoire pour une fusion élément par élément ou une réduction
+    const KC: Record<string, string> = { lib: 'var(--h-calc)', loop: 'var(--h-mem)', red: 'var(--h-mem)' };
     let ex = EX[0], selK = -1;
     EX.forEach((e) => {
       const b = document.createElement('button');

@@ -1,5 +1,5 @@
 ---
-// Chapitre HPC 3 : scan séquentiel contre scan associatif (parallèle). Le graphe des dépendances : la hauteur est la profondeur
+// Chapitre HPC 2 (JAX), partie 3 : scan séquentiel contre scan associatif (parallèle). Le graphe des dépendances : la hauteur est la profondeur
 // (le temps minimal avec une infinité de voies), le nombre de nœuds est le travail. Version parallèle dessinée : Hillis–Steele.
 ---
 <div class="widget sdepth hp" data-widget="sdepth">
@@ -36,7 +36,7 @@
       $('p-out').textContent = String(P);
       const W = 640, ox = 20, cw = (W - 2 * ox) / T, rh = assoc ? 34 : 11;
       let g = '';
-      const node = (i: number, lvl: number, on = true) => `<circle cx="${ox + (i + 0.5) * cw}" cy="${10 + lvl * rh}" r="${Math.min(5, cw / 3)}" fill="${on ? 'var(--h-calc)' : 'var(--surface-2)'}" stroke="${on ? 'none' : 'var(--border)'}"/>`;
+      const node = (i: number, lvl: number, on = true) => `<circle cx="${ox + (i + 0.5) * cw}" cy="${10 + lvl * rh}" r="${Math.min(5, cw / 3)}" fill="${on ? 'var(--h-calc)' : 'var(--surface-2)'}" fill-opacity="${on ? 0.3 : 1}" stroke="${on ? 'var(--h-calc)' : 'var(--border)'}" stroke-width="1.2"/>`;
       const edge = (i: number, l0: number, j: number, l1: number) => `<line x1="${ox + (i + 0.5) * cw}" y1="${10 + l0 * rh}" x2="${ox + (j + 0.5) * cw}" y2="${10 + l1 * rh}" stroke="var(--text-2)" stroke-width="0.8" opacity="0.6"/>`;
       let depth = 0, work = 0, steps = 0;
       if (!assoc) {

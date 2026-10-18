@@ -9,7 +9,7 @@
   </div>
   <svg data-ref="svg" role="img" aria-label="Récompense moyenne obtenue à chaque pas, pour chaque stratégie, moyennée sur 500 problèmes à 10 bras"></svg>
   <div class="kpis" data-ref="kpis"></div>
-  <p class="note">Chaque courbe est la récompense obtenue au pas t, moyennée sur 500 problèmes. Trait pointillé : ce que rapporte le meilleur bras, en moyenne : aucune stratégie ne peut le dépasser. Les paramètres sont ceux du widget précédent (softmax τ = 0,25 ; UCB c = 2 ; optimiste Q<sub>0</sub> = 5 avec α = 0,1).</p>
+  <p class="note">Cartes : récompense moyenne sur les 100 derniers pas. Chaque courbe est la récompense obtenue au pas t, moyennée sur 500 problèmes. Trait pointillé : ce que rapporte le meilleur bras, en moyenne : aucune stratégie ne peut le dépasser. Les paramètres sont ceux du widget précédent (softmax τ = 0,25 ; UCB c = 2 ; optimiste Q<sub>0</sub> = 5 avec α = 0,1).</p>
 </div>
 
 <script>
@@ -85,7 +85,8 @@
   .cmpw .cpar { margin-bottom: 4px; max-width: 360px; }
   .cmpw svg { max-width: 680px; margin: 6px auto 0; }
   .cmpw svg text.vs { font: 10.5px var(--font); fill: var(--text-2); }
-  .cmpw .kpis > div { flex: 1 1 130px; }
+  .cmpw .kpis > div { flex: 1 1 108px; display: block; }
+  .cmpw .kpis > div > span { display: block; margin-bottom: 2px; }
   .cmpw .kpis .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; }
   .cmpw .kpis > div > span { white-space: nowrap; }
 </style>

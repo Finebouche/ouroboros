@@ -1,0 +1,136 @@
+---
+// Cours RL, chapitre 3 : l'optimisme dans un MDP. Grille 10 × 10 sans murs, départ en haut à gauche, +1 au but (coin opposé), 0 partout ailleurs.
+// Deux agents Q-learning (α = 0,5 ; γ = 0,9 ; ε = 0,1) avec la même graine, qui ne diffèrent que par la valeur initiale de Q :
+// 0 (rien ne les attire : tant que le but n'est pas trouvé, ils jouent au hasard) ou 1 (toute action jamais essayée paraît excellente).
+import katex from 'katex';
+const tex = (s: string) => katex.renderToString(s, { throwOnError: false });
+const F = tex('Q(s,a) \\leftarrow Q(s,a) + \\alpha\\,\\big(r + \\gamma \\max_{a\'} Q(s\', a\') - Q(s,a)\\big)');
+---
+<div class="widget rlw optw" data-widget="optw">
+  <div class="row"><span class="seg" data-ref="ctl"></span></div>
+  <div class="fm" set:html={F} />
+  <div class="pgrid">
+    <div class="pbox">
+      <div class="eh"><b style="color:var(--a-bc)">Q<sub>0</sub> = 0</b> <span class="ev">(ε-greedy)</span></div>
+      <svg class="og" data-ref="svgA" role="img" aria-label="Grille 10 par 10 : cases visitées par l'agent dont Q vaut 0 au départ"></svg>
+      <div class="ef" data-ref="lA"></div>
+    </div>
+    <div class="pbox">
+      <div class="eh"><b style="color:var(--a-ppo)">Q<sub>0</sub> = 1</b> <span class="ev">(optimiste)</span></div>
+      <svg class="og" data-ref="svgB" role="img" aria-label="Grille 10 par 10 : cases visitées par l'agent optimiste, dont Q vaut 1 au départ"></svg>
+      <div class="ef" data-ref="lB"></div>
+    </div>
+  </div>
+  <div class="kpis">
+    <div><span>Cases visitées</span><b data-ref="kv"></b><i>sur 100</i></div>
+    <div><span>But atteint au pas</span><b data-ref="kg"></b></div>
+    <div><span>Médiane, 200 graines</span><b data-ref="km"></b><i>pas avant le premier +1</i></div>
+    <div><span>10 % les plus lents</span><b data-ref="kq"></b><i>pas, au moins</i></div>
+  </div>
+  <p class="note">Intensité de la couleur : nombre de passages dans la case. Les deux agents reçoivent 0 partout sauf au but : tant qu'ils ne l'ont pas trouvé, Q<sub>0</sub> = 0 ne leur donne aucune préférence et ils marchent au hasard ; avec Q<sub>0</sub> = 1, chaque case essayée voit sa valeur baisser, et les cases jamais essayées gardent l'air meilleures.</p>
+</div>
+
+<script>
+  import { rng, argmaxTie } from './bandit';
+
+  document.querySelectorAll<HTMLElement>('[data-widget="optw"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const R = 10, C = 10, GOAL = R * C - 1, ALPHA = 0.5, GAMMA = 0.9, EPS = 0.1, CAP = 5000, NSEED = 200;
+    const DIRS: [number, number, string][] = [[-1, 0, '↑'], [0, 1, '→'], [1, 0, '↓'], [0, -1, '←']];
+    const fm = (v: number, d = 2) => v.toFixed(d).replace('.', ',').replace('-', '−');
+    type Last = { steps: number; a: number; explore: boolean; rew: number; maxQ: number; target: number; qOld: number; qNew: number };
+    class Agent {
+      Q: Float64Array; N = new Int32Array(R * C); s = 0; steps = 0; done = false; visited = 1; rnd: () => number; last: Last | null = null;
+      constructor(q0: number, seed: number) { this.Q = new Float64Array(R * C * 4).fill(q0); this.rnd = rng(seed); this.N[0] = 1; }
+      step() {
+        if (this.done) return;
+        const q = Array.from(this.Q.slice(this.s * 4, this.s * 4 + 4));
+        const explore = this.rnd() < EPS;
+        const a = explore ? Math.floor(this.rnd() * 4) : argmaxTie(q, this.rnd);
+        let nr = Math.floor(this.s / C) + DIRS[a][0], nc = (this.s % C) + DIRS[a][1];
+        if (nr < 0 || nr >= R || nc < 0 || nc >= C) { nr = Math.floor(this.s / C); nc = this.s % C; }
+        const s2 = nr * C + nc, goal = s2 === GOAL;
+        if (this.N[s2] === 0) this.visited++;
+        this.N[s2]++;
+        const rew = goal ? 1 : 0;
+        const maxQ = goal ? 0 : Math.max(...Array.from(this.Q.slice(s2 * 4, s2 * 4 + 4)));
+        const target = rew + GAMMA * maxQ, i = this.s * 4 + a, qOld = this.Q[i];
+        this.Q[i] += ALPHA * (target - qOld);
+        this.steps++;
+        this.last = { steps: this.steps, a, explore, rew, maxQ, target, qOld, qNew: this.Q[i] };
+        this.s = s2;
+        if (goal) this.done = true;
+      }
+    }
+    // pas avant le premier +1, sur NSEED graines (plafonné à CAP)
+    const firstHit = (q0: number, seed: number) => { const g = new Agent(q0, seed); while (!g.done && g.steps < CAP) g.step(); return g.steps; };
+    const quant = (q0: number) => { const v = Array.from({ length: NSEED }, (_, i) => firstHit(q0, 500 + i)).sort((a, b) => a - b); return [v[NSEED / 2], v[Math.floor(NSEED * 0.9)]]; };
+    const stats = [quant(0), quant(1)];
+    const two = (x: string, y: string) => `<i style="font-style:normal;color:var(--a-bc)">${x}</i> · <i style="font-style:normal;color:var(--a-ppo)">${y}</i>`;
+    const nf = (v: number) => v.toLocaleString('fr-FR');
+
+    let seed = 4, A: Agent, B: Agent, timer: number | null = null, playB: HTMLButtonElement | null = null;
+    function reset(newSeed = false) {
+      stop(); if (newSeed) seed++;
+      A = new Agent(0, seed); B = new Agent(1, seed); draw();
+    }
+    function advance(n: number) { for (let i = 0; i < n; i++) { A.step(); B.step(); } draw(); }
+    function stop() { if (timer) { clearInterval(timer); timer = null; } if (playB) playB.textContent = '▶ lecture'; }
+    const mk = (label: string, f: () => void) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', f); $('ctl').appendChild(b); return b; };
+    mk('pas suivant', () => { stop(); advance(1); });
+    mk('10 pas', () => { stop(); advance(10); });
+    mk('100 pas', () => { stop(); advance(100); });
+    playB = mk('▶ lecture', () => {
+      if (timer) { stop(); return; }
+      playB!.textContent = '⏸ pause';
+      timer = window.setInterval(() => { advance(3); if ((A.done && B.done) || A.steps >= CAP) stop(); }, 40);
+    });
+    mk('recommencer', () => reset(true));
+
+    const cs = 26, PAD = 3;
+    function grid(svgEl: SVGSVGElement, g: Agent, col: string) {
+      let o = '';
+      for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
+        const i = r * C + c, x = PAD + c * cs, y = PAD + r * cs, n = g.N[i];
+        if (i === GOAL) { o += `<rect x="${x}" y="${y}" width="${cs - 2}" height="${cs - 2}" rx="4" fill="var(--hl-stroke)" fill-opacity="0.35" stroke="var(--hl-stroke)"/><text x="${x + cs / 2 - 1}" y="${y + cs / 2 + 3.5}" text-anchor="middle" class="gv">+1</text>`; continue; }
+        const op = n > 0 ? 0.16 + 0.6 * Math.min(1, Math.log(1 + n) / Math.log(1 + 25)) : 0;
+        o += `<rect x="${x}" y="${y}" width="${cs - 2}" height="${cs - 2}" rx="4" fill="${col}" fill-opacity="${op.toFixed(2)}" stroke="var(--border)" stroke-width="0.8"/>`;
+      }
+      const ax = PAD + (g.s % C) * cs + cs / 2 - 1, ay = PAD + Math.floor(g.s / C) * cs + cs / 2 - 1;
+      o += `<circle cx="${ax}" cy="${ay}" r="6.5" fill="var(--text)" stroke="var(--surface)" stroke-width="1.5"/>`;
+      o += `<text x="${PAD}" y="${PAD + R * cs + 11}" class="vs">départ : en haut à gauche</text>`;
+      svgEl.setAttribute('viewBox', `0 0 ${C * cs + 2 * PAD} ${R * cs + PAD + 16}`); svgEl.innerHTML = o;
+    }
+    function line(g: Agent) {
+      const l = g.last;
+      if (!l) return '—';
+      return `pas ${l.steps} : ${DIRS[l.a][2]}${l.explore ? ' (hasard)' : ''}\ncible ${fm(l.rew, 0)} + ${fm(GAMMA, 1)} × ${fm(l.maxQ)} = ${fm(l.target)}\nQ(s,a) : ${fm(l.qOld)} → ${fm(l.qNew)}`;
+    }
+    function draw() {
+      grid($('svgA') as unknown as SVGSVGElement, A, 'var(--a-bc)');
+      grid($('svgB') as unknown as SVGSVGElement, B, 'var(--a-ppo)');
+      $('lA').textContent = line(A); $('lB').textContent = line(B);
+      $('kv').innerHTML = two(String(A.visited), String(B.visited));
+      $('kg').innerHTML = two(A.done ? String(A.steps) : '–', B.done ? String(B.steps) : '–');
+      $('km').innerHTML = two(nf(stats[0][0]), nf(stats[1][0]));
+      $('kq').innerHTML = two(nf(stats[0][1]), nf(stats[1][1]));
+    }
+    reset();
+  });
+</script>
+
+<style is:global>
+  .optw .row > .seg { display: flex; width: 100%; }
+  .optw .row > .seg button:last-child { margin-left: auto; }
+  .optw .fm { margin: 6px 0 0; font-size: 0.9rem; overflow-x: auto; overflow-y: hidden; }
+  .optw .pgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 10px 0 0; }
+  .optw .pbox { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px 6px; min-width: 0; }
+  .optw .eh { font-size: 13px; color: var(--text-2); }
+  .optw .eh b { font-size: 14px; }
+  .optw .eh .ev { font-size: 12px; font-style: italic; }
+  .optw svg.og { max-width: 290px; margin: 6px auto 0; }
+  .optw svg.og text.gv { font: 600 11px var(--font); fill: var(--text); }
+  .optw svg.og text.vs { font: 10.5px var(--font); fill: var(--text-2); }
+  .optw .ef { font: 11px/1.5 var(--mono); color: var(--text-2); min-height: 4.6em; white-space: pre; overflow-x: auto; margin-top: 2px; }
+  @media (max-width: 640px) { .optw .pgrid { grid-template-columns: 1fr; } }
+</style>

@@ -1,12 +1,12 @@
 ---
-// Code couleur du cours HPC : le type de travail, et rien d'autre.
+// Code couleur du cours HPC : une opération prend la couleur de ce qui la limite (calcul ou mémoire) ; le surcoût est hachuré, sans couleur.
 ---
 <div class="hcode">
 <span class="hcl">Code couleur</span>
 <p class="hlegend">
-  <span><i class="sq calc"></i>calcul <small>(GEMM, tanh…)</small></span>
-  <span><i class="sq py"></i>pilotage Python répété</span>
-  <span><i class="sq comp"></i>compilation <small>(1× par forme)</small></span>
-  <span><i class="sq exec"></i>exécutable réutilisé</span>
+  <span><i class="sq calc"></i>opération limitée par le calcul <small>(GEMM…)</small></span>
+  <span><i class="sq mem"></i>limitée par la mémoire <small>(élément par élément, réductions, transferts)</small></span>
+  <span><i class="sq over"></i>surcoût, sans couleur <small>(appel Python, dispatch, lancement de noyau, compilation)</small></span>
+  <span><i class="sq lost"></i>pâle : calculé puis perdu</span>
 </p>
 </div>

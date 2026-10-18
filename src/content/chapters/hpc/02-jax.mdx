@@ -1,0 +1,409 @@
+---
+num: 2
+title: "JAX : de Python à l'appareil"
+summary: "Exécution immédiate contre programme compilé, ce que fait XLA (fusion, cache), les transformations vmap, scan et grad, le découpage sur plusieurs appareils, puis un vrai code relu avec ces outils : run_batched."
+status: premier-jet
+sidebar: jax
+---
+import Reveal from '@/components/shared/Reveal.astro';
+import Quiz from '@/components/shared/Quiz.astro';
+import Refs from '@/components/shared/Refs.astro';
+import Dispatch from '@/components/hpc/02-jax/Dispatch.astro';
+import FusionTape from '@/components/hpc/02-jax/FusionTape.astro';
+import XRay from '@/components/hpc/02-jax/XRay.astro';
+import TraceCache from '@/components/hpc/02-jax/TraceCache.astro';
+import Bench from '@/components/hpc/02-jax/Bench.astro';
+import VmapReuse from '@/components/hpc/02-jax/VmapReuse.astro';
+import ScanDepth from '@/components/hpc/02-jax/ScanDepth.astro';
+import TapeMemory from '@/components/hpc/02-jax/TapeMemory.astro';
+import Sharding from '@/components/hpc/02-jax/Sharding.astro';
+import CodeWalk from '@/components/hpc/02-jax/CodeWalk.astro';
+import Intensity from '@/components/hpc/02-jax/Intensity.astro';
+import MaskDemo from '@/components/hpc/02-jax/MaskDemo.astro';
+import SortSim from '@/components/hpc/02-jax/SortSim.astro';
+import RunCost from '@/components/hpc/02-jax/RunCost.astro';
+import ArrayMini from '@/components/hpc/02-jax/ArrayMini.astro';
+
+Même syntaxe que NumPy, même mathématique, une autre machine : JAX trace la fonction, la compile en un programme, et l'exécute sur l'appareil. Ce chapitre suit ce chemin en cinq parties, puis relit un vrai code avec ces outils.
+
+## 1. Deux modèles d'exécution
+
+| | NumPy | JAX |
+|---|---|---|
+| Exécution | immédiate : chaque opération est un appel de bibliothèque | `jit` : la fonction est tracée, puis compilée en un programme par XLA |
+| Où vivent les tableaux | mémoire de l'hôte | mémoire de l'appareil (CPU, GPU, TPU) |
+| Retour à Python | après chaque opération | asynchrone : Python continue pendant que l'appareil calcule |
+| Opérations élément par élément | un passage mémoire par opération, un seul cœur | fusionnées en un noyau, sur l'appareil |
+| Tableaux | modifiables : `x[i] = v` <ArrayMini k="np-set" /> | immuables : `x = x.at[i].set(v)` <ArrayMini k="jax-set" /> |
+| Type par défaut | float64 | float32 (`jax_enable_x64` pour float64) |
+| Aléatoire | état global | clés explicites : `jax.random.split(key)` |
+| Indice hors limites | erreur <ArrayMini k="np-oob" /> | lecture ramenée au bord, écriture ignorée <ArrayMini k="jax-oob" /> |
+
+Une chaîne de $k$ opérations élément par élément sur $N$ valeurs, exécutée de trois façons. Deux voies : l'**hôte** (l'interpréteur Python) et l'**appareil** (qui calcule).
+
+<Dispatch />
+
+- **Petits tableaux** : le temps est fait de surcoûts fixes (appel, dispatch, lancement de noyau). JAX opération par opération est alors plus lent que NumPy ; `jit` ne paie le surcoût qu'une fois pour toute la chaîne.
+- **Grands tableaux** : le temps est fait de passages mémoire. La fusion en divise le nombre par $k$, le GPU multiplie le débit par environ 200 par rapport à un cœur CPU.
+- **Asynchronisme** : l'hôte ne fait que poser des tâches dans une file et peut prendre de l'avance sur l'appareil. Pour mesurer : `f(x).block_until_ready()`, sinon on mesure la mise en file.
+- **Transferts** : à 25 Go/s, le PCIe coûte plus que le calcul sur la HBM. Les données doivent rester sur l'appareil d'un appel à l'autre.
+
+## 2. Compiler : jaxpr, XLA, fusion, cache
+
+### La fusion : un film de la mémoire
+
+<FusionTape />
+
+- NumPy écrit chaque résultat intermédiaire en mémoire, puis le relit : $8k$ octets par valeur pour $k$ opérations (float32). `jit` lit l'entrée une fois, enchaîne les $k$ opérations dans les registres, écrit la sortie une fois : 8 octets par valeur. Mêmes FLOPs, intensité arithmétique multipliée par $k$ (chapitre 1).
+- Si le tableau tient dans un cache, les temporaires de NumPy y restent et l'écart diminue : la fusion compte surtout pour les tableaux plus grands que les caches.
+
+### Radiographie de `jit`
+
+`jit` passe par trois représentations : le code Python, le **jaxpr** (la liste des primitives, obtenue en traçant), puis les **noyaux** produits par XLA après fusion.
+
+<XRay />
+
+```python
+print(jax.make_jaxpr(f)(x, W, b))                    # le jaxpr
+print(jax.jit(f).lower(x, W, b).compile().as_text())  # le programme optimisé par XLA
+```
+
+- Les **produits matriciels** sont confiés à une bibliothèque (cuBLAS sur GPU) ou à un noyau généré ; tout le reste est fusionné autour d'eux.
+- **Recalculer plutôt que relire** : une exponentielle coûte moins qu'un aller-retour en mémoire, donc XLA duplique volontiers des opérations bon marché dans plusieurs noyaux.
+- Le découpage affiché est typique d'XLA sur GPU ; il change selon la version, le matériel et les formes. Le texte compilé fait foi.
+
+### Le cache de compilation
+
+Le premier appel trace (formes et dtypes seulement, pas les valeurs) puis compile ; les appels compatibles réutilisent l'exécutable.
+
+<TraceCache />
+
+| Écrit comme NumPy | Sous `jit` | Pourquoi |
+|---|---|---|
+| `if x > 0:` | `lax.cond(x > 0, f, g, x)` | la valeur de `x` est inconnue au traçage |
+| `x[x > 0]` | `jnp.where(x > 0, x, 0)` | la taille de la sortie dépendrait des valeurs |
+| `for t in range(T):` | `lax.scan(step, h0, xs)` | une boucle Python est déroulée en $T$ copies |
+| `np.random.rand()` | `jax.random.normal(key, shape)` | pas d'état global dans une fonction pure |
+
+### Une mesure réelle, relue
+
+Mesures du support d'origine : un RNN ($T = 200$, $B = 32$, float32) sur un **CPU virtuel à 1 thread**, en NumPy naïf, NumPy avec $x W_x$ pré-calculé, et JAX (`scan` + `jit`).
+
+<Bench />
+
+- **Ce que la partie 1 explique** : sur un seul thread CPU, ni HBM ni milliers de voies. À petit $H$, le gain de JAX vient surtout du **surcoût fixe** : 200 pas, donc 600 à 1 000 appels NumPy, contre un seul appel de l'exécutable. À grand $H$, d'autres causes s'ajoutent (bibliothèque GEMM, fusion) ; la mesure ne les sépare pas. D'où un gain modeste (1,5 à 2,5 ×) et une compilation de 70 à 140 ms à amortir.
+- **Ce que la mesure ne dit pas** : rien sur un GPU, où le même code gagnerait surtout par le débit et le parallélisme du lot (partie 3).
+
+## 3. Transformer : vmap, scan, grad
+
+NumPy n'a ni `vmap`, ni `scan`, ni `grad`. Ce sont des **transformations de programme** : elles prennent une fonction pure et en rendent une autre. Chacune a une conséquence matérielle précise.
+
+### `vmap` : regrouper pour réutiliser
+
+On écrit la fonction pour **un** exemple ; `vmap` ajoute un axe de lot à chaque primitive (règles de *batching*). Pour un produit matrice-vecteur, l'effet est de changer de catégorie BLAS :
+
+$$
+\underbrace{W\,s}_{\text{GEMV : } I \approx 2/b} \quad\xrightarrow{\ \texttt{vmap}\ }\quad \underbrace{S\,W^\top}_{\text{GEMM : } I \approx 2B/b}
+$$
+
+($b$ : octets par valeur, 4 en float32.)
+
+<VmapReuse />
+
+- **Le mécanisme** : $W$ est lu une fois pour $B$ vecteurs au lieu de $B$ fois. Les FLOPs sont identiques, les octets divisés par $B$. `in_axes` dit quel argument porte le lot : `jax.vmap(f, in_axes=(None, 0))` partage $W$ et découpe $s$.
+- **Limite** : au-delà de l'équilibre, plus de lot n'accélère plus le pas (il est limité par le calcul), mais augmente la mémoire et la latence.
+
+### `scan` : séquentiel par nature
+
+`lax.scan` compile le corps d'une boucle une seule fois et porte un état d'une itération à la suivante. Il ne rend pas les pas parallèles : la profondeur du calcul reste $T$.
+
+<ScanDepth />
+
+- **Récurrence non linéaire** ($h_t = \tanh(W h_{t-1} + x_t)$) : chaque pas attend le précédent. Le parallélisme ne peut venir que du lot $B$ et de la largeur $H$ : sur GPU, un petit $B \times H$ laisse la plupart des voies inactives à chaque pas.
+- **Récurrence linéaire** ($h_t = a_t \odot h_{t-1} + b_t$) : la composition de deux pas est encore un pas affine,
+
+$$
+(a, b) \circ (a', b') = (a' a,\ a' b + b'),
+$$
+
+et cette opération est **associative**. `lax.associative_scan` regroupe les pas deux à deux et calcule les $T$ états avec une profondeur $O(\log T)$. C'est la raison d'être des modèles récurrents linéaires (Mamba, RWKV, DeltaNet…) : voir le cours [Post-Transformer](/post-transformer/03-lineaire-non-lineaire/), chapitres 3 et 4.
+- **Brent** : avec $P$ voies, temps $\approx \text{travail}/P + \text{profondeur}$. Le scan parallèle fait plus de travail que le scan séquentiel ; il ne gagne que si $P$ est grand.
+
+### `grad` : la mémoire du mode inverse
+
+`grad` d'une perte scalaire calcule un **VJP** (produit vecteur × jacobienne) : il remonte le calcul à l'envers, et a besoin des valeurs intermédiaires de la passe avant (les **résidus**). Pour un calcul de $T$ pas, la mémoire monte avec $T$.
+
+<TapeMemory />
+
+- **Coût en calcul** : chaque produit en avant en demande deux en arrière ($\nabla_W = X^\top E$, $\nabla_X = E W^\top$ pour $Y = XW$). Un pas arrière coûte donc environ deux pas avant.
+- **`jax.checkpoint`** (alias `jax.remat`) choisit ce qui est gardé et ce qui est recalculé. Par segments de longueur $k$ : pic $\approx T/k + k$ états, minimum $2\sqrt{T}$ pour $k = \sqrt{T}$, au prix d'environ une passe avant en plus (+ 33 % ici).
+- **Mode direct** (`jax.jvp`) : ne garde pas de résidus, mais coûte une passe par direction d'entrée. Pour une perte scalaire et beaucoup de paramètres, le mode inverse gagne.
+
+## 4. Plusieurs appareils : découper les tableaux
+
+Avec JAX, on ne programme pas les communications : on dit **comment chaque tableau est découpé** sur une grille d'appareils, et le compilateur insère les échanges nécessaires.
+
+- **Mesh** : la grille d'appareils, avec des axes nommés, ici $2 \times 4$ (`'data'`, `'model'`).
+- **`PartitionSpec`** : pour chaque dimension d'un tableau, l'axe du mesh qui la découpe (`None` : répliquée).
+- **`NamedSharding(mesh, spec)`** : l'association des deux, passée à `jax.device_put` ou imposée dans `jit`.
+
+<Sharding />
+
+- **Dimension non contractée découpée** ($B$ ou $H$) : chaque appareil calcule son bloc de $Y = XW$ seul, sans communication en avant.
+- **Dimension contractée découpée** ($D$, lignes de $W$) : chaque appareil n'a qu'une partie de la somme $\sum_d X_{bd} W_{dh}$. Il faut additionner les sommes partielles : **all-reduce** (tous reçoivent le total) ou **reduce-scatter** (chacun reçoit sa part).
+- **Gradients** : en parallélisme de données, chaque groupe calcule $\nabla W$ sur sa part du lot ; il faut les additionner entre groupes. C'est l'all-reduce de chaque pas d'entraînement.
+- **Coût d'un all-reduce en anneau** : chaque appareil envoie $2\frac{p-1}{p}$ fois la taille du tableau. Il se compare au temps de calcul : sur NVLink (900 Go/s au total par GPU H100, les deux sens comptés), 32 Mo partent en quelques dizaines de µs ; sur un réseau entre machines, 10 à 100 fois plus lentement.
+
+## 5. Étude de cas : run_batched
+
+Un vrai code relu avec les outils des parties 1 à 4 : `run_batched`, qui exécute des **réservoirs** de `reservoirpy.jax` par lots, sur des milliers de séquences de longueurs variables. Les idées : `vmap` sur le lot, `scan` sur le temps, un masque pour les longueurs, des formes en paliers pour limiter les compilations.
+
+Sources (d'après le support dont ce cours s'inspire) : le fichier `run_batched`, et le code de `reservoirpy.jax` (`jax/node.py`, `nodes/reservoir.py`, `nodes/intrinsic_plasticity.py`, branche principale, commit du 17 juin 2026). Je n'ai pas relu ce dépôt : les points signalés *à vérifier* le restent.
+
+| Sigle | Sens |
+|---|---|
+| réservoir (ESN) | *echo state network* : RNN à poids aléatoires fixes ; seule une lecture linéaire est entraînée |
+| `lr` | *leak rate*, taux de fuite des neurones (≠ `LR`, un pas d'apprentissage) |
+| IP | *intrinsic plasticity* : gain $a$ et biais $b$ réglés par neurone |
+| HPO | *hyperparameter optimization* : un nouveau réservoir à chaque essai |
+| rembourrage | *padding* : compléter par des zéros jusqu'à une forme fixe |
+
+### Un réservoir, c'est un RNN à poids fixes
+
+$$
+s_{t+1} = (1 - lr)\, s_t + lr \cdot f\big(W s_t + W_{in}\, u_{t+1} + \text{bias}\big)
+$$
+
+$s$ : état ($N$ neurones), $u$ : entrée ($D$), $f$ : activation (`tanh` par défaut). C'est un RNN dont on n'entraîne pas $W$ ; les RNN entraînés et leur gradient sont dans le cours [Post-Transformer, chapitre 2](/post-transformer/02-recurrence-temps/).
+
+| RNN classique | `reservoirpy.jax` | Rôle |
+|---|---|---|
+| $h_t$ | `state["out"]` $(N,)$ | état |
+| $W_h$ $(H \times H)$ | `W` $(N \times N)$ | récurrent : aléatoire, fixe |
+| $W_x$ $(D \times H)$ | `Win` $(N \times D)$ | entrée : aléatoire, fixe |
+| $b$ | `bias` | biais |
+| (aucun) | `lr` | taux de fuite (intégrateur) |
+| (aucun) | $a$, $b$ (`IPReservoir`) | gain et biais de plasticité intrinsèque |
+
+- **Pas de `grad`** : `W` et `Win` sont tirés au hasard puis figés. Seule une lecture linéaire (par exemple une régression ridge) est entraînée ; `IPReservoir` règle aussi $a$ et $b$ par une règle locale. Tout le coût est dans la passe avant, répétée sur beaucoup de séquences.
+- **Convention colonne** : `W @ s`, et non $xW$ (convention ligne).
+
+### Le point de départ : une série à la fois
+
+Dans `reservoirpy.jax` (condensé) :
+
+```python
+# reservoirpy/jax/nodes/reservoir.py
+@partial(jax.jit, static_argnums=(0,))      # self statique
+def _step(self, state, x):
+    s = state["out"]
+    nxt = self.activation(self.W @ s + self.Win @ x + self.bias)
+    return {"out": (1 - self.lr) * s + self.lr * nxt}
+
+# reservoirpy/jax/node.py
+def _run(self, state, x):                   # pas de jit ici
+    return jax.lax.scan(split(self._step), state, x)
+# run(liste) : boucle Python · run(tableau 3-D) : lax.map
+```
+
+1. **`self` statique** : `W`, `Win`, `bias`, `lr` sont lus au traçage et figés comme constantes ; le cache de `_step` est indexé sur l'identité du nœud. Un nouveau nœud (un essai d'HPO) donne donc une nouvelle compilation. C'est le piège classique de `jit` sur une méthode (FAQ de JAX).
+2. **`scan` hors `jit`** : la boucle est retracée à chaque `run`, et très probablement recompilée (pour une liste : à chaque série), *à vérifier avec `jax.config.update("jax_log_compiles", True)`*. Chaque longueur différente est de toute façon une nouvelle forme.
+3. **Une série à la fois** : boucle Python ou `lax.map` (séquentiel). `W @ s` est un GEMV, limité par la bande passante mémoire.
+
+Sur $M$ séries de longueurs différentes : $M$ fois « retracer + compiler » puis $T_i$ pas de GEMV.
+
+### `run_batched` en deux étages
+
+Python prépare, un exécutable compile et calcule :
+
+1. **trier** les séquences par longueur ;
+2. découper en **lots** de `batch_size` ;
+3. **rembourrer** chaque lot à une forme en paliers ;
+4. appeler `_run` (compilé une fois par forme), puis **remettre** chaque résultat dans l'ordre d'origine.
+
+```python
+order = np.argsort(lengths)                            # ①
+for start in range(0, len(order), batch_size):         # ②
+    indices = order[start:start + batch_size]
+    n_rows = batch_size if len(indices) == batch_size \
+        else 2 ** math.ceil(math.log2(len(indices)))    # ③
+    batch_lengths[:len(indices)] = lengths[indices]     # 0 = ligne vide
+    n_steps = math.ceil(batch_lengths.max() / length_bucket) * length_bucket
+    x = np.zeros((n_rows, n_steps, node.input_dim))     # zéros = rembourrage
+    states = np.asarray(_run(parameters, jnp.asarray(x), ...))
+    for k, i in enumerate(indices):                     # ④
+        results[i] = states[k]
+```
+
+Python ne revient qu'**une fois par lot** (environ 20 fois pour 5 000 séquences en lots de 256), jamais à chaque pas. Les lignes de rembourrage ont une longueur 0 : toujours inactives, elles gardent l'état initial.
+
+### `_run` ligne par ligne
+
+<CodeWalk />
+
+### Paramètres tracés : une compilation pour tous les nœuds
+
+| `reservoirpy.jax` : `self` statique | `run_batched` : paramètres en argument |
+|---|---|
+| `@partial(jax.jit, static_argnums=(0,))` | `_run(parameters, x, lengths, state0, ...)` |
+| `self` est haché par identité ; `W`, `Win`, `bias`, `lr` deviennent des constantes du programme | `parameters` est un pytree tracé : seules sa structure, ses formes et dtypes entrent dans la clé de cache |
+| chaque essai d'HPO : compiler, puis exécuter | essai 1 : compiler, puis exécuter ; essais 2, 3… : exécuter seulement |
+
+- **Clé de cache de `_run`** : type de nœud, activation, `return_all`, plus structure, formes et dtypes des tableaux.
+- **Réserves** : `activation` est comparée par identité (une nouvelle lambda à chaque essai recompile) ; changer $N$ ou $D$ change les formes, donc recompile.
+- **À vérifier** (bogue probable dans `reservoirpy.jax`) : `IPReservoir.partial_fit` modifie `a` et `b` après le premier appel ; le `_step` en cache, indexé sur `self`, garderait les anciennes valeurs. `run_batched` relit `a` et `b` à chaque appel.
+
+### `vmap` transforme `W @ s` en GEMM
+
+<Intensity />
+
+- **Une série** : `W @ s` est un GEMV, $2N^2$ FLOPs, qui lit tout $W$ ($8N^2$ octets en float64) : $0{,}25$ FLOP/octet.
+- **$B$ séries d'un coup** : `états (B × N) @ Wᵀ` est un GEMM de $2BN^2$ FLOPs pour les mêmes $8N^2$ octets : $B/4$ FLOP/octet. $B = 32$ donne 8, $B = 256$ donne 64. Le point d'équilibre d'un CPU récent est $\approx 10$ FLOP/octet : avec $B = 256$, le pas est limité par le calcul.
+- **Hypothèse** : $W$ et $W_{in}$ denses. Par défaut `reservoirpy.jax` les stocke en creux (BCOO, connectivité 0,1) : `W @ s` y est un produit creux. Il faut soit les densifier (`W.todense()`, environ 10 fois plus de FLOPs mais des GEMM efficaces), soit garder le creux : *à mesurer*.
+
+### Longueurs variables : rembourrer, figer, trier
+
+<MaskDemo />
+
+Rembourrer **à la fin** : les $T_i$ premiers pas sont ceux de la série seule, et l'état final est l'état au pas $T_i$, exactement comme la série traitée seule. Les pas de rembourrage sont calculés puis ignorés : c'est du calcul perdu, que le **tri par longueur** réduit.
+
+<SortSim />
+
+- **Sans tri**, chaque lot contient presque toujours une séquence proche de la longueur maximale : peu de formes, mais environ la moitié du calcul est perdue.
+- **Avec tri**, le calcul perdu tombe à environ 11 % avec un palier de 64 et 26 % avec un palier de 512 (simulation ci-dessus), au prix d'une forme par lot quand le palier est fin. `length_bucket` règle ce compromis.
+- Les exécutables restent en cache d'un essai d'HPO à l'autre, tant que les données, $N$ et $D$ ne changent pas. Le palier sert surtout quand les données changent (plis de validation croisée, sous-ensembles) : on retombe sur des formes déjà compilées.
+
+### Ce que coûte `run_batched`, et comment l'améliorer
+
+<RunCost />
+
+Exemple : 256 lignes, 1 024 pas, $N = 1000$, $D = 10$ donne $\approx 5{,}3 \cdot 10^{11}$ FLOPs par lot, et $\approx 2{,}1$ Go de sortie avec `return_all`.
+
+**Pistes d'amélioration**, d'après le support :
+
+1. **float64 partout** : nécessaire pour coller à reservoirpy. Sur un GPU grand public, le débit crête float64 peut être très inférieur à celui du float32 (jusqu'à 64× plus faible, mais ≈ 2× seulement si le pas est limité par la mémoire) : tester float32 avec une tolérance.
+2. **Une synchronisation par lot** : `np.asarray(_run(...))` attend chaque lot ; lancer tous les lots puis convertir recouvre préparation et calcul, mais garde toutes les sorties sur l'appareil.
+3. **`return_all` et la mémoire** : si seules des caractéristiques servent (dernier état, moyenne), les accumuler dans le `scan` au lieu de garder $(n\_rows, n\_steps, N)$.
+4. **Le compromis des paliers** : `length_bucket` et `batch_size` règlent compilations contre calcul perdu.
+5. **Égalité avec reservoirpy** : `vmap` remplace des GEMV par un GEMM, donc l'ordre des sommes peut changer ; vérifier par `np.allclose`.
+6. **Matrices creuses** : par défaut `W`, `Win` sont des BCOO ; densifier ou garder le creux ; `jnp.asarray` ne densifie pas un BCOO (*à vérifier*).
+
+**Chaque partie du chapitre se retrouve dans le code :**
+
+| Notion | Dans `run_batched` | Effet |
+|---|---|---|
+| `scan` sur $T$ | `jax.lax.scan(scan_step, state0, …)` | boucle temporelle compilée |
+| `vmap` sur $B$ | `jax.vmap(partial(_step.__wrapped__, node))` | GEMV → GEMM |
+| `jit` et arguments statiques | `static_argnames=("node_type", "activation", "return_all")` | une compilation par structure |
+| formes fixes | lignes : `batch_size` (puissance de 2 pour le dernier lot) ; pas : multiple de 64 | peu de recompilations |
+| `jnp.where` plutôt que `if` | `active = t < lengths` | longueurs variables sans branche |
+| paramètres en pytree | `parameters = {W, Win, bias, lr, a, b}` | une compilation pour tous les nœuds |
+| dtype | `jax_enable_x64` | même précision que reservoirpy (float64), égalité à `np.allclose` près |
+
+Ici, pas de `grad` : tout le gain vient de la passe avant, avec moins de compilations, des GEMM, et Python une fois par lot.
+
+<div class="retain">
+
+**À retenir**
+
+- **Exécuter** : NumPy, une opération = un appel, une passe mémoire, un cœur. JAX `jit` : un programme, des noyaux fusionnés, sur l'appareil, en asynchrone. Petits tableaux : le surcoût fixe domine ; grands tableaux : les passes mémoire. Toujours `block_until_ready()` pour mesurer, et garder les données sur l'appareil.
+- **Compiler** : la fusion divise les passes mémoire par $k$ ; le jaxpr montre les primitives, `lower(...).compile().as_text()` ce qu'XLA en a fait ; la compilation est payée par forme, dtype, structure et argument statique, pas par valeur.
+- **Transformer** : `vmap`, mêmes FLOPs et $B$ fois moins d'octets pour les poids partagés (GEMV → GEMM) ; `scan`, une boucle compilée de profondeur $T$, que seule une récurrence linéaire ramène à $O(\log T)$ ; `grad`, un pas arrière ≈ deux pas avant et une mémoire ∝ $T$, ramenée à $\approx 2\sqrt{T}$ par `jax.checkpoint`.
+- **Plusieurs appareils** : on décrit le découpage, XLA en déduit les communications. Découper la dimension contractée impose un all-reduce ($2\frac{p-1}{p}$ fois la taille du tableau par appareil, en anneau).
+- **run_batched** : Python une fois par lot, `_run` compilé une fois par forme ; paramètres en pytree tracé pour une compilation commune ; rembourrage à la fin plus `jnp.where`, tri par longueur et paliers pour limiter calcul perdu et compilations.
+
+</div>
+
+<Refs items={[["Asynchronous dispatch", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/async_dispatch.html"], ["Tracing, jit et arguments statiques", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/tracing.html"], ["Control flow and logical operators with jit", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/control-flow.html"], ["jax.vmap", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/_autosummary/jax.vmap.html"], ["jax.lax.associative_scan", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/_autosummary/jax.lax.associative_scan.html"], ["Gradient checkpointing with jax.checkpoint (jax.remat)", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/gradient-checkpointing.html"], ["The Autodiff Cookbook", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/notebooks/autodiff_cookbook.html"], ["Distributed arrays and automatic parallelization", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/parallel.html"], ["Megatron-LM: training multi-billion parameter language models using model parallelism", "Shoeybi et al.", 2019, "1909.08053"], ["JAX FAQ : « How to use jit with methods »", "documentation JAX", 2025, "https://docs.jax.dev/en/latest/faq.html"], ["reservoirpy (dépôt GitHub)", "équipe reservoirpy", 2026, "https://github.com/reservoirpy/reservoirpy"], ["ReservoirPy: an efficient and user-friendly library to design echo state networks", "Trouvain et al.", 2020, "10.1007/978-3-030-61616-8_40"]]} />
+
+<Quiz>
+
+**Q1.** Pourquoi `t = time.time(); y = f(x); print(time.time() - t)` donne-t-il un temps faux avec JAX ?
+
+<Reveal>
+
+L'appel rend la main dès que le travail est mis en file (dispatch asynchrone) : on mesure la mise en file, pas le calcul. Il faut `f(x).block_until_ready()`.
+
+</Reveal>
+
+**Q2.** Sur GPU, à partir de quelle taille environ `jit` devient-il limité par la mémoire plutôt que par le surcoût fixe ? Que vaut un passage de $10^6$ valeurs sur la HBM d'un H100 ?
+
+<Reveal>
+
+$8 \cdot 10^6$ octets à $3{,}35$ To/s : $\approx 2{,}4$ µs, du même ordre que le lancement d'un noyau (≈ 5 µs). La mémoire domine au-delà de quelques millions de valeurs ; en dessous, ce sont les surcoûts fixes.
+
+</Reveal>
+
+**Q3.** Pour softmax, XLA recalcule $\exp(x - m)$ dans deux noyaux. Pourquoi est-ce un bon choix ?
+
+<Reveal>
+
+L'opération est limitée par la mémoire : écrire puis relire un tableau de taille $N$ coûte $8N$ octets, alors qu'une exponentielle de plus est presque gratuite pour des voies de calcul sous-occupées.
+
+</Reveal>
+
+**Q4.** $W$ fait $4096 \times 4096$ en float32. Combien d'octets de $W$ lit-on pour 64 produits $W s$ en boucle, et avec `vmap` ?
+
+<Reveal>
+
+$W$ fait $4096^2 \times 4 \approx 67$ Mo. En boucle : $64 \times 67$ Mo $\approx 4{,}3$ Go. Avec `vmap` : 67 Mo, lus une fois. L'intensité passe de $\approx 0{,}5$ à $\approx 32$ FLOP/octet.
+
+</Reveal>
+
+**Q5.** Pourquoi `associative_scan` ne s'applique-t-il pas à $h_t = \tanh(W h_{t-1} + x_t)$ ?
+
+<Reveal>
+
+Composer deux pas donne $\tanh(W \tanh(W h + x_1) + x_2)$ : ce n'est pas un pas de la même forme, il n'existe pas d'opération associative de taille fixe qui résume deux pas. Le linéaire, lui, reste affine après composition.
+
+</Reveal>
+
+**Q6.** $T = 400$ : quel pic de mémoire sans checkpoint, et au mieux avec ?
+
+<Reveal>
+
+Sans : 400 états. Avec des segments de $k = 20$ : $400/20 + 20 = 40$ états, pour environ une passe avant de plus.
+
+</Reveal>
+
+**Q7.** 8 appareils en parallélisme de données pur, $W$ de 64 Mo. Combien d'octets chaque appareil envoie-t-il pour l'all-reduce des gradients ?
+
+<Reveal>
+
+$2 \times \frac{7}{8} \times 64 = 112$ Mo par appareil et par pas d'entraînement.
+
+</Reveal>
+
+**Q8.** Dans un MLP à deux couches, Megatron découpe la première couche par colonnes et la seconde par lignes. Pourquoi cet ordre ?
+
+<Reveal>
+
+Par colonnes, la première couche donne une sortie découpée sur $H$, sans communication ; l'activation s'applique élément par élément sur chaque morceau. La seconde, découpée par lignes, contracte justement sur cette dimension découpée : un seul all-reduce à la fin du bloc, au lieu d'un après chaque couche.
+
+</Reveal>
+
+**Q9.** Pourquoi `run_batched` passe-t-il `parameters` en argument plutôt que d'utiliser `self` statique ?
+
+<Reveal>
+
+Avec `self` statique, les poids sont gravés dans le programme et le cache est indexé sur l'identité du nœud : chaque essai d'HPO recompile. Avec un pytree tracé, la clé de cache ne contient que structure, formes et dtypes : tous les nœuds de même forme partagent une compilation.
+
+</Reveal>
+
+**Q10.** Une séquence de longueur 9 dans un lot rembourré à 12 pas : que valent son état au pas 12 et ses 3 derniers pas calculés ?
+
+<Reveal>
+
+Son état au pas 12 est l'état au pas 9 : `jnp.where(t < 9, new, old)` garde l'ancien état dès $t = 9$. Les 3 derniers pas sont calculés puis ignorés : du calcul perdu.
+
+</Reveal>
+
+**Q11.** Avec 512 lignes, 2 048 pas, $N = 500$, $D = 20$, combien de FLOPs par lot et quelle mémoire de sortie avec `return_all` ?
+
+<Reveal>
+
+FLOPs : $2048 \times 2 \times 512 \times 500 \times 520 \approx 5{,}5 \cdot 10^{11}$. Mémoire : $512 \times 2048 \times 500 \times 8 \approx 4{,}2$ Go. Sans `return_all` : $512 \times 500 \times 8 \approx 2$ Mo.
+
+</Reveal>
+
+</Quiz>

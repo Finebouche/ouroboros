@@ -1,0 +1,50 @@
+---
+// Barre latérale du chapitre JAX : les 5 parties, la partie en cours surlignée au défilement (titres h2 numérotés « 1. » à « 5. »).
+const PARTS: [string, string][] = [
+  ['Exécuter', 'NumPy contre JAX : hôte, appareil'],
+  ['Compiler', 'trace → jaxpr → XLA → noyaux'],
+  ['Transformer', 'vmap · scan · grad'],
+  ['Plusieurs appareils', 'mesh, découpage, all-reduce'],
+  ['Étude de cas', 'run_batched'],
+];
+---
+<aside class="jaxside" data-jax-sidebar aria-label="Parties du chapitre">
+  <ol>
+    {PARTS.map(([t, s], i) => (
+      <li data-part={i + 1}><b>{i + 1}. {t}</b><span>{s}</span></li>
+    ))}
+  </ol>
+</aside>
+
+<script>
+  const root = document.querySelector<HTMLElement>('[data-jax-sidebar]');
+  if (root) {
+    const heads = Array.from(document.querySelectorAll<HTMLElement>('article h2')).filter((h) => /^\d+\./.test(h.textContent ?? ''));
+    const items = Array.from(root.querySelectorAll<HTMLElement>('[data-part]'));
+    const update = () => {
+      let cur = 0;
+      for (const h of heads) {
+        if (h.getBoundingClientRect().top <= window.innerHeight * 0.4) cur = parseInt(h.textContent ?? '0', 10);
+        else break;
+      }
+      items.forEach((li) => li.classList.toggle('on', +li.dataset.part! === cur));
+    };
+    let queued = false;
+    window.addEventListener('scroll', () => {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(() => { queued = false; update(); });
+    }, { passive: true });
+    update();
+  }
+</script>
+
+<style is:global>
+  .jaxside ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+  .jaxside li { position: relative; border: 1px solid var(--border); background: var(--surface-2); border-radius: 8px; padding: 6px 9px; transition: background 0.2s, border-color 0.2s; }
+  .jaxside li + li::before { content: '↓'; position: absolute; top: -15px; left: 50%; transform: translateX(-50%); font-size: 11px; line-height: 1; color: var(--text-2); }
+  .jaxside li b { display: block; font-size: 12.5px; font-weight: 600; }
+  .jaxside li span { display: block; font-size: 11px; color: var(--text-2); }
+  .jaxside li.on { background: var(--hl-bg); border-color: var(--hl-stroke); }
+  .jaxside li.on b { color: var(--hl-text); }
+</style>
