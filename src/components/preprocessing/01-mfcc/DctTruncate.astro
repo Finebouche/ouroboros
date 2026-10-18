@@ -2,8 +2,12 @@
 // Chapitre MFCC, section 4 : la DCT des log-énergies de Mel ; garder les K premiers coefficients = garder la forme générale.
 ---
 <div class="widget dctt pp" data-widget="dctt">
-  <label class="posl"><span>Position de la trame (25 ms)</span><input type="range" data-ref="pos" min="0" max="575" step="5" value="100" /><b data-ref="pos-out"></b></label>
-  <label class="posl"><span>Coefficients gardés K</span><input type="range" data-ref="k" min="1" max="40" step="1" value="13" /><b data-ref="k-out"></b></label>
+  <div class="sl">
+    <label class="posl"><span>Position de la trame (25 ms)</span><input type="range" data-ref="pos" min="0" max="575" step="5" value="100" /><b data-ref="pos-out"></b></label>
+    <label class="posl"><span>Coefficients gardés K</span><input type="range" data-ref="k" min="1" max="40" step="1" value="13" /><b data-ref="k-out"></b></label>
+  </div>
+
+  <svg data-ref="wave" width="100%" role="img" aria-label="Signal d'origine x entier, avec la trame choisie surlignée"></svg>
 
   <div class="ft">La courbe des 40 log-énergies, et sa reconstruction avec les K premiers coefficients</div>
   <p class="lg"><i class="sq pts"></i>log-énergies (40 valeurs) <i class="sq rec"></i>reconstruction avec K coefficients</p>
@@ -21,6 +25,7 @@
 
 <script>
   import { makeSignal } from './signal';
+  import { drawWaveStrip } from './waveStrip';
   import { melEnergiesAt, dct2, idctK } from './mel';
 
   document.querySelectorAll<HTMLElement>('[data-widget="dctt"]').forEach((root) => {
@@ -33,6 +38,7 @@
     function draw() {
       const t0 = +inp('pos').value, K = +inp('k').value;
       $('pos-out').textContent = `${t0} ms`;
+      drawWaveStrip($('wave') as unknown as SVGSVGElement, x, t0);
       $('k-out').textContent = String(K);
       const v = melEnergiesAt(x, t0, M).map((e) => Math.log(Math.max(e, 1e-12)));
       const c = dct2(v);
@@ -79,6 +85,7 @@
 </script>
 
 <style is:global>
+  .dctt .sl { display: grid; gap: 6px 24px; }
   .dctt .posl { display: grid; grid-template-columns: 200px 1fr 70px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); margin: 6px 0; }
   .dctt .posl b { text-align: right; color: var(--text); font-weight: 500; }
   .dctt .ft { font-size: 13px; font-weight: 500; margin: 12px 0 2px; }

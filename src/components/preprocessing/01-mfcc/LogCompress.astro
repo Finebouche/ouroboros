@@ -3,8 +3,12 @@
 // et transforme un changement de volume en simple décalage vertical.
 ---
 <div class="widget logc pp" data-widget="logc">
-  <label class="posl"><span>Position de la trame (25 ms)</span><input type="range" data-ref="pos" min="0" max="575" step="5" value="100" /><b data-ref="pos-out"></b></label>
-  <div class="row"><span>Volume du signal :</span><span class="seg" data-ref="gain"></span></div>
+  <div class="ctl">
+    <label class="posl"><span>Position de la trame (25 ms)</span><input type="range" data-ref="pos" min="0" max="575" step="5" value="100" /><b data-ref="pos-out"></b></label>
+    <div class="row"><span>Volume du signal :</span><span class="seg" data-ref="gain"></span></div>
+  </div>
+
+  <svg data-ref="wave" width="100%" role="img" aria-label="Signal d'origine x entier, avec la trame choisie surlignée"></svg>
 
   <div class="ft">Énergies de Mel E<sub>m</sub> <span>(échelle linéaire)</span></div>
   <svg data-ref="lin" width="100%" role="img" aria-label="Énergies de Mel en échelle linéaire"></svg>
@@ -21,6 +25,7 @@
 
 <script>
   import { makeSignal } from './signal';
+  import { drawWaveStrip } from './waveStrip';
   import { melEnergiesAt } from './mel';
 
   document.querySelectorAll<HTMLElement>('[data-widget="logc"]').forEach((root) => {
@@ -61,6 +66,7 @@
       $('gain').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.v! === gain));
       const t0 = +inp('pos').value;
       $('pos-out').textContent = `${t0} ms`;
+      drawWaveStrip($('wave') as unknown as SVGSVGElement, x, t0);
       const E = melEnergiesAt(x, t0, M, gain).map((e) => Math.max(e, 1e-12));
       const E1 = melEnergiesAt(x, t0, M, 1).map((e) => Math.max(e, 1e-12));
       const emax = Math.max(...E), emin = Math.min(...E);
@@ -82,7 +88,9 @@
 </script>
 
 <style is:global>
-  .logc .row { margin-bottom: 6px; }
+  .logc .ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 32px; margin-bottom: 6px; }
+  .logc .ctl .posl { flex: 1 1 280px; }
+  .logc .ctl .row { margin: 0; }
   .logc .seg { display: inline-flex; gap: 6px; }
   .logc .seg button { font-size: 13px; padding: 4px 12px; }
   .logc .posl { display: grid; grid-template-columns: 200px 1fr 70px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); margin: 6px 0; }

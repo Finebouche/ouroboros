@@ -3,8 +3,10 @@
 ---
 <div class="widget cmvn pp" data-widget="cmvn">
   <div class="row"><span>Canal (micro, pièce) :</span><span class="seg" data-ref="ch"></span></div>
-  <div class="row"><span>Normalisation :</span><span class="seg" data-ref="nm"></span></div>
-  <label class="posl"><span>Coefficient c<sub>k</sub>, k =</span><input type="range" data-ref="k" min="0" max="12" step="1" value="1" /><b data-ref="k-out"></b></label>
+  <div class="ctl">
+    <label class="posl"><span>Coefficient c<sub>k</sub>, k =</span><input type="range" data-ref="k" min="0" max="12" step="1" value="1" /><b data-ref="k-out"></b></label>
+    <div class="row"><span>Normalisation :</span><span class="seg" data-ref="nm"></span></div>
+  </div>
   <p class="lg"><i class="sq a"></i>son d'origine <i class="sq b"></i>même son, enregistré à travers le canal</p>
   <svg data-ref="svg" width="100%" role="img" aria-label="Un coefficient MFCC au fil des trames, avec et sans canal"></svg>
   <div class="kpis">
@@ -94,6 +96,10 @@
 
 <style is:global>
   .cmvn .row { margin-bottom: 6px; }
+  .cmvn .ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+  .cmvn .ctl .posl { flex: 1 1 150px; }
+  .cmvn .ctl .row .seg { gap: 4px; }
+  .cmvn .ctl .row { margin: 0; }
   .cmvn .seg { display: inline-flex; gap: 6px; flex-wrap: wrap; }
   .cmvn .seg button { font-size: 13px; padding: 4px 12px; }
   .cmvn .posl { display: grid; grid-template-columns: 200px 1fr 70px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); margin: 6px 0; }

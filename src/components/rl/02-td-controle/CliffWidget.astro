@@ -177,10 +177,9 @@ const F = {
   .cliffw .ef { font: 10.5px/1.5 var(--mono); color: var(--text-2); min-height: 1.5em; margin: 0 0 2px; white-space: nowrap; overflow: hidden; }
   .cliffw .plotrow { display: flex; gap: 16px; align-items: center; margin-top: 8px; }
   .cliffw .plotrow svg { flex: 1 1 0; min-width: 0; margin: 0; }
-  .cliffw .plotrow .kpis { flex: 0 0 146px; flex-direction: column; align-items: stretch; margin: 0; gap: 10px; }
-  .cliffw .plotrow .kpis > div { display: block; background: var(--surface-2); border-radius: 8px; padding: 0.4rem 0.6rem; }
-  .cliffw .plotrow .kpis > div > span { display: block; font-size: 12px; }
-  .cliffw .plotrow .kpis b { font-size: 14px; }
+  .cliffw .plotrow .kpis { flex: 0 0 180px; flex-direction: column; margin: 0; gap: 8px; }
+  .cliffw .plotrow .kpis > div { flex: 0 0 auto; display: block; }
+  .cliffw .plotrow .kpis > div > span { display: block; margin-bottom: 2px; }
   .cliffw svg.exp text.vs, .cliffw svg.plot text.vs { font: 10.5px var(--font); fill: var(--text-2); }
   @media (max-width: 700px) { .cliffw .plotrow { flex-direction: column; align-items: stretch; } .cliffw .plotrow .kpis { flex-basis: auto; } }
   .cliffw .cfrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 24px; align-items: center; margin-top: 4px; }

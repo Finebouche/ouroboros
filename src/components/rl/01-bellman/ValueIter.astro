@@ -24,10 +24,10 @@ const RULES: [string, string][] = [
       <div class="fm" set:html={F} />
       <dl class="rules">{RULES.map(([k, v]) => (<><dt>{k}</dt><dd set:html={v} /></>))}</dl>
       <div class="calc" data-ref="calc"></div>
-      <div class="kpis">
-        <div><span>Itération k</span><b data-ref="kk"></b></div>
-        <div><span>Valeur du départ</span><b data-ref="vs"></b></div>
-      </div>
+    <div class="kpis">
+      <div><span>Itération k</span><b data-ref="kk"></b></div>
+      <div><span>Valeur du départ</span><b data-ref="vs"></b></div>
+    </div>
     </div>
   </div>
   <p class="note">Contour bleu : case mise à jour ; pointillés : cases lues, avec les valeurs de l'itération précédente (V<sub>k</sub>). Flèche : action qui atteint le maximum. Clique une case pour y placer le but, le piège ou le mur.</p>
@@ -166,10 +166,9 @@ const RULES: [string, string][] = [
   .vi .calc .ch { font-family: var(--font); font-size: 12px; margin-bottom: 2px; }
   .vi .calc .cr.best { color: var(--a-fqi); font-weight: 700; }
   .vi .calc .ce { color: var(--text); margin-top: 2px; }
-  .vi .kpis { flex-direction: column; gap: 8px; margin: 0; max-width: 240px; }
-  .vi .kpis > div { display: flex; justify-content: space-between; background: var(--surface-2); border-radius: 8px; padding: 0.35rem 0.6rem; }
-  .vi .kpis > div > span { font-size: 12px; }
-  .vi .kpis b { font-size: 14px; }
+  .vi .kpis { flex-direction: row; margin: 0; max-width: 420px; }
+  .vi .kpis > div { flex: 1 1 0; display: block; }
+  .vi .kpis > div > span { display: block; margin-bottom: 2px; }
   .vi svg text.vv { font: 600 12px var(--font); fill: var(--text); }
   .vi svg text.vz { font: 11px var(--font); fill: var(--text-2); }
   .vi svg text.va { font: 600 15px var(--font); fill: var(--text); }

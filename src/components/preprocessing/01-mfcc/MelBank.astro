@@ -4,16 +4,17 @@
 <div class="widget melb pp" data-widget="melbank">
   <div class="row"><span>Espacement des filtres :</span><span class="seg" data-ref="space"></span></div>
   <div class="row"><span>Nombre de filtres M :</span><span class="seg" data-ref="m"></span></div>
-  <label class="posl"><span>Position de la trame (25 ms)</span><input type="range" data-ref="pos" min="0" max="575" step="5" value="100" /><b data-ref="pos-out"></b></label>
-  <label class="posl"><span>Filtre mis en évidence</span><input type="range" data-ref="sel" min="1" max="40" step="1" value="12" /><b data-ref="sel-out"></b></label>
+  <div class="sl">
+    <label class="posl"><span>Position de la trame (25 ms)</span><input type="range" data-ref="pos" min="0" max="575" step="5" value="100" /><b data-ref="pos-out"></b></label>
+    <label class="posl"><span>Filtre mis en évidence</span><input type="range" data-ref="sel" min="1" max="40" step="1" value="12" /><b data-ref="sel-out"></b></label>
+  </div>
 
-  <div class="ft">1. Les bords et centres des filtres, placés sur la courbe Hz → mel</div>
-  <svg data-ref="curve" width="100%" role="img" aria-label="Courbe fréquence en hertz contre mel, avec les points d'ancrage des filtres"></svg>
+  <svg data-ref="wave" width="100%" role="img" aria-label="Signal d'origine x entier, avec la trame choisie surlignée"></svg>
 
-  <div class="ft">2. Les filtres sur le spectre de la trame</div>
+  <div class="ft">1. Les filtres sur le spectre de la trame</div>
   <svg data-ref="filters" width="100%" role="img" aria-label="Filtres triangulaires superposés au spectre de puissance"></svg>
 
-  <div class="ft">3. Une énergie par filtre : la trame passe de 257 valeurs à M valeurs</div>
+  <div class="ft">2. Une énergie par filtre : la trame passe de 257 valeurs à M valeurs</div>
   <svg data-ref="bars" width="100%" role="img" aria-label="Énergie dans chaque filtre"></svg>
 
   <div class="kpis">
@@ -25,6 +26,7 @@
 
 <script>
   import { SR, makeSignal } from './signal';
+  import { drawWaveStrip } from './waveStrip';
   import { windowOf, powerSpectrum } from './dsp';
 
   document.querySelectorAll<HTMLElement>('[data-widget="melbank"]').forEach((root) => {
@@ -59,6 +61,7 @@
       mark('space', mode); mark('m', String(M));
       const t0 = +inp('pos').value;
       $('pos-out').textContent = `${t0} ms`;
+      drawWaveStrip($('wave') as unknown as SVGSVGElement, x, t0);
       const sel = Math.min(+inp('sel').value, M) - 1;
       $('sel-out').textContent = `n° ${sel + 1} sur ${M}`;
 
@@ -97,27 +100,7 @@
       const W = 640, ox = 40, wpx = W - ox - 8;
       const FX = (f: number) => ox + (f / FMAX) * wpx;
 
-      // --- 1. courbe Hz → mel ---
-      const mmax = hz2mel(FMAX), ch = 150, cy0 = 8, chh = ch - 30;
-      const MY = (m: number) => cy0 + (1 - m / mmax) * chh;
-      let g = `<line x1="${ox}" y1="${cy0 + chh}" x2="${W - 8}" y2="${cy0 + chh}" stroke="var(--border)"/><line x1="${ox}" y1="${cy0}" x2="${ox}" y2="${cy0 + chh}" stroke="var(--border)"/>`;
-      for (const m of [0, 1000, 2000]) g += `<text x="${ox - 6}" y="${MY(m) + 3.5}" text-anchor="end" class="ax">${m}</text>`;
-      g += `<text x="${ox - 6}" y="${cy0 - 1}" text-anchor="end" class="ax">mel</text>`;
-      for (let kHz = 0; kHz <= 8; kHz++) g += `<text x="${FX(kHz * 1000)}" y="${ch + 2}" text-anchor="${kHz === 0 ? 'start' : kHz === 8 ? 'end' : 'middle'}" class="ax">${kHz === 8 ? '8 kHz' : kHz}</text>`;
-      pts.forEach((f, i) => {
-        const m = hz2mel(f);
-        const on = i === sel || i === sel + 1 || i === sel + 2;
-        g += `<line x1="${ox}" y1="${MY(m)}" x2="${FX(f)}" y2="${MY(m)}" stroke="${on ? 'var(--hl-stroke)' : 'var(--p-frame-a)'}" stroke-width="${on ? 1.2 : 0.6}"/><line x1="${FX(f)}" y1="${MY(m)}" x2="${FX(f)}" y2="${cy0 + chh}" stroke="${on ? 'var(--hl-stroke)' : 'var(--p-frame-a)'}" stroke-width="${on ? 1.2 : 0.6}"/>`;
-      });
-      let cv = '';
-      for (let f = 0; f <= FMAX; f += 50) cv += `${FX(f).toFixed(1)},${MY(hz2mel(f)).toFixed(1)} `;
-      g += `<polyline points="${cv}" fill="none" stroke="var(--p-wave)" stroke-width="1.8"/>`;
-      pts.forEach((f) => { g += `<circle cx="${FX(f)}" cy="${MY(hz2mel(f))}" r="2" fill="var(--p-mel)"/>`; });
-      const c1 = $('curve') as unknown as SVGSVGElement;
-      c1.setAttribute('viewBox', `0 0 ${W} ${ch + 8}`);
-      c1.innerHTML = g;
-
-      // --- 2. filtres sur le spectre ---
+      // --- 1. filtres sur le spectre ---
       const fh = 140, fy0 = 8, fhh = fh - 28;
       const FY = (v: number) => fy0 + (1 - v) * fhh;
       let a = `${FX(0)},${FY(0)} `;
@@ -137,7 +120,7 @@
       c2.setAttribute('viewBox', `0 0 ${W} ${fh + 8}`);
       c2.innerHTML = f2;
 
-      // --- 3. énergies ---
+      // --- 2. énergies ---
       const bh = 110, by0 = 6, bhh = bh - 20;
       const bw = wpx / M;
       let b3 = `<line x1="${ox}" y1="${by0 + bhh}" x2="${W - 8}" y2="${by0 + bhh}" stroke="var(--border)"/>`;
@@ -166,6 +149,7 @@
   .melb .row { margin-bottom: 6px; }
   .melb .seg { display: inline-flex; gap: 6px; flex-wrap: wrap; }
   .melb .seg button { font-size: 13px; padding: 4px 12px; }
+  .melb .sl { display: grid; gap: 6px 24px; }
   .melb .posl { display: grid; grid-template-columns: 200px 1fr 90px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); margin: 6px 0; }
   .melb .posl b { text-align: right; color: var(--text); font-weight: 500; }
   .melb .ft { font-size: 13px; font-weight: 500; margin: 12px 0 2px; }
