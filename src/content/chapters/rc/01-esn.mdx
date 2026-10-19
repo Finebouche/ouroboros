@@ -1,0 +1,113 @@
+---
+num: 1
+title: "Un RNN dont on n'entraîne que la sortie"
+summary: "Echo state network : réservoir aux poids aléatoires et figés, lecture linéaire entraînée par régression ridge, ce que le réservoir sait faire selon son rayon spectral, et pourquoi cela suffit."
+status: premier-jet
+---
+import Reveal from '@/components/shared/Reveal.astro';
+import Quiz from '@/components/shared/Quiz.astro';
+import Refs from '@/components/shared/Refs.astro';
+import EsnSchema from '@/components/rc/01-esn/EsnSchema.astro';
+import EsnWidget from '@/components/rc/01-esn/EsnWidget.astro';
+
+<EsnSchema />
+
+## 1. Le principe
+
+Un réseau récurrent (RNN) garde un **état** $x(n)$, mis à jour à chaque pas $n$ à partir de l'entrée $u(n)$ et de l'état précédent. Entraîner ses poids récurrents par rétropropagation dans le temps est lent, et le gradient s'évanouit ou explose sur les longues séquences ([Post-Transformer, chapitre 2](/post-transformer/02-recurrence-temps/)).
+
+Le **reservoir computing** contourne le problème : on tire les poids récurrents $W$ et les poids d'entrée $W_{in}$ au hasard, et on ne les touche plus. Ce RNN figé est le **réservoir**. Seule une **lecture** (*readout*) linéaire $W_{out}$, de l'état vers la sortie, est entraînée. L'idée a été proposée indépendamment sous deux noms : *echo state network* (ESN, Jaeger) et *liquid state machine* (Maass et al., avec des neurones à impulsions, chapitre 8).
+
+$$
+x(n) = \tanh\big(W\,x(n-1) + W_{in}\,u(n) + b\big), \qquad y(n) = W_{out}\,[x(n)\,;\,1]
+$$
+
+| Symbole | Sens | Taille | Entraîné ? |
+|---|---|---|---|
+| $u(n)$ | entrée au pas $n$ | 1 ici | |
+| $x(n)$ | état du réservoir | $N$ neurones | |
+| $W$ | poids récurrents | $N \times N$ | non : aléatoire, figé |
+| $W_{in}$, $b$ | poids d'entrée, biais | $N$ | non : aléatoires, figés |
+| $W_{out}$ | lecture | $N + 1$ (avec la constante) | **oui** |
+| $\rho$ | rayon spectral de $W$ : le plus grand module de ses valeurs propres | | réglage |
+
+## 2. Entraîner la lecture : une régression ridge
+
+On fait tourner le réservoir sur l'entrée et on range ses états en colonnes dans une matrice $X$ ($(N+1) \times T$), les sorties voulues dans $Y$. La sortie est linéaire en $W_{out}$, et les états ne dépendent pas de $W_{out}$ : chercher $W_{out}$ est un problème de moindres carrés, régularisé par $\lambda$ (régression ridge).
+
+$$
+W_{out} = Y X^{\top} \big(X X^{\top} + \lambda I\big)^{-1}
+$$
+
+- **Un seul système linéaire** de taille $(N+1) \times (N+1)$, sans gradient ni itération.
+- **Transitoire** (*washout*) : l'état initial $x(0) = 0$ est arbitraire ; on jette les premiers pas, le temps que le réservoir l'oublie.
+- **Plusieurs tâches, un seul réservoir** : les états ne dépendent que de l'entrée. Une nouvelle tâche ne demande qu'une nouvelle lecture.
+
+## 3. Ce que le réservoir sait faire
+
+Quatre tâches sur la même entrée (un bruit lissé) : recopier l'entrée avec un retard de 5, 15 ou 40 pas, ou sortir le produit $u(n)\,u(n-2)$.
+
+<EsnWidget />
+
+Avec ces réglages (60 neurones, entrée faible), vérifiés sur deux tirages du réservoir :
+
+- **Retard de 5 pas** : réussi (erreur de test autour de 0,01) pour $\rho$ entre 0,5 et 1.
+- **Retard de 15 pas** : en partie seulement (erreur de 0,25 à 0,45), et seulement si $\rho$ est proche de 1 (0,8 à 1) ; avec $\rho \le 0{,}5$, échec complet. Avec un petit $\rho$, l'état oublie vite : la trace de $u(n-k)$ décroît en gros comme $\rho^k$.
+- **Retard de 40 pas** : jamais. La mémoire d'un réservoir est bornée par sa taille (chapitre 3).
+- **Produit $u(n)\,u(n-2)$** : meilleur à petit $\rho$. Il demande de la non-linéarité et un peu de mémoire ; un grand $\rho$ donne plus de mémoire mais moins de non-linéarité utile. C'est le compromis mémoire / non-linéarité (chapitre 3).
+- **$\rho > 1$** : les erreurs montent, fortement pour l'un des deux tirages, modérément pour l'autre. L'état risque de ne plus dépendre seulement de l'entrée : c'est la propriété d'écho (chapitre 2).
+
+## 4. Pourquoi cela suffit
+
+- **Une mémoire** : l'état est un écho de l'histoire de l'entrée, $x(n) = E\big(u(n), u(n-1), \dots\big)$, si le réservoir oublie son état initial (propriété d'écho, chapitre 2).
+- **Beaucoup de fonctions non linéaires du passé** : chaque neurone calcule une fonction différente de l'histoire de l'entrée. La lecture n'a qu'à les combiner linéairement, comme une méthode à noyaux combine des caractéristiques fixes (chapitre 7).
+- **Le prix** : $W$ n'est pas optimisé pour la tâche, donc il faut souvent beaucoup de neurones. En échange, l'entraînement se réduit à un système linéaire, et le réservoir peut être n'importe quel système dynamique, y compris physique (chapitre 9).
+
+<div class="retain">
+
+**À retenir**
+
+- Réservoir : un RNN dont $W$, $W_{in}$ et $b$ sont tirés au hasard puis figés ; seule la lecture linéaire $W_{out}$ est entraînée.
+- Entraînement : régression ridge sur les états collectés, $W_{out} = Y X^{\top}(XX^{\top} + \lambda I)^{-1}$, après un transitoire.
+- Les états ne dépendent que de l'entrée : une nouvelle tâche ne demande qu'une nouvelle lecture.
+- Le rayon spectral $\rho$ règle la mémoire : trop petit, l'état oublie vite ; au-delà de 1, l'état risque de ne plus dépendre seulement de l'entrée.
+
+</div>
+
+<Refs items={[["The “echo state” approach to analysing and training recurrent neural networks (GMD Report 148, version corrigée de 2010)", "Jaeger", 2001, "https://www.ai.rug.nl/minds/uploads/EchoStatesTechRep.pdf"], ["Real-Time Computing Without Stable States: A New Framework for Neural Computation Based on Perturbations (Neural Computation 14, 2531–2560)", "Maass, Natschläger & Markram", 2002, "10.1162/089976602760407955"], ["Harnessing Nonlinearity: Predicting Chaotic Systems and Saving Energy in Wireless Communication (Science 304, 78–80)", "Jaeger & Haas", 2004, "10.1126/science.1091277"], ["Reservoir computing approaches to recurrent neural network training (Computer Science Review 3, 127–149)", "Lukoševičius & Jaeger", 2009, "10.1016/j.cosrev.2009.03.005"], ["A Practical Guide to Applying Echo State Networks", "Lukoševičius", 2012, "10.1007/978-3-642-35289-8_36"]]} />
+
+<Quiz>
+
+**Q1.** Avec $N = 60$ neurones, une entrée et une sortie, combien de poids sont entraînés, et combien restent figés ?
+
+<Reveal>
+
+Entraînés : $W_{out}$, soit $60 + 1 = 61$ coefficients (avec la constante). Figés : $W$ ($3\,600$), $W_{in}$ (60) et $b$ (60).
+
+</Reveal>
+
+**Q2.** Pourquoi jette-t-on les premiers pas avant d'entraîner la lecture ?
+
+<Reveal>
+
+Au début, l'état dépend encore de $x(0) = 0$, un choix arbitraire. On attend que le réservoir l'ait oublié pour que l'état ne dépende plus que de l'entrée.
+
+</Reveal>
+
+**Q3.** Dans le widget, le retard de 15 pas réussit avec $\rho = 0{,}9$ mais pas avec $\rho = 0{,}3$. Pourquoi ?
+
+<Reveal>
+
+La trace d'une entrée passée dans l'état décroît en gros comme $\rho^k$ : $0{,}3^{15} \approx 10^{-8}$, l'information a disparu ; $0{,}9^{15} \approx 0{,}2$, elle est encore là et la lecture peut la récupérer.
+
+</Reveal>
+
+**Q4.** Dans le widget, changer de tâche refait la lecture sans refaire tourner le réservoir. Pourquoi est-ce correct ?
+
+<Reveal>
+
+Les états $x(n)$ ne dépendent que de l'entrée et des poids figés, pas de la tâche ni de $W_{out}$. Seule la régression ridge change, avec la nouvelle cible $Y$.
+
+</Reveal>
+
+</Quiz>

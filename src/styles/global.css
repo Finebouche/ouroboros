@@ -52,6 +52,13 @@
   --a-nac: #a0703f;
   --a-ppo: #b05a6e;
   --a-es: #4f8a5b;
+  /* cours Reservoir computing : état du réservoir, sortie (lecture entraînée) ; entrée en gris --text-2, cible en trait pointillé --text */
+  --r-res: #2f8a8a;
+  --r-out: #6656c8;
+  /* trois populations en compétition (chapitre des cycles hétéroclines), palette Okabe-Ito */
+  --r-p1: #0072b2;
+  --r-p2: #d55e00;
+  --r-p3: #cc79a7;
   --warn: #ef9f27;
   --bad: #e24b4a;
   --hl-bg: #faeeda;
@@ -101,6 +108,11 @@
     --a-nac: #d1a06a;
     --a-ppo: #dc9aa9;
     --a-es: #8fc79c;
+    --r-res: #6cc3c3;
+    --r-out: #a99cf0;
+    --r-p1: #5ba8e0;
+    --r-p2: #f08a4b;
+    --r-p3: #e0a3c6;
   }
 }
 * { box-sizing: border-box; }

@@ -30,6 +30,13 @@ export const COURSES = {
     intro:
       "Un cours visuel, centré sur les mécanismes : l'équation de Bellman comme système linéaire et comme contraction, puis comment chaque famille d'algorithmes (méthodes de valeur, gradient de politique, stratégies d'évolution, méthodes avec modèle) en tire sa mise à jour, et enfin les benchmarks qui les comparent.",
   },
+  rc: {
+    title: 'Reservoir computing',
+    unit: 'Chapitre',
+    tagline: "Des réseaux récurrents tirés au hasard dont on n'entraîne que la sortie : principe, propriété d'écho, mémoire, bord du chaos, expressivité, puis neurones à impulsions et réservoirs physiques.",
+    intro:
+      "Un cours visuel qui part de zéro : un RNN aux poids aléatoires et figés, dont seule une lecture linéaire est entraînée. Puis la théorie (quand l'état oublie son passé, combien il en retient, pourquoi cela suffit) et les réservoirs hors du logiciel : neurones à impulsions, photonique, mécanique, matériel neuromorphique.",
+  },
 } as const;
 
 export type CourseId = keyof typeof COURSES;

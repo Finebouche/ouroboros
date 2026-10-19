@@ -8,6 +8,7 @@ Site personnel de cours : des fiches de révision visuelles. Il héberge plusieu
 | Preprocessing | `preprocessing` | Chapitre | prétraitement des données ; chapitre 1 : MFCC |
 | HPC | `hpc` | Chapitre | calcul haute performance : matériel et roofline ; JAX de Python à l'appareil (exécution, compilation, transformations, sharding, étude de cas `run_batched`) ; moindres carrés (Cholesky, QR, SVD, LSQR) |
 | RL | `rl` | Chapitre | apprentissage par renforcement : mécanismes mathématiques (Bellman), familles d'algorithmes (méthodes de valeur, gradient de politique, stratégies d'évolution, méthodes avec modèle), benchmarks (POPGym, LunarLander) |
+| Reservoir computing | `rc` | Chapitre | réseaux récurrents aléatoires dont seule la lecture est entraînée : principe (ESN), propriété d'écho, mémoire, bord du chaos, expressivité, liquid state machines, réservoirs physiques et neuromorphiques |
 
 ## Lancer
 
@@ -31,7 +32,8 @@ src/
       02-recurrence-temps/ … 06-recurrence-profondeur/  widgets des chapitres 2, 3 et 6
     preprocessing/
       01-mfcc/                 widgets du chapitre MFCC
-    hpc/                       Legend (code couleur : calcul, mémoire, surcoût fixe), JaxSidebar (parties du chapitre 2), hw.ts (matériel de référence), widgets par chapitre
+    hpc/                       Legend (code couleur : opération limitée par le calcul ou la mémoire, surcoût hachuré), JaxSidebar (parties du chapitre 2), hw.ts (matériel de référence), widgets par chapitre
+    rc/                        esn.ts (réservoir, ridge, NRMSE partagés), widgets par chapitre
   lib/courses.ts               liste des cours (titre, unité, présentation) et fonctions de lecture de la collection
   layouts/Base.astro           mise en page commune (en-tête : Cours / <cours>)
   pages/                       index (liste des cours), [course]/index (carte de progression), [course]/[...slug] (page d'un chapitre)

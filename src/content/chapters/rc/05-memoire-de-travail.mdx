@@ -1,0 +1,121 @@
+---
+num: 5
+title: "Mémoire de travail : des attracteurs"
+summary: "Garder une information sans la répéter : pourquoi la propriété d'écho l'interdit, points fixes et stabilité, un bit par bistabilité, une valeur continue par attracteur en ligne, et comment un réservoir avec retour apprend ces attracteurs."
+status: premier-jet
+---
+import Reveal from '@/components/shared/Reveal.astro';
+import Quiz from '@/components/shared/Quiz.astro';
+import Refs from '@/components/shared/Refs.astro';
+import Bistable from '@/components/rc/05-memoire-de-travail/Bistable.astro';
+import Network3D from '@/components/rc/05-memoire-de-travail/Network3D.astro';
+
+## 1. Mémoire évanescente ou mémoire de travail
+
+- **Mémoire évanescente** (*fading memory*) : un réservoir qui a la propriété d'écho (chapitre 2) ne dépend que de l'entrée récente. Une information s'efface si on ne la répète pas.
+- **Mémoire de travail** (*working memory*) : garder une information choisie aussi longtemps qu'il le faut, sans la répéter, puis l'effacer ou la remplacer. Pascanu et Jaeger en listent les quatre opérations : stocker, maintenir, retrouver, effacer.
+- **La conséquence dynamique** : sans entrée, l'état doit pouvoir rester dans plusieurs états différents, un par souvenir possible. Or, avec une entrée nulle, la propriété d'écho impose un seul état. La mémoire de travail demande donc de **casser l'écho**, au moins en partie.
+
+## 2. Points fixes et stabilité
+
+Un système dynamique $\dot x = f(x)$ décrit comment l'état $x$ change avec le temps. Pour l'étudier, on cherche d'abord où il ne bouge pas.
+
+| Notion | Définition | En une dimension |
+|---|---|---|
+| **Point fixe** $x^\star$ | $f(x^\star) = 0$ : l'état n'y bouge plus | un zéro de la courbe $\dot x$ selon $x$ |
+| **Stable** (attracteur) | les petits écarts se résorbent | $f'(x^\star) < 0$ : le flot revient vers $x^\star$ des deux côtés |
+| **Instable** | les petits écarts grandissent | $f'(x^\star) > 0$ : le flot s'en éloigne |
+| **Bassin d'attraction** | les états qui finissent sur un attracteur donné | l'intervalle entre deux points instables |
+| **Selle** (dimension $\ge 2$) | des directions attirent, d'autres repoussent | (chapitre 6) |
+
+En dimension $n$, on linéarise autour du point fixe : la jacobienne $J = \partial f / \partial x$ en $x^\star$ décide. Toutes ses valeurs propres de partie réelle négative : stable. Au moins une positive : instable ; une selle s'il y a aussi des négatives.
+
+## 3. Un bit : la bistabilité
+
+Un neurone qui s'excite lui-même avec un poids $w$ :
+
+<Bistable />
+
+- **$w \le 1$** : un seul point fixe, en 0, stable. L'impulsion s'efface : avec $w = 0{,}8$, l'état passe de 0,54 à 0,01 en 20 unités de temps. C'est une mémoire évanescente.
+- **$w > 1$** : 0 devient instable et deux points fixes stables apparaissent, $\pm x^\star$ ($\pm 0{,}96$ pour $w = 2$). Le neurone garde indéfiniment le signe de la dernière impulsion assez forte : **un bit** de mémoire de travail.
+- **Écrire coûte** : il faut pousser l'état au-delà du point instable. Pour une impulsion qui dure une unité de temps, le seuil est 1,2 pour $w = 1{,}5$, 1,65 pour $w = 2$ et 2,5 pour $w = 3$. Un puits profond protège le souvenir du bruit, mais l'impulsion d'amplitude 2 du widget ne suffit plus à $w = 3$.
+- **Plusieurs souvenirs discrets** : un réseau à plusieurs points fixes stables, un par souvenir, retrouvé depuis une version partielle qui tombe dans son bassin (réseau de Hopfield).
+
+## 4. Une valeur continue : l'attracteur en ligne
+
+Pour garder une valeur réelle (une position, une intensité), il faut une infinité d'états stables : une **ligne de points fixes**, le long de laquelle l'état ne revient ni ne s'éloigne. C'est un **attracteur en ligne** (*line attractor*), proposé par exemple pour expliquer comment le cerveau garde les yeux immobiles (Seung).
+
+- **Le neurone linéaire** $\dot x = (w-1)\,x + I(t)$ (second mode du widget) : avec $w = 1$, toute valeur est un point fixe, l'impulsion est intégrée et gardée telle quelle (0,5 reste 0,5).
+- **Le réglage fin** : avec $w = 0{,}95$, la valeur 0,5 tombe à 0,07 en 40 unités de temps ; avec $w = 1{,}05$, elle grossit jusqu'à 3,6. Le moindre écart à $w = 1$ fait dériver la mémoire. Un attracteur en ligne exact est fragile, et les modèles cherchent comment le rendre robuste.
+
+## 5. En trois dimensions : huit souvenirs, ou une ligne
+
+Avec trois neurones, l'espace d'état a trois axes : on voit les attracteurs, les points instables qui séparent les bassins, et les trajectoires qui s'y rendent.
+
+<Network3D />
+
+- **Trois neurones bistables** ($w = 2$, sans couplage) : 8 attracteurs aux coins $(\pm 0{,}96)^3$, un par combinaison de 3 bits. Les 19 autres points fixes sont instables : 18 selles et l'origine, instable dans toutes les directions. Les bassins sont ici les 8 octants. Une impulsion sur un neurone ne fait basculer que son bit.
+- **Attracteur en ligne** : $W$ a la valeur propre $\lambda$ le long de $v = (1,1,1)/\sqrt3$ et $\tfrac12$ dans les autres directions. L'écart à la ligne s'éteint (taux 0,5) ; la position sur la ligne, $v \cdot x$, évolue au taux $\lambda - 1$.
+- **Avec $\lambda = 1$** : une ligne de points fixes. Une impulsion de 0,5 sur le neurone 1 déplace la position de $0{,}5/\sqrt3 \approx 0{,}29$ : l'intégrateur ne garde que la part de l'entrée le long de la ligne.
+- **Avec $\lambda \ne 1$** : la position 0,29 tombe à 0,04 en 40 unités de temps pour $\lambda = 0{,}95$, et monte à 2,1 pour $\lambda = 1{,}05$.
+
+## 6. Dans un réservoir
+
+- **Il faut un retour** : un réservoir à propriété d'écho n'a qu'un état sans entrée. On ajoute une boucle qui réinjecte la sortie de la lecture dans le réservoir. Entraîner cette lecture modifie alors la dynamique du système bouclé.
+- **Pascanu et Jaeger (2011)** entraînent ainsi un ESN à stocker, maintenir, retrouver et effacer des informations. Les états de mémoire y sont des attracteurs d'un système piloté par l'entrée ; l'article propose une définition formelle de tels attracteurs, au-delà des systèmes autonomes.
+- **Strock, Hinaut et Rougier (2020)** : un réservoir apprend une mémoire de travail « à porte » qui garde une valeur réelle arbitraire, mise à jour à tout moment. Sa dynamique est un attracteur en ligne, appris grâce à la réentrée (le retour) et à la non-linéarité, avec seulement quelques valeurs d'entraînement ; le résultat tient sur une large plage d'hyperparamètres.
+- **Ouvrir la boîte noire** : dans un RNN entraîné, on trouve numériquement les points fixes et les points lents en minimisant la vitesse au carré, $q(x) = \tfrac12 \lVert \dot x \rVert^2$, puis on linéarise autour d'eux. Sussillo et Barak montrent ainsi des dynamiques de faible dimension dans de grands réseaux.
+
+## 7. Les limites de l'image « attracteur »
+
+Garder un souvenir par un attracteur demande une activité soutenue tant qu'il est gardé, un attracteur en ligne est fragile, et les souvenirs sont des états figés. Une autre image décrit la mémoire comme une **séquence transitoire** reproductible, qui passe d'un état à l'autre sans s'arrêter : c'est le chapitre 6.
+
+<div class="retain">
+
+**À retenir**
+
+- La propriété d'écho donne une mémoire évanescente ; la mémoire de travail demande plusieurs états stables sans entrée, donc de casser l'écho.
+- Point fixe : $f(x^\star) = 0$ ; stable si les écarts se résorbent (valeurs propres de la jacobienne de partie réelle négative).
+- Un neurone auto-excité avec $w > 1$ est bistable : il garde un bit. Écrire demande de franchir le point instable.
+- Valeur continue : attracteur en ligne, exact seulement avec un réglage fin ($w = 1$) ; sinon, la mémoire dérive.
+- Un réservoir avec boucle de retour peut apprendre ces attracteurs (Pascanu et Jaeger ; Strock, Hinaut et Rougier).
+
+</div>
+
+<Refs items={[["A neurodynamical model for working memory (Neural Networks 24, 199–207)", "Pascanu & Jaeger", 2011, "10.1016/j.neunet.2010.10.003"], ["A Robust Model of Gated Working Memory (Neural Computation 32, 153–181)", "Strock, Hinaut & Rougier", 2020, "10.1162/neco_a_01249"], ["Opening the Black Box: Low-Dimensional Dynamics in High-Dimensional Recurrent Neural Networks (Neural Computation 25, 626–649)", "Sussillo & Barak", 2013, "10.1162/NECO_a_00409"], ["How the brain keeps the eyes still (PNAS 93, 13339–13344)", "Seung", 1996, "10.1073/pnas.93.23.13339"], ["Neural networks and physical systems with emergent collective computational abilities (PNAS 79, 2554–2558)", "Hopfield", 1982, "10.1073/pnas.79.8.2554"], ["Neurocomputational models of working memory (Nature Neuroscience 3, 1184–1191)", "Durstewitz, Seamans & Sejnowski", 2000, "10.1038/81460"]]} />
+
+<Quiz>
+
+**Q1.** Pourquoi un réservoir qui a la propriété d'écho ne peut-il pas garder un bit sans entrée ?
+
+<Reveal>
+
+Avec une entrée nulle, la propriété d'écho impose que l'état ne dépende que de cette entrée : un seul état possible. Garder un bit demande deux états stables différents sans entrée.
+
+</Reveal>
+
+**Q2.** Pour $\dot x = -x + \tanh(2x)$, quels sont les points fixes et leur stabilité ?
+
+<Reveal>
+
+$x = 0$ et $x = \pm x^\star \approx \pm 0{,}96$ (solutions de $x = \tanh(2x)$). En 0, $f'(0) = -1 + 2 = 1 > 0$ : instable. En $\pm 0{,}96$, $f' = -1 + 2(1 - 0{,}96^2) \approx -0{,}84 < 0$ : stables.
+
+</Reveal>
+
+**Q3.** Dans le widget, avec $w = 3$, l'impulsion d'amplitude 2 ne fait plus basculer le neurone. Pourquoi ?
+
+<Reveal>
+
+Les attracteurs sont plus loin et plus profonds ($\pm 0{,}995$) : il faut pousser l'état au-delà du point instable, et une impulsion de durée 1 demande alors une amplitude d'au moins 2,5. Plus le souvenir est protégé, plus il est coûteux à écrire.
+
+</Reveal>
+
+**Q4.** Pourquoi un intégrateur $\dot x = (w - 1)\,x + I$ est-il une mémoire fragile ?
+
+<Reveal>
+
+Il ne garde la valeur que pour $w = 1$ exactement. Pour $w < 1$, la valeur décroît comme $e^{(w-1)t}$ ; pour $w > 1$, elle croît. Le moindre écart de réglage fait dériver la mémoire.
+
+</Reveal>
+
+</Quiz>

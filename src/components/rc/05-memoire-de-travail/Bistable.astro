@@ -1,0 +1,165 @@
+---
+// Cours Reservoir computing, chapitre 5 : un neurone qui s'excite lui-même, ẋ = −x + tanh(w x + I(t)), ou sa version linéaire ẋ = (w − 1) x + I(t).
+// À gauche, la droite des phases : la vitesse ẋ en fonction de x, ses zéros (points fixes, pleins si stables, creux si instables) et le sens du flot.
+// À droite, l'état au fil du temps et les impulsions d'entrée. Réglages vérifiés par simulation (Node) :
+// tanh, impulsion d'amplitude 2 pendant 1 unité de temps : bascule pour w = 1,5 et 2 (seuils 1,2 et 1,65), pas pour w = 3 (seuil 2,5) ;
+// w ≤ 1 : un seul point fixe, l'impulsion est oubliée ; linéaire : w = 1 garde la valeur, w ≠ 1 la perd ou diverge.
+import katex from 'katex';
+const tex = (s: string) => katex.renderToString(s, { throwOnError: false });
+const FT = tex('\\dot x = -x + \\tanh\\big(w\\,x + I(t)\\big)');
+const FL = tex('\\dot x = (w - 1)\\,x + I(t)');
+---
+<div class="widget rcw bist" data-widget="bist">
+  <div class="row"><span>Neurone :</span><span class="seg" data-ref="mode"></span></div>
+  <div class="ctlrow">
+    <span class="seg" data-ref="ctl"></span>
+    <label data-ref="lt"><span>Auto-excitation w</span><input type="range" data-ref="w" min="0.5" max="3" step="0.05" value="2" /><b data-ref="w-out"></b></label>
+    <label data-ref="ll" hidden><span>Auto-excitation w</span><input type="range" data-ref="wl" min="0.9" max="1.1" step="0.01" value="1" /><b data-ref="wl-out"></b></label>
+  </div>
+  <div class="calc">
+    <div class="fm" data-ref="ft" set:html={FT} />
+    <div class="fm" data-ref="fl" set:html={FL} hidden />
+    <div class="ln" data-ref="line"></div>
+  </div>
+  <div class="panes">
+    <div><div class="ft">Droite des phases : vitesse ẋ selon x</div><svg data-ref="phase" role="img" aria-label="Vitesse de l'état en fonction de l'état, points fixes et sens du flot"></svg></div>
+    <div><div class="ft">État x(t) et impulsions d'entrée</div><svg data-ref="time" role="img" aria-label="État du neurone au fil du temps, avec les impulsions d'entrée"></svg></div>
+  </div>
+  <div class="kpis">
+    <div><span>Points fixes</span><b data-ref="k1"></b></div>
+    <div><span>Ce qui reste d'une impulsion</span><b data-ref="k2"></b></div>
+  </div>
+  <p class="note">Point plein : point fixe stable (attracteur) ; point creux : instable. Les flèches donnent le sens dans lequel l'état se déplace. Impulsion : amplitude 2 pendant une unité de temps (0,5 pour le neurone linéaire).</p>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="bist"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const inp = (r: string) => $(r) as HTMLInputElement;
+    const DT = 0.02, SUB = 4, WIN = 60, PULSE = 1;
+    let lin = false, x = 0.02, t = 0, pulse = 0, pulseEnd = 0;
+    let hist: [number, number, number][] = []; // [t, x, I]
+    let timer: number | null = null, playB: HTMLButtonElement | null = null;
+    const fm = (v: number, d = 2) => v.toFixed(d).replace('.', ',').replace('-', '−');
+    const w = () => (lin ? +inp('wl').value : +inp('w').value);
+    const f = (xx: number, I = 0) => (lin ? (w() - 1) * xx + I : -xx + Math.tanh(w() * xx + I));
+    // points fixes sans entrée : zéros de f sur [−1,5 ; 1,5], par changement de signe (et x = 0, toujours point fixe)
+    function fixedPoints(): { x: number; stable: boolean }[] {
+      if (lin) return Math.abs(w() - 1) < 1e-9 ? [] : [{ x: 0, stable: w() < 1 }];
+      const pts: { x: number; stable: boolean }[] = [];
+      const n = 3000, a = -1.5, b = 1.5;
+      let prev = f(a);
+      for (let i = 1; i <= n; i++) {
+        const xx = a + ((b - a) * i) / n, cur = f(xx);
+        if (prev === 0 || prev * cur < 0) {
+          const z = xx - ((b - a) / n) * (cur / (cur - prev || 1));
+          const d = (f(z + 1e-4) - f(z - 1e-4)) / 2e-4;
+          pts.push({ x: Math.abs(z) < 1e-3 ? 0 : z, stable: d < 0 });
+        }
+        prev = cur;
+      }
+      return pts;
+    }
+    function reset() { stop(); x = 0.02; t = 0; pulse = 0; pulseEnd = 0; hist = [[0, x, 0]]; draw(); }
+    function advance() {
+      for (let k = 0; k < SUB; k++) {
+        const I = t < pulseEnd ? pulse : 0;
+        x += DT * f(x, I); t += DT;
+        if (lin) x = Math.max(-3, Math.min(3, x));
+        hist.push([t, x, I]);
+      }
+      while (hist.length && hist[0][0] < t - WIN) hist.shift();
+    }
+    function stop() { if (timer) { clearInterval(timer); timer = null; } if (playB) playB.textContent = '▶ lecture'; }
+    function play() { if (timer) return; playB!.textContent = '⏸ pause'; timer = window.setInterval(() => { advance(); draw(); }, 30); }
+    const mk = (label: string, fn: () => void) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', fn); $('ctl').appendChild(b); return b; };
+    playB = mk('▶ lecture', () => (timer ? stop() : play()));
+    mk('impulsion +', () => { pulse = lin ? 0.5 : 2; pulseEnd = t + PULSE; play(); });
+    mk('impulsion −', () => { pulse = lin ? -0.5 : -2; pulseEnd = t + PULSE; play(); });
+    mk('recommencer', reset);
+    [['tanh (bistable si w > 1)', false], ['linéaire (intégrateur)', true]].forEach(([l, v]) => {
+      const b = document.createElement('button'); b.textContent = String(l); b.dataset.v = v ? '1' : '0';
+      b.addEventListener('click', () => { lin = !!v; $('lt').hidden = lin; $('ll').hidden = !lin; $('ft').hidden = lin; $('fl').hidden = !lin; reset(); });
+      $('mode').appendChild(b);
+    });
+    ['w', 'wl'].forEach((r) => inp(r).addEventListener('input', () => draw()));
+
+    function draw() {
+      $('mode').querySelectorAll('button').forEach((b) => b.classList.toggle('active', (b as HTMLElement).dataset.v === (lin ? '1' : '0')));
+      $('w-out').textContent = fm(+inp('w').value); $('wl-out').textContent = fm(+inp('wl').value);
+      const fps = fixedPoints();
+      // --- droite des phases ---
+      const W = 300, H = 200, ox = 20, oy = 14, pw = W - 2 * ox, ph = H - 44;
+      const xl = lin ? -1.5 : -1.5, xh = 1.5;
+      const vmax = lin ? 0.8 : 1;
+      const X = (v: number) => ox + ((v - xl) / (xh - xl)) * pw, Y = (v: number) => oy + ph / 2 - (Math.max(-vmax, Math.min(vmax, v)) / vmax) * (ph / 2);
+      let g = `<line x1="${ox}" y1="${Y(0)}" x2="${ox + pw}" y2="${Y(0)}" stroke="var(--border)"/>`;
+      [-1, 0, 1].forEach((v) => (g += `<text x="${X(v)}" y="${oy + ph + 14}" text-anchor="middle" class="ax">${fm(v, 0)}</text>`));
+      g += `<text x="${ox + pw}" y="${oy + ph + 28}" text-anchor="end" class="ax">x</text><text x="${ox - 2}" y="${oy + 8}" class="ax">ẋ</text>`;
+      let path = '';
+      for (let i = 0; i <= 200; i++) { const v = xl + ((xh - xl) * i) / 200; path += `${i ? 'L' : 'M'}${X(v).toFixed(1)} ${Y(f(v)).toFixed(1)}`; }
+      g += `<path d="${path}" fill="none" stroke="var(--r-res)" stroke-width="2"/>`;
+      // flèches du flot sur l'axe
+      for (let v = -1.35; v <= 1.36; v += 0.3) {
+        const s = f(v);
+        if (Math.abs(s) < 0.01) continue;
+        const x0 = X(v), d = s > 0 ? 7 : -7;
+        g += `<path d="M${x0 - d / 2} ${Y(0) - 4}L${x0 + d / 2} ${Y(0)}L${x0 - d / 2} ${Y(0) + 4}" fill="none" stroke="var(--text-2)" stroke-width="1.2"/>`;
+      }
+      fps.forEach((p) => (g += `<circle cx="${X(p.x)}" cy="${Y(0)}" r="5.5" fill="${p.stable ? 'var(--text)' : 'var(--surface)'}" stroke="var(--text)" stroke-width="1.5"/>`));
+      if (lin && Math.abs(w() - 1) < 1e-9) g += `<line x1="${ox}" y1="${Y(0)}" x2="${ox + pw}" y2="${Y(0)}" stroke="var(--text)" stroke-width="3"/>`;
+      g += `<circle cx="${X(Math.max(xl, Math.min(xh, x)))}" cy="${Y(0)}" r="4" fill="var(--hl-stroke)"/>`;
+      const sp = $('phase') as unknown as SVGSVGElement;
+      sp.setAttribute('viewBox', `0 0 ${W} ${H}`); sp.innerHTML = g;
+
+      // --- état au fil du temps ---
+      const W2 = 320, H2 = 200, px = 30, py = 10, pw2 = W2 - px - 8, ph2 = H2 - 60;
+      const t0 = Math.max(0, t - WIN), T = (tt: number) => px + ((tt - t0) / WIN) * pw2, YY = (v: number) => py + ph2 / 2 - (Math.max(-1.5, Math.min(1.5, v)) / 1.5) * (ph2 / 2);
+      let h = `<line x1="${px}" y1="${YY(0)}" x2="${px + pw2}" y2="${YY(0)}" stroke="var(--border)"/>`;
+      [-1, 0, 1].forEach((v) => (h += `<text x="${px - 5}" y="${YY(v) + 3.5}" text-anchor="end" class="ax">${fm(v, 0)}</text>`));
+      fps.filter((p) => p.stable).forEach((p) => (h += `<line x1="${px}" y1="${YY(p.x)}" x2="${px + pw2}" y2="${YY(p.x)}" stroke="var(--text)" stroke-dasharray="2 3" opacity="0.4"/>`));
+      if (hist.length > 1) h += `<polyline points="${hist.map(([tt, xx]) => `${T(tt).toFixed(1)},${YY(xx).toFixed(1)}`).join(' ')}" fill="none" stroke="var(--r-res)" stroke-width="1.8"/>`;
+      // impulsions, sous la courbe
+      const iy = py + ph2 + 22;
+      h += `<text x="${px - 5}" y="${iy + 4}" text-anchor="end" class="ax">I(t)</text><line x1="${px}" y1="${iy}" x2="${px + pw2}" y2="${iy}" stroke="var(--border)"/>`;
+      let run: [number, number, number] | null = null;
+      const flush = (end: number) => { if (run) { const [a, , I] = run; h += `<rect x="${T(a)}" y="${I > 0 ? iy - 12 : iy}" width="${Math.max(1, T(end) - T(a))}" height="12" rx="2" fill="var(--text-2)" fill-opacity="0.5"/>`; } };
+      hist.forEach(([tt, , I]) => { if (I !== 0 && !run) run = [tt, 0, I]; else if (I === 0 && run) { flush(tt); run = null; } });
+      if (run) flush(t);
+      h += `<text x="${px + pw2}" y="${H2 - 6}" text-anchor="end" class="ax">temps (fenêtre de ${WIN} unités)</text>`;
+      const st = $('time') as unknown as SVGSVGElement;
+      st.setAttribute('viewBox', `0 0 ${W2} ${H2}`); st.innerHTML = h;
+
+      // --- calcul et indicateurs ---
+      const I = t < pulseEnd ? pulse : 0;
+      $('line').textContent = `t = ${fm(t, 1)} · x = ${fm(x)} · ẋ = ${fm(f(x, I), 3)}${I ? ` · impulsion en cours (I = ${fm(I, 1)})` : ''}`;
+      const ns = fps.filter((p) => p.stable).length, nu = fps.length - ns;
+      $('k1').textContent = lin
+        ? (Math.abs(w() - 1) < 1e-9 ? 'une ligne entière (w = 1)' : w() < 1 ? '1 stable, en 0' : '1 instable, en 0')
+        : `${fps.length} : ${ns} stable${ns > 1 ? 's' : ''}${nu ? `, ${nu} instable` : ''}`;
+      $('k2').textContent = lin
+        ? (Math.abs(w() - 1) < 1e-9 ? 'sa valeur, exactement' : w() < 1 ? 'rien : la valeur s\'efface' : 'elle grossit sans fin')
+        : ns >= 2 ? 'son signe (un bit)' : 'rien : retour à 0';
+    }
+    $('mode').querySelector('button')?.classList.add('active');
+    reset();
+  });
+</script>
+
+<style is:global>
+  .bist .row { margin-bottom: 6px; }
+  .bist .row > .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .bist .ctlrow { display: grid; grid-template-columns: auto minmax(180px, 1fr); gap: 8px 28px; align-items: end; }
+  .bist .ctlrow > .seg { display: flex; flex-wrap: wrap; gap: 6px; }
+  .bist .ctlrow label[hidden] { display: none; }
+  .bist [hidden] { display: none !important; }
+  .bist .calc { margin-top: 10px; padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--text-2) 4.5%, transparent); }
+  .bist .fm { font-size: 0.95rem; overflow-x: auto; overflow-y: hidden; }
+  .bist .ln { font: 11.5px/1.5 var(--mono); color: var(--text-2); margin-top: 4px; }
+  .bist .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 10px; }
+  .bist .ft { font-size: 12.5px; font-weight: 500; margin-bottom: 2px; }
+  .bist svg { width: 100%; height: auto; display: block; }
+  .bist svg text.ax { font: 10.5px var(--font); fill: var(--text-2); }
+  .bist .note { font-size: 13px; color: var(--text-2); line-height: 1.5; margin: 8px 0 0; }
+  @media (max-width: 640px) { .bist .panes, .bist .ctlrow { grid-template-columns: 1fr; } }
+</style>

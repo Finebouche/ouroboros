@@ -1,0 +1,44 @@
+---
+// Cours Reservoir computing, chapitre 1 : schéma d'un echo state network. Entrée u(n) → réservoir (W_in et W tirés au hasard, figés)
+// → lecture linéaire W_out (seule partie entraînée) → sortie y(n). Positions et liaisons tirées une fois, de façon reproductible.
+const W = 640, H = 200;
+let seed = 5;
+const r = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+const cx = 320, cy = 100, R = 66, M = 14;
+const nodes = Array.from({ length: M }, (_, i) => {
+  const a = (i / M) * 2 * Math.PI + r() * 0.3, d = R * (0.35 + 0.6 * r());
+  return [cx + d * Math.cos(a), cy + d * Math.sin(a)] as [number, number];
+});
+const edges: [number, number][] = [];
+for (let i = 0; i < M; i++) for (let j = 0; j < M; j++) if (i !== j && r() < 0.16) edges.push([i, j]);
+const ins = [0, 3, 5, 8, 11, 13], outs = [1, 2, 4, 6, 7, 9, 10, 12];
+const xin = 70, xout = 570;
+---
+<figure class="esnfig">
+  <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Echo state network : entrée, réservoir aux connexions aléatoires figées, lecture linéaire entraînée, sortie">
+    <defs>
+      <marker id="esn-a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--text-2)" /></marker>
+      <marker id="esn-o" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--r-out)" /></marker>
+    </defs>
+    <circle cx={cx} cy={cy} r={R + 14} fill="var(--r-res)" fill-opacity="0.06" stroke="var(--r-res)" stroke-opacity="0.5" stroke-dasharray="4 4" />
+    {edges.map(([i, j]) => <line x1={nodes[i][0]} y1={nodes[i][1]} x2={nodes[j][0]} y2={nodes[j][1]} stroke="var(--text-2)" stroke-width="0.8" stroke-opacity="0.45" stroke-dasharray="3 2" />)}
+    {ins.map((i) => <line x1={xin + 16} y1={cy} x2={nodes[i][0]} y2={nodes[i][1]} stroke="var(--text-2)" stroke-width="0.8" stroke-opacity="0.6" stroke-dasharray="3 2" />)}
+    {outs.map((i) => <line x1={nodes[i][0]} y1={nodes[i][1]} x2={xout - 16} y2={cy} stroke="var(--r-out)" stroke-width="1.4" />)}
+    {nodes.map(([x, y]) => <circle cx={x} cy={y} r="6" fill="var(--r-res)" fill-opacity="0.85" />)}
+    <circle cx={xin} cy={cy} r="15" fill="var(--surface-2)" stroke="var(--text-2)" />
+    <text x={xin} y={cy + 4} text-anchor="middle" class="nl">u(n)</text>
+    <circle cx={xout} cy={cy} r="15" fill="var(--r-out)" fill-opacity="0.15" stroke="var(--r-out)" />
+    <text x={xout} y={cy + 4} text-anchor="middle" class="nl">y(n)</text>
+    <text x={160} y={28} text-anchor="middle" class="tl">W<tspan baseline-shift="sub" font-size="9">in</tspan> : aléatoire, figé</text>
+    <text x={cx} y={H - 6} text-anchor="middle" class="tl">réservoir x(n) : W aléatoire, figé</text>
+    <text x={480} y={28} text-anchor="middle" class="tl to">W<tspan baseline-shift="sub" font-size="9">out</tspan> : seul entraîné</text>
+  </svg>
+</figure>
+
+<style is:global>
+  .esnfig { margin: 1.2rem 0; }
+  .esnfig svg { width: 100%; height: auto; max-width: 640px; display: block; margin: 0 auto; }
+  .esnfig text.nl { font: 500 12px var(--font); fill: var(--text); }
+  .esnfig text.tl { font: 12px var(--font); fill: var(--text-2); }
+  .esnfig text.tl.to { fill: var(--r-out); font-weight: 500; }
+</style>

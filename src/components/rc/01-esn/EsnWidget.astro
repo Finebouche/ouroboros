@@ -1,0 +1,157 @@
+---
+// Cours Reservoir computing, chapitre 1 : un réservoir de 60 neurones, pas à pas. 1) on fait tourner le réservoir sur l'entrée et on garde
+// ses états ; 2) on entraîne la lecture par ridge sur les pas 100 à 499 ; 3) on la teste sur les pas 500 à 699.
+// Les états ne dépendent pas de la tâche : changer de tâche ne demande que de réentraîner la lecture. Changer ρ demande de tout refaire.
+// Réglages vérifiés par simulation (Node) : graine 7, σ = 0,1, λ = 1e-8, entrée = bruit lissé d'écart-type 0,5.
+import katex from 'katex';
+const tex = (s: string) => katex.renderToString(s, { throwOnError: false });
+const F1 = tex('x(n) = \\tanh\\big(W\\,x(n-1) + W_{in}\\,u(n) + b\\big), \\qquad y(n) = W_{out}\\,[x(n)\\,;\\,1]');
+const F2 = tex('W_{out} = Y X^{\\top} \\big(X X^{\\top} + \\lambda I\\big)^{-1}');
+---
+<div class="widget rcw esnw" data-widget="esnw">
+  <div class="row"><span>Tâche : la lecture doit sortir</span><span class="seg" data-ref="task"></span></div>
+  <div class="ctlrow">
+    <span class="seg" data-ref="ctl"></span>
+    <label><span>Rayon spectral ρ</span><input type="range" data-ref="rho" min="0.1" max="1.5" step="0.05" value="0.9" /><b data-ref="rho-out"></b></label>
+  </div>
+  <div class="calc">
+    <div class="fm" set:html={F1} />
+    <div class="fm" set:html={F2} />
+    <div class="ln" data-ref="line"></div>
+  </div>
+  <svg data-ref="svg" role="img" aria-label="Entrée, états de cinq neurones, sortie de la lecture et cible au fil des pas"></svg>
+  <div class="kpis">
+    <div><span>Erreur, apprentissage</span><b data-ref="k1">–</b><i>NRMSE, pas 100 à 499</i></div>
+    <div><span>Erreur, test</span><b data-ref="k2">–</b><i>NRMSE, pas 500 à 699, jamais vus</i></div>
+    <div><span>Poids entraînés</span><b data-ref="k3"></b><i>W, W<sub>in</sub>, b restent tels quels</i></div>
+  </div>
+  <p class="note">NRMSE : erreur quadratique divisée par l'écart-type de la cible ; 0 = parfait, 1 = pas mieux que sortir la moyenne. 60 neurones, entrée faible (σ = 0,1), λ = 10<sup>−8</sup>.</p>
+</div>
+
+<script>
+  import { makeReservoir, step, ridge, readout, nrmse, signal } from '../esn';
+
+  document.querySelectorAll<HTMLElement>('[data-widget="esnw"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const N = 60, T = 700, WASH = 100, SPLIT = 500, SIGMA = 0.1, LAM = 1e-8, SHOW = 5;
+    const res = makeReservoir(N, 7);
+    const u = signal(T, 3);
+    const TASKS: [string, string, (n: number) => number][] = [
+      ['r5', 'u(n − 5)', (n) => u[n - 5]],
+      ['r15', 'u(n − 15)', (n) => u[n - 15]],
+      ['r40', 'u(n − 40)', (n) => u[n - 40]],
+      ['prod', 'u(n) · u(n − 2)', (n) => 4 * u[n] * u[n - 2]],
+    ];
+    let task = 0, rho = 0.9;
+    let X: Float64Array[] = [], w: Float64Array | null = null, timer: number | null = null, playB: HTMLButtonElement | null = null, trainB: HTMLButtonElement | null = null;
+    const fm = (v: number, d = 2) => v.toFixed(d).replace('.', ',').replace('-', '−');
+
+    function reset() { stop(); X = []; w = null; draw(); }
+    function advance(k: number) {
+      for (let i = 0; i < k && X.length < T; i++) X.push(step(res, rho, SIGMA, X.length ? X[X.length - 1] : new Float64Array(N), u[X.length]));
+    }
+    function train() {
+      if (X.length < T) return;
+      const f = TASKS[task][2], idx: number[] = [];
+      for (let n = WASH; n < SPLIT; n++) idx.push(n);
+      w = ridge(idx.map((n) => X[n]), idx.map(f), LAM);
+      draw();
+    }
+    function stop() { if (timer) { clearInterval(timer); timer = null; } if (playB) playB.textContent = '▶ faire tourner le réservoir'; }
+    const mk = (label: string, f: () => void) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', f); $('ctl').appendChild(b); return b; };
+    playB = mk('▶ faire tourner le réservoir', () => {
+      if (timer) { stop(); return; }
+      if (X.length >= T) X = [];
+      w = null; playB!.textContent = '⏸ pause';
+      timer = window.setInterval(() => { advance(7); draw(); if (X.length >= T) stop(); }, 30);
+    });
+    trainB = mk('entraîner la lecture', () => { stop(); advance(T); train(); });
+    mk('recommencer', reset);
+    TASKS.forEach(([id, lab], i) => {
+      const b = document.createElement('button'); b.textContent = lab; b.dataset.v = String(i);
+      b.addEventListener('click', () => { task = i; if (w) train(); else draw(); }); // les états ne changent pas : seule la lecture est refaite
+      $('task').appendChild(b);
+    });
+    const rIn = $('rho') as HTMLInputElement;
+    rIn.addEventListener('input', () => { rho = +rIn.value; $('rho-out').textContent = fm(rho); reset(); });
+
+    function draw() {
+      $('task').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +(b as HTMLElement).dataset.v! === task));
+      $('rho-out').textContent = fm(rho);
+      const n = X.length, f = TASKS[task][2];
+      const W = 640, px = 104, pw = W - px - 8;
+      const Xn = (k: number) => px + (k / (T - 1)) * pw;
+      const rows = [{ y: 22, h: 46, lab: 'entrée u(n)' }, { y: 80, h: 84, lab: `${SHOW} des ${N} neurones` }, { y: 176, h: 70, lab: 'sortie et cible' }];
+      let g = '';
+      // zones : transitoire, apprentissage, test
+      [[0, WASH, 'transitoire'], [WASH, SPLIT, 'apprentissage'], [SPLIT, T, 'test']].forEach(([a, b, l], i) => {
+        g += `<rect x="${Xn(+a)}" y="14" width="${Xn(+b) - Xn(+a)}" height="${rows[2].y + rows[2].h - 14}" fill="${i === 0 ? 'var(--text-2)' : i === 1 ? 'var(--r-out)' : 'var(--surface-2)'}" fill-opacity="${i === 0 ? 0.07 : i === 1 ? 0.05 : 0.9}"/>`;
+        g += `<text x="${(Xn(+a) + Xn(+b)) / 2}" y="10" text-anchor="middle" class="zl">${l}</text>`;
+      });
+      rows.forEach((r) => (g += `<text x="${px - 6}" y="${r.y + r.h / 2 + 3}" text-anchor="end" class="rl">${r.lab}</text>`));
+      const line = (vals: number[], start: number, r: { y: number; h: number }, lim: number, col: string, wdt = 1.3, extra = '') => {
+        if (vals.length < 2) return '';
+        const Y = (v: number) => r.y + r.h / 2 - (Math.max(-lim, Math.min(lim, v)) / lim) * (r.h / 2);
+        return `<polyline points="${vals.map((v, k) => `${Xn(start + k).toFixed(1)},${Y(v).toFixed(1)}`).join(' ')}" fill="none" stroke="${col}" stroke-width="${wdt}" stroke-linejoin="round" ${extra}/>`;
+      };
+      g += line(u.slice(0, Math.max(n, 1)), 0, rows[0], 1.6, 'var(--text-2)');
+      // chaque neurone est centré sur sa moyenne (le biais le décale) puis mis à l'échelle
+      for (let i = 0; i < SHOW; i++) {
+        // moyenne et échelle prises après le transitoire, pour que le départ depuis x(0) = 0 n'écrase pas la trace
+        const ref = X.length > WASH ? X.slice(WASH) : X;
+        const m = ref.length ? ref.reduce((a, x) => a + x[i], 0) / ref.length : 0;
+        const xs = X.map((x) => x[i] - m);
+        const lim = Math.max(1e-3, ...ref.map((x) => Math.abs(x[i] - m)));
+        g += line(xs, 0, { y: rows[1].y + (i * rows[1].h) / SHOW, h: rows[1].h / SHOW }, lim, 'var(--r-res)', 1.1);
+      }
+      const tgt: number[] = [];
+      for (let k = Math.max(WASH, 40); k < T; k++) tgt.push(f(k));
+      const lim = Math.max(...tgt.map(Math.abs)) * 1.1;
+      // la cible (pointillés) est dessinée par-dessus la sortie, pour rester visible quand elles se superposent
+      const tgtLine = line(tgt, Math.max(WASH, 40), rows[2], lim, 'var(--text)', 1.1, 'stroke-dasharray="3 2" opacity="0.75"');
+      let e1 = NaN, e2 = NaN;
+      if (!w) g += tgtLine;
+      if (w) {
+        const out: number[] = [];
+        for (let k = WASH; k < T; k++) out.push(readout(w, X[k]));
+        g += line(out, WASH, rows[2], lim, 'var(--r-out)', 1.6, 'opacity="0.85"') + tgtLine;
+        const tr = out.slice(0, SPLIT - WASH), te = out.slice(SPLIT - WASH);
+        const ytr: number[] = [], yte: number[] = [];
+        for (let k = WASH; k < SPLIT; k++) ytr.push(f(k));
+        for (let k = SPLIT; k < T; k++) yte.push(f(k));
+        e1 = nrmse(tr, ytr); e2 = nrmse(te, yte);
+      }
+      if (n > 0 && n < T) g += `<line x1="${Xn(n - 1)}" y1="14" x2="${Xn(n - 1)}" y2="${rows[2].y + rows[2].h}" stroke="var(--hl-stroke)" stroke-width="1.5"/>`;
+      const svg = $('svg') as unknown as SVGSVGElement;
+      svg.setAttribute('viewBox', `0 0 ${W} ${rows[2].y + rows[2].h + 4}`); svg.innerHTML = g;
+
+      const last = X[n - 1];
+      $('line').textContent = w
+        ? `Lecture entraînée : ${N + 1} coefficients, obtenus en résolvant un seul système linéaire ${N + 1} × ${N + 1}. Cible : ${TASKS[task][1]}.`
+        : n === 0
+        ? 'État initial x(0) = 0. Lance le réservoir : chaque pas lit u(n) et l\'état précédent.'
+        : `n = ${n - 1} · u(n) = ${fm(u[n - 1])} · x(n) = (${Array.from(last.slice(0, 4)).map((v) => fm(v)).join(' ; ')} ; …)${n >= T ? ' · états collectés : on peut entraîner la lecture' : ''}`;
+      const col = (e: number) => (Number.isNaN(e) ? '–' : `<span${e > 0.5 ? ' class="r"' : ''}>${fm(e)}</span>`);
+      $('k1').innerHTML = col(e1); $('k2').innerHTML = col(e2);
+      $('k3').innerHTML = `${N + 1} <small>sur ${N * N + 2 * N + N + 1}</small>`;
+      trainB!.textContent = w ? 'lecture entraînée ✓' : 'entraîner la lecture';
+    }
+    reset();
+  });
+</script>
+
+<style is:global>
+  .esnw .row { margin-bottom: 6px; }
+  .esnw .row > .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .esnw .ctlrow { display: grid; grid-template-columns: auto minmax(180px, 1fr); gap: 8px 28px; align-items: end; }
+  .esnw .ctlrow > .seg { display: flex; flex-wrap: wrap; gap: 6px; }
+  .esnw .calc { margin-top: 10px; padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--text-2) 4.5%, transparent); }
+  .esnw .fm { font-size: 0.92rem; overflow-x: auto; overflow-y: hidden; margin: 2px 0; }
+  .esnw .ln { font: 11.5px/1.5 var(--mono); color: var(--text-2); min-height: 1.5em; margin-top: 4px; }
+  .esnw svg { width: 100%; height: auto; display: block; margin: 8px auto 0; max-width: 680px; }
+  .esnw svg text.zl { font: 10.5px var(--font); fill: var(--text-2); }
+  .esnw svg text.rl { font: 10.5px var(--font); fill: var(--text-2); }
+  .esnw .kpis .r { color: var(--h-py); }
+  .esnw .note { font-size: 13px; color: var(--text-2); line-height: 1.5; margin: 8px 0 0; }
+  @media (max-width: 640px) { .esnw .ctlrow { grid-template-columns: 1fr; } }
+</style>

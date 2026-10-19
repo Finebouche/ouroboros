@@ -17,6 +17,13 @@ Affirmations écrites dans les cours mais pas encore vérifiées dans une source
 - **Chapitre 3** : forme du bonus UCB $c\sqrt{\ln t / N}$ avec $c = 2$ (celle de Sutton & Barto ; l'UCB1 d'Auer et al. a une autre constante) ; description des méthodes citées (pseudo-comptes de Bellemare et al., ICM de Pathak et al., RND de Burda et al., Thompson sampling) : seuls titres, auteurs et années ont été vérifiés, pas le contenu des articles ; l'échec du bonus $\beta/\sqrt{N(s')}$ ajouté à un Q-learning tabulaire sur la grille (essai non montré, cause non analysée).
 - **Chapitre 4** : convergence de FQI « pour certaines familles de régresseurs » (Ernst et al.) ; Q-learning comme version une transition à la fois de la cible de FQI.
 
+## Reservoir computing
+
+- **Chapitre 1** : « proposée indépendamment » (ESN et LSM) vient de la mémoire du sujet, pas d'une relecture des articles ; la décroissance en $\rho^k$ de la trace d'une entrée passée est une approximation linéaire (petite entrée). Les comportements du widget sont vérifiés par simulation (graines 7 et 11).
+- **Chapitre 5** : le contenu des articles cités est résumé d'après leurs résumés (Pascanu et Jaeger, Strock et al.) ou de mémoire (Seung : attracteur en ligne pour la position des yeux ; Sussillo et Barak : minimisation de la vitesse au carré). Chiffres du widget vérifiés par simulation.
+- **Chapitre 6** : conditions générales de May et Leonard ($\alpha < 1 < \beta$, $\alpha + \beta > 2$ pour le cycle, $< 2$ pour la coexistence) citées de mémoire, seulement vérifiées numériquement pour $\alpha = 0{,}8$ ou $0{,}5$ et $\beta = 1{,}3$ ; rôle des sous-espaces invariants dans la robustesse des cycles (Guckenheimer et Holmes) cité de mémoire ; temps de séjour en $\ln(1/\varepsilon)$ seulement constaté numériquement sur trois valeurs. Bick et Rabinovich, Afraimovich et al., Rabinovich et al. 2001 : résumés lus, pas les articles.
+- **Chapitres 2, 3, 4, 7, 8, 9 (plans)** : aucune référence vérifiée ; résultats annoncés de mémoire (condition suffisante par la valeur singulière, capacité mémoire bornée par $N$, approximation universelle, NG-RC, réservoir à un nœud et retard).
+
 ## HPC et Preprocessing
 
 - Rien de signalé pour l'instant.

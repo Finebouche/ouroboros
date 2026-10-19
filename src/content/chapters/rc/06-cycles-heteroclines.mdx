@@ -1,0 +1,106 @@
+---
+num: 6
+title: "Cycles hétéroclines : une mémoire de séquences"
+summary: "Selles et connexions hétéroclines, compétition sans gagnant entre populations de neurones, séquence hétérocline stable (reproductible mais pas un attracteur), et une mémoire de travail séquentielle dont la capacité est bornée."
+status: premier-jet
+---
+import Reveal from '@/components/shared/Reveal.astro';
+import Quiz from '@/components/shared/Quiz.astro';
+import Refs from '@/components/shared/Refs.astro';
+import Heteroclinic from '@/components/rc/06-cycles-heteroclines/Heteroclinic.astro';
+
+## 1. Selles et connexions hétéroclines
+
+Au chapitre 5, un souvenir était un **attracteur** : un état où l'on reste. Ici, un souvenir est une **suite d'états par lesquels on passe**.
+
+- **Selle** : un point fixe qui attire dans certaines directions (sa variété stable) et repousse dans d'autres (sa variété instable). Une trajectoire qui arrive près d'une selle ralentit, y séjourne, puis repart le long de la direction instable.
+- **Connexion hétérocline** : une trajectoire qui part d'une selle et arrive sur une autre : la variété instable de la première rejoint la variété stable de la seconde.
+- **Cycle hétérocline** : une chaîne fermée de selles reliées ainsi. La trajectoire passe d'une selle à la suivante, dans un ordre fixé.
+
+Ces cycles sont d'ordinaire fragiles : une petite perturbation des équations casse les connexions. Ils deviennent robustes dans des systèmes qui ont des sous-espaces invariants, comme les modèles de populations où une population éteinte le reste (Guckenheimer et Holmes).
+
+## 2. La compétition sans gagnant
+
+Des groupes de neurones d'activité $a_i \ge 0$ s'inhibent mutuellement (modèle de Lotka-Volterra généralisé). Si l'inhibition est **symétrique** et forte, un groupe l'emporte et y reste : c'est un attracteur, comme au chapitre 5. Si elle est **asymétrique**, chaque gagnant est battu par le suivant : c'est la **compétition sans gagnant** (*winnerless competition*, Rabinovich et al.). Chaque état « un seul groupe actif » est une selle.
+
+Le cas le plus simple a trois populations (May et Leonard) : chacune inhibe fortement ($\beta > 1$) l'une des deux autres et faiblement ($\alpha < 1$) la troisième.
+
+<Heteroclinic />
+
+Avec ces réglages ($\alpha = 0{,}8$, $\beta = 1{,}3$) :
+
+- **L'ordre est fixe** : 1 → 3 → 2 → 1. Il est imposé par l'asymétrie de l'inhibition, pas par le hasard.
+- **Sans bruit, les séjours s'allongent sans fin** : 15, 19, 22, 27, 34, 45, 62, 87, 124… À chaque tour, la trajectoire passe plus près des selles, et repartir d'un point plus proche prend plus longtemps (environ le logarithme de l'inverse de la distance, divisé par la valeur propre instable).
+- **Avec du bruit, les séjours se stabilisent** : le bruit empêche de trop s'approcher des selles. Le séjour moyen vaut environ 70, 47 et 25 pour $\varepsilon = 10^{-6}$, $10^{-4}$ et $10^{-2}$ : il baisse à peu près linéairement avec $\ln(1/\varepsilon)$.
+- **$\alpha = 0{,}5$** ($\alpha + \beta < 2$) : la coexistence des trois populations devient stable, la trajectoire s'y arrête et la séquence disparaît.
+
+## 3. Une séquence robuste qui n'est pas un attracteur
+
+- **Séquence hétérocline stable** (*stable heteroclinic sequence*, Afraimovich, Zhigulin et Rabinovich) : dans un modèle de Lotka-Volterra de grande dimension (les taux de décharge d'un réseau inhibiteur), une chaîne de selles entourée d'un canal. Ce n'est pas un attracteur, la trajectoire ne fait qu'y passer, mais les trajectoires voisines restent dans le canal : la séquence est **reproductible malgré le bruit**.
+- **Calculer avec des transitoires** : l'entrée change les paramètres du réseau, donc la séquence de selles parcourue. L'information est codée dans la trajectoire. Avec $N$ neurones, Rabinovich et al. estiment le nombre de séquences possibles à environ $e\,(N-1)!$, bien plus que de points fixes.
+
+## 4. Une mémoire de travail séquentielle
+
+Bick et Rabinovich modélisent la mémoire de travail **séquentielle** (garder une suite d'éléments dans l'ordre) par la compétition sans gagnant entre les représentations des éléments : retenir la liste, c'est parcourir la séquence de selles correspondante. Leurs résultats analytiques relient la capacité de cette mémoire à l'**inhibition latérale relative** dans le réseau, et en tirent une borne supérieure qui, sous des hypothèses neurobiologiques raisonnables, est proche du « nombre magique sept ».
+
+## 5. Deux images de la mémoire
+
+| | Attracteurs (chapitre 5) | Cycles hétéroclines (ce chapitre) |
+|---|---|---|
+| Un souvenir est | un état où l'on reste | une suite d'états par lesquels on passe |
+| Objet dynamique | point fixe stable, attracteur en ligne | selles reliées par des connexions hétéroclines |
+| Sans bruit | l'état ne bouge plus | les séjours s'allongent sans fin |
+| Robustesse | puits profonds, mais attracteur en ligne fragile | canal stable : séquence reproductible malgré le bruit |
+| Ce que code l'entrée | quel attracteur atteindre | quelle séquence parcourir |
+
+Un réservoir à propriété d'écho calcule déjà avec des transitoires, mais ils sont imposés par l'entrée : « calculer en temps réel sans états stables », titre de l'article de Maass et al. (chapitre 8). Un réseau à compétition sans gagnant produit lui-même une séquence transitoire reproductible ; l'entrée ne fait que la choisir.
+
+<div class="retain">
+
+**À retenir**
+
+- Selle : un point fixe qui attire dans certaines directions et repousse dans d'autres ; on y séjourne puis on en repart.
+- Cycle hétérocline : des selles reliées en chaîne fermée ; la trajectoire les visite dans un ordre fixé par l'asymétrie des connexions.
+- Compétition sans gagnant : une inhibition asymétrique fait que chaque gagnant est battu par le suivant.
+- Sans bruit, les séjours s'allongent ; avec du bruit, ils se stabilisent (environ linéaires en $\ln(1/\varepsilon)$ dans le widget).
+- Séquence hétérocline stable : pas un attracteur, mais un canal reproductible ; base d'un modèle de mémoire de travail séquentielle à capacité bornée.
+
+</div>
+
+<Refs items={[["Nonlinear Aspects of Competition Between Three Species (SIAM J. Appl. Math. 29, 243–253)", "May & Leonard", 1975, "10.1137/0129022"], ["Structurally stable heteroclinic cycles (Math. Proc. Cambridge Phil. Soc. 103, 189–192)", "Guckenheimer & Holmes", 1988, "10.1017/S0305004100064732"], ["Dynamical Encoding by Networks of Competing Neuron Groups: Winnerless Competition (Phys. Rev. Lett. 87, 068102)", "Rabinovich et al.", 2001, "10.1103/PhysRevLett.87.068102"], ["On the origin of reproducible sequential activity in neural circuits (Chaos 14, 1123–1129)", "Afraimovich, Zhigulin & Rabinovich", 2004, "10.1063/1.1819625"], ["Transient Dynamics for Neural Processing (Science 321, 48–50)", "Rabinovich, Huerta & Laurent", 2008, "10.1126/science.1155564"], ["Dynamical Origin of the Effective Storage Capacity in the Brain's Working Memory (Phys. Rev. Lett. 103, 218101)", "Bick & Rabinovich", 2009, "10.1103/PhysRevLett.103.218101"]]} />
+
+<Quiz>
+
+**Q1.** Quelle différence entre un attracteur et une selle, pour une trajectoire qui passe à côté ?
+
+<Reveal>
+
+Près d'un attracteur, la trajectoire s'en approche dans toutes les directions et y reste. Près d'une selle, elle arrive par les directions stables, ralentit, puis repart par une direction instable : elle ne fait qu'y séjourner.
+
+</Reveal>
+
+**Q2.** Dans le widget, pourquoi les séjours s'allongent-ils sans bruit ?
+
+<Reveal>
+
+À chaque tour, la trajectoire passe plus près des selles. Le temps pour s'éloigner d'une selle croît comme le logarithme de l'inverse de la distance de départ : plus on passe près, plus on reste longtemps.
+
+</Reveal>
+
+**Q3.** Pourquoi le bruit rend-il la séquence plus régulière plutôt que plus désordonnée ?
+
+<Reveal>
+
+Il empêche la trajectoire de s'approcher arbitrairement près des selles : la distance minimale reste de l'ordre de $\varepsilon$, donc le temps de séjour reste de l'ordre de $\ln(1/\varepsilon)$ au lieu de croître sans fin. L'ordre de passage, fixé par les connexions, ne change pas.
+
+</Reveal>
+
+**Q4.** Qu'est-ce qui distingue la mémoire de travail du chapitre 5 de celle de ce chapitre ?
+
+<Reveal>
+
+Au chapitre 5, un souvenir est un état stable où l'on reste (un attracteur). Ici, un souvenir est une séquence de selles parcourue dans un ordre reproductible : la mémoire est dans la trajectoire, pas dans un état final.
+
+</Reveal>
+
+</Quiz>

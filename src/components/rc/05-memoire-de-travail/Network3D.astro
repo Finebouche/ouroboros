@@ -1,0 +1,174 @@
+---
+// Cours Reservoir computing, chapitre 5 : l'espace d'état de 3 neurones, en 3D (rotation à la souris).
+// Mode « bits » : ẋ = −x + tanh(W x + I(t)), W = 2 I : chaque neurone est bistable, 8 attracteurs (±0,958)³, un par combinaison de 3 bits ;
+// les 19 autres points fixes ({−x*, 0, x*}³ hors des coins) sont instables. Une impulsion sur un neurone ne fait basculer que son bit.
+// Mode « ligne » : ẋ = (W − I) x + I(t), W = λ v vᵀ + ½ (I − v vᵀ), v = (1, 1, 1)/√3 : l'écart à la ligne s'éteint au taux 0,5 ;
+// le long de la ligne, le taux est λ − 1. Vérifié par simulation (Node) : λ = 1, position 0,289 gardée ; impulsion 0,5 sur le neurone 1
+// pendant 1 : +0,289 (= 0,5/√3) ; λ = 0,95 : 0,289 → 0,039 en 40 ; λ = 1,05 : → 2,13 en 40.
+import katex from 'katex';
+const tex = (s: string) => katex.renderToString(s, { throwOnError: false });
+const FB = tex('\\dot{\\mathbf x} = -\\mathbf x + \\tanh\\big(W\\mathbf x + \\mathbf I(t)\\big), \\qquad W = 2\\,\\mathrm{Id}');
+const FL = tex('\\dot{\\mathbf x} = (W - \\mathrm{Id})\\,\\mathbf x + \\mathbf I(t), \\qquad W = \\lambda\\, v v^{\\top} + \\tfrac12\\big(\\mathrm{Id} - v v^{\\top}\\big), \\quad v = \\tfrac{1}{\\sqrt 3}(1, 1, 1)');
+---
+<div class="widget rcw n3d" data-widget="n3d">
+  <div class="row"><span>Réseau :</span><span class="seg" data-ref="mode"></span></div>
+  <div class="ctlrow">
+    <span class="seg" data-ref="ctl"></span>
+    <label data-ref="ll" hidden><span>Valeur propre λ le long de la ligne</span><input type="range" data-ref="lam" min="0.9" max="1.1" step="0.01" value="1" /><b data-ref="lam-out"></b></label>
+  </div>
+  <div class="row pulses"><span>Impulsion sur le neurone :</span><span class="seg" data-ref="pul"></span></div>
+  <div class="calc">
+    <div class="fm" data-ref="fb" set:html={FB} />
+    <div class="fm" data-ref="fl" set:html={FL} hidden />
+    <div class="ln" data-ref="line"></div>
+  </div>
+  <div class="panes">
+    <div><div class="ft">Espace d'état (x<sub>1</sub>, x<sub>2</sub>, x<sub>3</sub>) <span>glisser pour tourner</span></div><svg class="v3" data-ref="v3" role="img" aria-label="Espace d'état de trois neurones : attracteurs, points instables et trajectoires"></svg></div>
+    <div><div class="ft">Trajectoire principale au fil du temps</div><svg data-ref="ts" role="img" aria-label="Les trois neurones de la trajectoire principale au fil du temps"></svg></div>
+  </div>
+  <div class="kpis">
+    <div><span>Attracteurs</span><b data-ref="k1"></b></div>
+    <div><span>Ce que garde la trajectoire principale</span><b data-ref="k2"></b></div>
+  </div>
+  <p class="note">Point plein : point fixe stable ; point creux : instable. Traits gris : huit trajectoires parties au hasard ; trait ambre : la trajectoire principale, qui reçoit les impulsions (amplitude 2 pendant une unité de temps, 0,5 pour le réseau linéaire).</p>
+</div>
+
+<script>
+  import { rng } from '../esn';
+  import { makeView } from '../view3d';
+
+  document.querySelectorAll<HTMLElement>('[data-widget="n3d"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const COL = ['var(--r-p1)', 'var(--r-p2)', 'var(--r-p3)'];
+    const DT = 0.02, SUB = 4, WIN = 60, NG = 8, XS = 0.958;
+    const V = [1, 1, 1].map((x) => x / Math.sqrt(3));
+    let lin = false, seed = 3, t = 0, main = [0.6, -0.2, 0.1], ghosts: number[][] = [], trails: number[][][] = [], mtrail: number[][] = [];
+    let hist: [number, number, number, number][] = [], pulse = [0, 0, 0], pulseEnd = 0;
+    let timer: number | null = null, playB: HTMLButtonElement | null = null;
+    const fm = (v: number, d = 2) => v.toFixed(d).replace('.', ',').replace('-', '−');
+    const lam = () => +($('lam') as HTMLInputElement).value;
+    const view = makeView({ W: 360, H: 300, S: 108, center: [0, 0, 0], psi: 0.6, phi: 0.45, map: [1, 2, 0] });
+    view.attach($('v3'), () => draw());
+    function f(x: number[], I: number[]): number[] {
+      if (!lin) return x.map((xi, i) => -xi + Math.tanh(2 * xi + I[i]));
+      const a = x[0] * V[0] + x[1] * V[1] + x[2] * V[2], l = lam();
+      // (W − Id) x = (λ − 1) (v·x) v − ½ (x − (v·x) v)
+      return x.map((xi, i) => (l - 1) * a * V[i] - 0.5 * (xi - a * V[i]) + I[i]);
+    }
+    const clip = (x: number[]) => x.map((v) => Math.max(-3, Math.min(3, v)));
+    function newGhosts() { const r = rng(seed++); ghosts = Array.from({ length: NG }, () => [0, 1, 2].map(() => r() * 2 - 1)); trails = ghosts.map((g) => [g.slice()]); }
+    function reset() { stop(); t = 0; main = [0.6, -0.2, 0.1]; mtrail = [main.slice()]; hist = [[0, ...main] as [number, number, number, number]]; pulse = [0, 0, 0]; pulseEnd = 0; seed = 3; newGhosts(); draw(); }
+    function advance() {
+      for (let k = 0; k < SUB; k++) {
+        const I = t < pulseEnd ? pulse : [0, 0, 0];
+        main = clip(main.map((v, i) => v + DT * f(main, I)[i]));
+        ghosts = ghosts.map((g) => clip(g.map((v, i) => v + DT * f(g, [0, 0, 0])[i])));
+        t += DT;
+      }
+      mtrail.push(main.slice()); trails.forEach((tr, i) => tr.push(ghosts[i].slice()));
+      if (mtrail.length > 700) mtrail.shift();
+      trails.forEach((tr) => { if (tr.length > 400) tr.shift(); });
+      hist.push([t, ...main] as [number, number, number, number]);
+      while (hist.length && hist[0][0] < t - WIN) hist.shift();
+    }
+    function stop() { if (timer) { clearInterval(timer); timer = null; } if (playB) playB.textContent = '▶ lecture'; }
+    function play() { if (timer) return; playB!.textContent = '⏸ pause'; timer = window.setInterval(() => { advance(); draw(); }, 30); }
+    const mk = (box: string, label: string, fn: () => void) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', fn); $(box).appendChild(b); return b; };
+    playB = mk('ctl', '▶ lecture', () => (timer ? stop() : play()));
+    mk('ctl', 'nouvelles trajectoires', () => { newGhosts(); play(); });
+    mk('ctl', 'recommencer', reset);
+    [0, 1, 2].forEach((i) => {
+      const b = mk('pul', `${i + 1} +`, () => { pulse = [0, 0, 0]; pulse[i] = lin ? 0.5 : 2; pulseEnd = t + 1; play(); });
+      b.style.color = COL[i];
+      const c = mk('pul', `${i + 1} −`, () => { pulse = [0, 0, 0]; pulse[i] = lin ? -0.5 : -2; pulseEnd = t + 1; play(); });
+      c.style.color = COL[i];
+    });
+    [['trois neurones bistables (tanh)', false], ['attracteur en ligne (linéaire)', true]].forEach(([l, v]) => {
+      const b = document.createElement('button'); b.textContent = String(l); b.dataset.v = v ? '1' : '0';
+      b.addEventListener('click', () => { lin = !!v; $('ll').hidden = !lin; $('fb').hidden = lin; $('fl').hidden = !lin; reset(); });
+      $('mode').appendChild(b);
+    });
+    ($('lam') as HTMLInputElement).addEventListener('input', () => draw());
+
+    function draw() {
+      $('mode').querySelectorAll('button').forEach((b) => b.classList.toggle('active', (b as HTMLElement).dataset.v === (lin ? '1' : '0')));
+      $('lam-out').textContent = fm(lam());
+      const P = (p: number[]) => view.proj(p).map((v) => v.toFixed(1)).join(',');
+      let g = '';
+      // cube [−1, 1]³ en filigrane, puis les axes
+      const C = [-1, 1];
+      C.forEach((a) => C.forEach((b) => {
+        g += `<polyline points="${[[-1, a, b], [1, a, b]].map(P).join(' ')}" stroke="var(--border)" fill="none"/>`;
+        g += `<polyline points="${[[a, -1, b], [a, 1, b]].map(P).join(' ')}" stroke="var(--border)" fill="none"/>`;
+        g += `<polyline points="${[[a, b, -1], [a, b, 1]].map(P).join(' ')}" stroke="var(--border)" fill="none"/>`;
+      }));
+      [0, 1, 2].forEach((i) => {
+        const e = [0, 0, 0]; e[i] = 1.35;
+        const [x, y] = view.proj(e);
+        g += `<line x1="${view.proj([0, 0, 0])[0]}" y1="${view.proj([0, 0, 0])[1]}" x2="${x}" y2="${y}" stroke="${COL[i]}" stroke-width="1.2" opacity="0.75"/><text x="${x}" y="${y - 4}" text-anchor="middle" class="vn" style="fill:${COL[i]}">x${'₁₂₃'[i]}</text>`;
+      });
+      // points fixes ou ligne
+      if (!lin) {
+        for (const a of [-XS, 0, XS]) for (const b of [-XS, 0, XS]) for (const c of [-XS, 0, XS]) {
+          const corner = a !== 0 && b !== 0 && c !== 0, [x, y] = view.proj([a, b, c]);
+          g += corner ? `<circle cx="${x}" cy="${y}" r="5" fill="var(--text)"/>` : `<circle cx="${x}" cy="${y}" r="2.6" fill="var(--surface)" stroke="var(--text-2)" stroke-width="1"/>`;
+        }
+      } else {
+        const l = lam(), ends = [-1.6, 1.6].map((s) => V.map((v) => v * s));
+        g += `<polyline points="${ends.map(P).join(' ')}" stroke="var(--text)" stroke-width="${Math.abs(l - 1) < 1e-9 ? 3.5 : 1.3}" ${Math.abs(l - 1) < 1e-9 ? '' : 'stroke-dasharray="5 4"'} fill="none"/>`;
+        if (Math.abs(l - 1) > 1e-9) { const [x, y] = view.proj([0, 0, 0]); g += `<circle cx="${x}" cy="${y}" r="5" fill="${l < 1 ? 'var(--text)' : 'var(--surface)'}" stroke="var(--text)" stroke-width="1.5"/>`; }
+      }
+      trails.forEach((tr) => { if (tr.length > 1) g += `<polyline points="${tr.map(P).join(' ')}" fill="none" stroke="var(--text-2)" stroke-width="1" opacity="0.6"/>`; });
+      ghosts.forEach((p) => { const [x, y] = view.proj(p); g += `<circle cx="${x}" cy="${y}" r="2.5" fill="var(--text-2)"/>`; });
+      if (mtrail.length > 1) g += `<polyline points="${mtrail.map(P).join(' ')}" fill="none" stroke="var(--hl-stroke)" stroke-width="1.8"/>`;
+      { const [x, y] = view.proj(main); g += `<circle cx="${x}" cy="${y}" r="5" fill="var(--hl-stroke)" stroke="var(--surface)" stroke-width="1.5"/>`; }
+      const sv = $('v3') as unknown as SVGSVGElement;
+      sv.setAttribute('viewBox', '0 0 360 300'); sv.innerHTML = g;
+
+      // séries temporelles de la trajectoire principale
+      const W2 = 320, H2 = 300, px = 30, py = 10, pw = W2 - px - 8, ph = H2 - 40;
+      const t0 = Math.max(0, t - WIN), X = (tt: number) => px + ((tt - t0) / WIN) * pw, Y = (v: number) => py + ph / 2 - (Math.max(-1.5, Math.min(1.5, v)) / 1.5) * (ph / 2);
+      let h = `<line x1="${px}" y1="${Y(0)}" x2="${px + pw}" y2="${Y(0)}" stroke="var(--border)"/>`;
+      [-1, 0, 1].forEach((v) => (h += `<text x="${px - 5}" y="${Y(v) + 3.5}" text-anchor="end" class="ax">${fm(v, 0)}</text>`));
+      [0, 1, 2].forEach((i) => { if (hist.length > 1) h += `<polyline points="${hist.map((r) => `${X(r[0]).toFixed(1)},${Y(r[i + 1]).toFixed(1)}`).join(' ')}" fill="none" stroke="${COL[i]}" stroke-width="1.8"/>`; });
+      h += `<text x="${px + pw}" y="${H2 - 6}" text-anchor="end" class="ax">temps (fenêtre de ${WIN} unités)</text>`;
+      const st = $('ts') as unknown as SVGSVGElement;
+      st.setAttribute('viewBox', `0 0 ${W2} ${H2}`); st.innerHTML = h;
+
+      // calcul et indicateurs
+      const a = main[0] * V[0] + main[1] * V[1] + main[2] * V[2];
+      const off = Math.hypot(...main.map((v, i) => v - a * V[i]));
+      $('line').textContent = lin
+        ? `t = ${fm(t, 1)} · position sur la ligne v·x = ${fm(a, 3)} · écart à la ligne ${off < 1e-3 ? '< 0,001' : fm(off, 3)}`
+        : `t = ${fm(t, 1)} · x = (${main.map((v) => fm(v)).join(' ; ')})`;
+      const l = lam();
+      $('k1').textContent = lin ? (Math.abs(l - 1) < 1e-9 ? 'une ligne entière' : l < 1 ? 'un point, en 0' : 'aucun (0 instable)') : '8 coins, un par combinaison de 3 bits';
+      $('k2').textContent = lin
+        ? (Math.abs(l - 1) < 1e-9 ? `sa position, ${fm(a, 3)}` : l < 1 ? 'rien : la position s\'efface' : 'rien : la position s\'emballe')
+        : `les bits ${main.map((v) => (v > 0.5 ? '+' : v < -0.5 ? '−' : '?')).join(' ')}`;
+    }
+    $('mode').querySelector('button')?.classList.add('active');
+    reset();
+  });
+</script>
+
+<style is:global>
+  .n3d .row { margin-bottom: 6px; }
+  .n3d .row > .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .n3d .ctlrow { display: grid; grid-template-columns: auto minmax(180px, 1fr); gap: 8px 28px; align-items: end; margin-bottom: 6px; }
+  .n3d .ctlrow > .seg { display: flex; flex-wrap: wrap; gap: 6px; }
+  .n3d [hidden] { display: none !important; }
+  .n3d .pulses .seg button { font-weight: 600; min-width: 44px; }
+  .n3d .calc { margin-top: 6px; padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--text-2) 4.5%, transparent); }
+  .n3d .fm { font-size: 0.9rem; overflow-x: auto; overflow-y: hidden; }
+  .n3d .ln { font: 11.5px/1.5 var(--mono); color: var(--text-2); margin-top: 4px; }
+  .n3d .panes { display: grid; grid-template-columns: 1.15fr 1fr; gap: 14px; margin-top: 10px; align-items: center; }
+  .n3d .ft { font-size: 12.5px; font-weight: 500; margin-bottom: 2px; }
+  .n3d .ft span { font-weight: 400; color: var(--text-2); font-size: 11.5px; margin-left: 6px; }
+  .n3d svg { width: 100%; height: auto; display: block; }
+  .n3d svg.v3 { cursor: grab; touch-action: none; border-radius: 8px; background: color-mix(in srgb, var(--text-2) 3%, transparent); }
+  .n3d svg text.ax { font: 10.5px var(--font); fill: var(--text-2); }
+  .n3d svg text.vn { font: 600 11px var(--font); fill: var(--text); }
+  .n3d .note { font-size: 13px; color: var(--text-2); line-height: 1.5; margin: 8px 0 0; }
+  @media (max-width: 640px) { .n3d .panes, .n3d .ctlrow { grid-template-columns: 1fr; } }
+</style>

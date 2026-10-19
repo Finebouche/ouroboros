@@ -1,0 +1,191 @@
+---
+// Cours Reservoir computing, chapitre 6 : compétition sans gagnant entre trois populations (système de May et Leonard),
+// ȧ_i = a_i (1 − Σ_j ρ_ij a_j) + ε ξ_i(t), ρ = [[1, α, β], [β, 1, α], [α, β, 1]].
+// Vue en 3D de l'espace des phases (a₁, a₂, a₃), orientable à la souris. Chaque état « une seule population active » est une selle ; si α < 1 < β et α + β > 2, les trois selles sont reliées
+// en un cycle hétérocline attractif. Réglages vérifiés par simulation (Node, Euler dt = 0,01, graine 1, α = 0,8, β = 1,3) :
+// sans bruit, les temps de séjour s'allongent (15, 19, 22, 27, 34, 45, 62, 87, 124…) ; avec bruit, ils se stabilisent
+// (≈ 70, 47, 25 pour ε = 1e-6, 1e-4, 1e-2) ; ordre de passage 1 → 3 → 2 ; α = 0,5 (α + β < 2) : coexistence, le cycle s'arrête.
+import katex from 'katex';
+const tex = (s: string) => katex.renderToString(s, { throwOnError: false });
+const F = tex('\\dot a_i = a_i\\Big(1 - \\sum_j \\rho_{ij}\\, a_j\\Big) + \\varepsilon\\,\\xi_i(t), \\qquad \\rho = \\begin{pmatrix} 1 & \\alpha & \\beta \\\\ \\beta & 1 & \\alpha \\\\ \\alpha & \\beta & 1 \\end{pmatrix}');
+---
+<div class="widget rcw hcy" data-widget="hcy">
+  <div class="row"><span>Inhibition :</span><span class="seg" data-ref="mode"></span></div>
+  <div class="ctlrow">
+    <span class="seg" data-ref="ctl"></span>
+    <label><span>Bruit ε</span><input type="range" data-ref="eps" min="0" max="7" step="1" value="0" /><b data-ref="eps-out"></b></label>
+  </div>
+  <div class="calc">
+    <div class="fm" set:html={F} />
+    <div class="ln" data-ref="line"></div>
+  </div>
+  <div class="panes">
+    <div><div class="ft">Espace des phases (a<sub>1</sub>, a<sub>2</sub>, a<sub>3</sub>) <span>glisser pour tourner</span></div><svg class="v3" data-ref="tri" role="img" aria-label="Espace des phases en trois dimensions : les trois selles sur les axes, les connexions hétéroclines et la trajectoire"></svg></div>
+    <div><div class="ft">Activité au fil du temps</div><svg data-ref="ts" role="img" aria-label="Activité des trois populations au fil du temps"></svg></div>
+  </div>
+  <div class="kpis">
+    <div><span>Ordre de passage</span><b data-ref="k1"></b></div>
+    <div><span>Derniers temps de séjour</span><b data-ref="k2"></b><i>temps passé près de chaque selle</i></div>
+    <div><span>Séjour moyen</span><b data-ref="k3"></b><i>sur les séjours depuis le début</i></div>
+  </div>
+  <p class="note">Chaque axe est l'activité d'une population. Les selles sont les points à 1 sur chaque axe (une seule population active). Tirets fléchés : connexions hétéroclines, calculées sans bruit dans chaque plan où une population est éteinte. Cercle gris : coexistence des trois populations, creux s'il est instable, plein s'il est stable. Trait ambre : la trajectoire.</p>
+</div>
+
+<script>
+  import { rng, gauss } from '../esn';
+
+  document.querySelectorAll<HTMLElement>('[data-widget="hcy"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const COL = ['var(--r-p1)', 'var(--r-p2)', 'var(--r-p3)'];
+    const DT = 0.01, PER = 150, WIN = 400, MODES: [string, number, number][] = [['cycle : α = 0,8 ; β = 1,3', 0.8, 1.3], ['coexistence : α = 0,5 ; β = 1,3', 0.5, 1.3]];
+    let mode = 0, a = [0.6, 0.3, 0.1], t = 0, rnd = rng(1), dom = -1, tStart = 0;
+    let dwell: number[] = [], seq: number[] = [], hist: [number, number, number, number][] = [], trail: number[][] = [];
+    let timer: number | null = null, playB: HTMLButtonElement | null = null;
+    const fm = (v: number, d = 1) => v.toFixed(d).replace('.', ',');
+    const epsOf = (k: number) => (k === 0 ? 0 : 10 ** (k - 9));
+    const sup = (e: number) => String(e).replace('-', '⁻').replace(/\d/g, (d) => '⁰¹²³⁴⁵⁶⁷⁸⁹'[+d]);
+    // vue 3D : a₁ vers le haut, a₂ et a₃ dans le plan horizontal ; rotation (lacet ψ, tangage φ) puis projection orthographique
+    const TW = 360, TH = 290, S = 172, CEN = [0.4, 0.4, 0.4];
+    let psi = 0.55, phi = 0.6;
+    const proj = (p: number[]): [number, number] => {
+      const x = p[1] - CEN[1], y = p[2] - CEN[2], z = p[0] - CEN[0];
+      const x1 = x * Math.cos(psi) - y * Math.sin(psi), y1 = x * Math.sin(psi) + y * Math.cos(psi);
+      const z2 = y1 * Math.sin(phi) + z * Math.cos(phi);
+      return [TW / 2 + S * x1, TH / 2 + 10 - S * z2];
+    };
+    const R3 = () => { const [, al, be] = MODES[mode]; return [[1, al, be], [be, 1, al], [al, be, 1]]; };
+    // connexions hétéroclines : depuis la selle i, la population j qui y croît (1 − ρ_ji > 0), intégrée sans bruit dans le plan a_k = 0
+    function connections(): { pts: number[][]; i: number; j: number }[] {
+      const R = R3(), out: { pts: number[][]; i: number; j: number }[] = [];
+      for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+        if (i === j || 1 - R[j][i] <= 0) continue;
+        let b = [0, 0, 0]; b[i] = 1 - 1e-3; b[j] = 1e-3;
+        const pts = [b.slice()];
+        for (let n = 0; n < 6000 && b[j] < 0.995; n++) {
+          const g = b.map((bi, q) => bi * (1 - R[q][0] * b[0] - R[q][1] * b[1] - R[q][2] * b[2]));
+          b = b.map((bi, q) => bi + 0.01 * g[q]);
+          if (n % 8 === 0) pts.push(b.slice());
+        }
+        pts.push(b.slice());
+        out.push({ pts, i, j });
+      }
+      return out;
+    }
+    let CONN = connections();
+    // rotation à la souris ou au doigt
+    {
+      const sv = $('tri');
+      let drag: [number, number] | null = null;
+      sv.addEventListener('pointerdown', (e) => { drag = [e.clientX, e.clientY]; sv.setPointerCapture(e.pointerId); });
+      sv.addEventListener('pointermove', (e) => {
+        if (!drag) return;
+        psi -= (e.clientX - drag[0]) * 0.01; phi = Math.max(-1.45, Math.min(1.45, phi + (e.clientY - drag[1]) * 0.01));
+        drag = [e.clientX, e.clientY]; draw();
+      });
+      sv.addEventListener('pointerup', () => (drag = null));
+    }
+
+    function reset() { stop(); a = [0.6, 0.3, 0.1]; t = 0; rnd = rng(1); dom = -1; tStart = 0; dwell = []; seq = []; hist = []; trail = []; draw(); }
+    function advance() {
+      const [, al, be] = MODES[mode], R = [[1, al, be], [be, 1, al], [al, be, 1]], eps = epsOf(+($('eps') as HTMLInputElement).value);
+      for (let k = 0; k < PER; k++) {
+        const g = a.map((ai, i) => ai * (1 - R[i][0] * a[0] - R[i][1] * a[1] - R[i][2] * a[2]));
+        a = a.map((ai, i) => Math.max(1e-300, ai + DT * g[i] + eps * Math.sqrt(DT) * gauss(rnd)));
+        t += DT;
+        const m = a.indexOf(Math.max(...a));
+        if (a[m] > 0.5 && m !== dom) { if (dom >= 0) dwell.push(t - tStart); dom = m; tStart = t; seq.push(m); }
+        if (k % 10 === 0) { hist.push([t, a[0], a[1], a[2]]); trail.push(a.slice()); }
+      }
+      while (hist.length && hist[0][0] < t - WIN) hist.shift();
+      if (trail.length > 900) trail.splice(0, trail.length - 900);
+    }
+    function stop() { if (timer) { clearInterval(timer); timer = null; } if (playB) playB.textContent = '▶ lecture'; }
+    const mk = (label: string, fn: () => void) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', fn); $('ctl').appendChild(b); return b; };
+    playB = mk('▶ lecture', () => {
+      if (timer) { stop(); return; }
+      playB!.textContent = '⏸ pause';
+      timer = window.setInterval(() => { advance(); draw(); }, 30);
+    });
+    mk('recommencer', reset);
+    MODES.forEach(([l], i) => {
+      const b = document.createElement('button'); b.textContent = l; b.dataset.v = String(i);
+      b.addEventListener('click', () => { mode = i; CONN = connections(); reset(); }); $('mode').appendChild(b);
+    });
+    ($('eps') as HTMLInputElement).addEventListener('input', () => draw());
+
+    function draw() {
+      $('mode').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +(b as HTMLElement).dataset.v! === mode));
+      const k = +($('eps') as HTMLInputElement).value;
+      $('eps-out').textContent = k === 0 ? 'aucun' : `10${sup(k - 9)}`;
+      // --- espace des phases en 3D ---
+      const P = (p: number[]) => proj(p).map((v) => v.toFixed(1)).join(',');
+      let g = `<defs><marker id="hcy-a" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--text-2)"/></marker></defs>`;
+      // plan a₁ + a₂ + a₃ = 1, en repère discret
+      g += `<polygon points="${[[1, 0, 0], [0, 1, 0], [0, 0, 1]].map(P).join(' ')}" fill="var(--text-2)" fill-opacity="0.05" stroke="var(--border)" stroke-dasharray="2 3"/>`;
+      // axes
+      [0, 1, 2].forEach((i) => {
+        const e = [0, 0, 0]; e[i] = 1.28;
+        const [x2, y2] = proj(e);
+        g += `<line x1="${proj([0, 0, 0])[0]}" y1="${proj([0, 0, 0])[1]}" x2="${x2}" y2="${y2}" stroke="${COL[i]}" stroke-width="1.2" opacity="0.7"/>`;
+        g += `<text x="${x2}" y="${y2 - 4}" text-anchor="middle" class="vn" style="fill:${COL[i]}">a${'₁₂₃'[i]}</text>`;
+      });
+      // connexions hétéroclines (tirets, flèche au milieu)
+      CONN.forEach(({ pts }) => {
+        const m = Math.floor(pts.length * 0.55);
+        g += `<polyline points="${pts.slice(0, m + 1).map(P).join(' ')}" fill="none" stroke="var(--text-2)" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#hcy-a)"/>`;
+        g += `<polyline points="${pts.slice(m).map(P).join(' ')}" fill="none" stroke="var(--text-2)" stroke-width="1.2" stroke-dasharray="4 3"/>`;
+      });
+      // point de coexistence a_i = 1 / (1 + α + β) : stable si α + β < 2
+      { const [, al, be] = MODES[mode], c = 1 / (1 + al + be), [x, y] = proj([c, c, c]);
+        g += `<circle cx="${x}" cy="${y}" r="5" fill="${al + be < 2 ? 'var(--text-2)' : 'var(--surface)'}" stroke="var(--text-2)" stroke-width="1.5"/>`; }
+      if (trail.length > 1) g += `<polyline points="${trail.map(P).join(' ')}" fill="none" stroke="var(--hl-stroke)" stroke-width="1.6" opacity="0.85"/>`;
+      // selles
+      [0, 1, 2].forEach((i) => {
+        const e = [0, 0, 0]; e[i] = 1;
+        const [x, y] = proj(e);
+        g += `<circle cx="${x}" cy="${y}" r="9" fill="${COL[i]}" fill-opacity="${dom === i ? 0.9 : 0.25}" stroke="${COL[i]}" stroke-width="1.5"/>`;
+        g += `<text x="${x}" y="${y + 4}" text-anchor="middle" class="vn"${dom === i ? ' style="fill:var(--surface)"' : ''}>${i + 1}</text>`;
+      });
+      const [cx, cy] = proj(a);
+      g += `<circle cx="${cx}" cy="${cy}" r="5" fill="var(--hl-stroke)" stroke="var(--surface)" stroke-width="1.5"/>`;
+      const st = $('tri') as unknown as SVGSVGElement;
+      st.setAttribute('viewBox', `0 0 ${TW} ${TH}`); st.innerHTML = g;
+
+      // --- séries temporelles ---
+      const W2 = 320, H2 = 230, px = 30, py = 8, pw = W2 - px - 8, ph = H2 - 40;
+      const t0 = Math.max(0, t - WIN), X = (tt: number) => px + ((tt - t0) / WIN) * pw, Y = (v: number) => py + ph - Math.min(1.05, v) / 1.05 * ph;
+      let h = `<line x1="${px}" y1="${Y(0)}" x2="${px + pw}" y2="${Y(0)}" stroke="var(--border)"/>`;
+      [0, 0.5, 1].forEach((v) => (h += `<text x="${px - 5}" y="${Y(v) + 3.5}" text-anchor="end" class="ax">${fm(v)}</text>`));
+      [0, 1, 2].forEach((i) => { if (hist.length > 1) h += `<polyline points="${hist.map((r) => `${X(r[0]).toFixed(1)},${Y(r[i + 1]).toFixed(1)}`).join(' ')}" fill="none" stroke="${COL[i]}" stroke-width="1.8"/>`; });
+      h += `<text x="${px + pw}" y="${H2 - 6}" text-anchor="end" class="ax">temps (fenêtre de ${WIN} unités)</text>`;
+      const sv = $('ts') as unknown as SVGSVGElement;
+      sv.setAttribute('viewBox', `0 0 ${W2} ${H2}`); sv.innerHTML = h;
+
+      // --- calcul et indicateurs ---
+      $('line').textContent = `t = ${fm(t, 0)} · a = (${a.map((v) => { if (v >= 1e-3) return v.toFixed(3).replace('.', ','); const e = Math.floor(Math.log10(v)); return `${Math.round(v / 10 ** e)} × 10${sup(e)}`; }).join(' ; ')})${dom >= 0 ? ` · près de la selle ${dom + 1}` : ''}`;
+      $('k1').textContent = seq.length ? seq.slice(-4).map((s) => s + 1).join(' → ') : '–';
+      $('k2').textContent = dwell.length ? dwell.slice(-4).map((d) => fm(d, 0)).join(' ; ') : '–';
+      $('k3').textContent = dwell.length ? fm(dwell.reduce((p, q) => p + q, 0) / dwell.length, 0) : '–';
+    }
+    reset();
+  });
+</script>
+
+<style is:global>
+  .hcy .row { margin-bottom: 6px; }
+  .hcy .row > .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .hcy .ctlrow { display: grid; grid-template-columns: auto minmax(180px, 1fr); gap: 8px 28px; align-items: end; }
+  .hcy .ctlrow > .seg { display: flex; flex-wrap: wrap; gap: 6px; }
+  .hcy .calc { margin-top: 10px; padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--text-2) 4.5%, transparent); }
+  .hcy .fm { font-size: 0.92rem; overflow-x: auto; overflow-y: hidden; }
+  .hcy .ln { font: 11.5px/1.5 var(--mono); color: var(--text-2); margin-top: 4px; }
+  .hcy .panes { display: grid; grid-template-columns: 1.15fr 1fr; gap: 14px; margin-top: 10px; align-items: center; }
+  .hcy svg.v3 { cursor: grab; touch-action: none; border-radius: 8px; background: color-mix(in srgb, var(--text-2) 3%, transparent); }
+  .hcy .ft span { font-weight: 400; color: var(--text-2); font-size: 11.5px; margin-left: 6px; }
+  .hcy .ft { font-size: 12.5px; font-weight: 500; margin-bottom: 2px; }
+  .hcy svg { width: 100%; height: auto; display: block; }
+  .hcy svg text.ax { font: 10.5px var(--font); fill: var(--text-2); }
+  .hcy svg text.vn { font: 600 11px var(--font); fill: var(--text); }
+  .hcy .note { font-size: 13px; color: var(--text-2); line-height: 1.5; margin: 8px 0 0; }
+  @media (max-width: 640px) { .hcy .panes, .hcy .ctlrow { grid-template-columns: 1fr; } }
+</style>
