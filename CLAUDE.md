@@ -8,6 +8,7 @@ Ce dépôt est le site de cours personnel de l'utilisateur (Astro + MDX). La str
 - Tout en **français** : le contenu, les réponses, les commentaires de code.
 - L'utilisateur relit et **supprime lui-même** des paragraphes. Ne pas remettre ce qu'il a retiré. Relire le fichier avant chaque modification : il a pu changer depuis.
 - **Statut d'un chapitre** = état de l'écriture : `plan`, puis `premier-jet` quand tu viens de le rédiger. `en-relecture` quand l'utilisateur l'a relu et retouché. **Ne jamais mettre `termine`** : seul l'utilisateur pose ce statut.
+- Lorsque tu répond à l'utilisateur ou que tu écris un chapitre, ne soit pas verbeux : **aller droit au but**. L'utilisateur n'a pas besoin de phrases de politesse ni d'explications sur ce que tu fais. Il veut un texte clair, concis, précis, exact.
 
 ## Le lecteur et le ton
 
