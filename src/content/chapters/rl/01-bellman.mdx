@@ -26,7 +26,7 @@ Un **agent** observe un **état** $s$, choisit une **action** $a$ ; l'**environn
 
 - La **politique** $\pi(a|s)$ est la règle de l'agent : la probabilité de choisir $a$ dans l'état $s$ (ou une action unique si elle est déterministe). C'est ce qu'on cherche à apprendre.
 - Les **règles de l'environnement** sont la probabilité de transition $P(s'|s,a)$ et la récompense $r(s,a,s')$. L'agent ne les connaît généralement pas.
-- Un tel problème s'appelle un **processus de décision markovien** (MDP) : l'état suivant ne dépend que de l'état et de l'action courants, pas de tout le passé.
+- Un tel problème s'appelle un **processus de décision markovien** (*Markov decision process*, MDP) : l'état suivant ne dépend que de l'état et de l'action courants, pas de tout le passé.
 
 ## 2. Le retour, le crédit
 

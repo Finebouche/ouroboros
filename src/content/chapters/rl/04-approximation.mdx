@@ -11,10 +11,13 @@ import Offline from '@/components/rl/04-approximation/Offline.astro';
 import FQITable from '@/components/rl/04-approximation/FQITable.astro';
 import FitWidget from '@/components/rl/04-approximation/FitWidget.astro';
 import DqnLoop from '@/components/rl/04-approximation/DqnLoop.astro';
+import TroisMethodes from '@/components/rl/04-approximation/TroisMethodes.astro';
 
 ## 1. Le cadre : trop d'états pour une table
 
 Jusqu'ici, une table donnait une valeur à chaque case. Quand les états sont nombreux ou continus, on remplace la table par une fonction paramétrée qui généralise d'un état à ses voisins. Ce chapitre suit trois façons de le faire : FQI (régression sur des données fixes), DQN (un réseau, en jouant) et LSPI (moindres carrés).
+
+<TroisMethodes />
 
 FQI commence par le cas le plus contraint : on n'a plus que des **transitions déjà enregistrées**, de la forme (état $s$, action $a$, récompense $r$, état suivant $s'$), et on n'a pas le droit d'en produire de nouvelles. C'est l'apprentissage **hors ligne** (*offline*). FQI en tire une politique en apprenant la valeur des actions, puis en jouant la meilleure.
 

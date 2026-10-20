@@ -1,0 +1,50 @@
+---
+// Cours RL, chapitre 3 : le bandit à plusieurs bras. Quatre machines, chacune avec une récompense moyenne q*(a) inconnue ;
+// sous chaque machine, les récompenses déjà reçues (points ambre, bruitées, autour d'une moyenne que l'agent ne voit pas).
+// À chaque pas, un seul bras est tiré (levier baissé) et rend une récompense (affichée dans la fenêtre).
+import { rng, gauss } from './bandit';
+const MU = [0.3, -0.6, 1.3, 0.9], SD = 0.7, NPTS = 5, PULLED = 2;
+const r = rng(9);
+const draws = MU.map((m) => Array.from({ length: NPTS }, () => m + SD * gauss(r)));
+const W = 640, H = 240, CX = [120, 270, 420, 570], Y0 = 196, SC = 21;
+const Y = (v: number) => Y0 - v * SC;
+const fm = (v: number) => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(1).replace('.', ',');
+draws[PULLED][NPTS - 1] = 1.4; // la récompense tirée à ce pas
+const lastPulled = draws[PULLED][NPTS - 1];
+---
+<figure class="bdi">
+  <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Quatre machines à sous : une récompense moyenne inconnue pour chacune, un seul levier tiré à chaque pas">
+    <line x1="40" y1={Y0} x2="610" y2={Y0} stroke="var(--border)" stroke-dasharray="3 4" />
+    <text x="8" y={Y0 + 4} class="bl">0</text>
+    {CX.map((c, i) => {
+      const on = i === PULLED;
+      return (
+        <g>
+          <rect x={c - 48} y="20" width="96" height="86" rx="10" fill="var(--surface)" stroke={on ? 'var(--text)' : 'var(--text-2)'} stroke-width={on ? 2 : 1.3} />
+          <rect x={c - 32} y="32" width="56" height="34" rx="5" fill="var(--surface-2)" stroke="var(--border)" />
+          <text x={c - 4} y="56" text-anchor="middle" class={on ? 'bw' : 'bq'} style={on ? 'fill:var(--hl-stroke)' : ''}>{on ? fm(lastPulled) : '?'}</text>
+          <rect x={c - 36} y="78" width="72" height="8" rx="4" fill="var(--text-2)" fill-opacity="0.25" />
+          <rect x={c - 52} y="106" width="104" height="8" rx="3" fill="var(--text-2)" fill-opacity="0.35" />
+          {on
+            ? <><line x1={c + 48} y1="56" x2={c + 66} y2="86" stroke="var(--text)" stroke-width="3" stroke-linecap="round" /><circle cx={c + 66} cy="88" r="6.5" fill="var(--text)" /></>
+            : <><line x1={c + 48} y1="56" x2={c + 60} y2="24" stroke="var(--text-2)" stroke-width="3" stroke-linecap="round" /><circle cx={c + 60} cy="22" r="6.5" fill="var(--text-2)" /></>}
+          <text x={c} y="134" text-anchor="middle" class="bt" style={on ? 'font-weight:600' : ''}>bras {i + 1}{on ? ' : tiré' : ''}</text>
+          {draws[i].map((v, k) => (
+            <circle cx={c - 32 + k * 16} cy={Y(Math.max(-1.4, Math.min(1.9, v)))} r={k === NPTS - 1 && on ? 5 : 3.4} fill="var(--hl-stroke)" fill-opacity={k === NPTS - 1 && on ? 1 : 0.55} stroke={k === NPTS - 1 && on ? 'var(--text)' : 'none'} stroke-width="1.3" />
+          ))}
+          <text x={c} y="234" text-anchor="middle" class="bl">moyenne q*(a) = ?</text>
+        </g>
+      );
+    })}
+    <text x="8" y="152" class="bl">récompenses reçues</text>
+  </svg>
+</figure>
+
+<style is:global>
+  .bdi { margin: 1.2rem 0; }
+  .bdi svg { width: 100%; max-width: 680px; height: auto; display: block; margin: 0 auto; }
+  .bdi text.bt { font: 12px var(--font); fill: var(--text); }
+  .bdi text.bl { font: 11px var(--font); fill: var(--text-2); }
+  .bdi text.bq { font: 600 22px var(--font); fill: var(--text-2); }
+  .bdi text.bw { font: 600 17px var(--font); }
+</style>

@@ -1,7 +1,8 @@
 ---
-// Cours RL, chapitre 3 : l'optimisme dans un MDP. Grille 10 × 10 sans murs, départ en haut à gauche, +1 au but (coin opposé), 0 partout ailleurs.
-// Deux agents Q-learning (α = 0,5 ; γ = 0,9 ; ε = 0,1) avec la même graine, qui ne diffèrent que par la valeur initiale de Q :
-// 0 (rien ne les attire : tant que le but n'est pas trouvé, ils jouent au hasard) ou 1 (toute action jamais essayée paraît excellente).
+// Cours RL, chapitre 3 : explorer un MDP. Grille 10 × 10 sans murs, départ en haut à gauche, +1 au but (coin opposé), 0 partout ailleurs.
+// Deux agents Q-learning tabulaires (α = 0,5 ; γ = 0,9), avec la même graine, dont on choisit l'algorithme d'exploration dans un menu :
+// ε-greedy avec Q₀ = 0 (tant que le but n'est pas trouvé, tous les Q valent 0 : marche au hasard), optimiste (Q₀ = 1), choix de l'action par Q + 0,5/√(N+1)
+// (UCB sur les couples état-action, ε = 0), ou ε-greedy avec un bonus de nouveauté 0,5/√N(s′) ajouté à la récompense.
 import katex from 'katex';
 const tex = (s: string) => katex.renderToString(s, { throwOnError: false });
 const F = tex('Q(s,a) \\leftarrow Q(s,a) + \\alpha\\,\\big(r + \\gamma \\max_{a\'} Q(s\', a\') - Q(s,a)\\big)');
@@ -11,13 +12,13 @@ const F = tex('Q(s,a) \\leftarrow Q(s,a) + \\alpha\\,\\big(r + \\gamma \\max_{a\
   <div class="fm" set:html={F} />
   <div class="pgrid">
     <div class="pbox">
-      <div class="eh"><b style="color:var(--a-bc)">Q<sub>0</sub> = 0</b> <span class="ev">(ε-greedy)</span></div>
-      <svg class="og" data-ref="svgA" role="img" aria-label="Grille 10 par 10 : cases visitées par l'agent dont Q vaut 0 au départ"></svg>
+      <div class="eh"><select data-ref="selA" aria-label="Algorithme du premier agent"></select><span class="ev" data-ref="dA"></span></div>
+      <svg class="og" data-ref="svgA" role="img" aria-label="Grille 10 par 10 : cases visitées par le premier agent"></svg>
       <div class="ef" data-ref="lA"></div>
     </div>
     <div class="pbox">
-      <div class="eh"><b style="color:var(--a-ppo)">Q<sub>0</sub> = 1</b> <span class="ev">(optimiste)</span></div>
-      <svg class="og" data-ref="svgB" role="img" aria-label="Grille 10 par 10 : cases visitées par l'agent optimiste, dont Q vaut 1 au départ"></svg>
+      <div class="eh"><select data-ref="selB" aria-label="Algorithme du second agent"></select><span class="ev" data-ref="dB"></span></div>
+      <svg class="og" data-ref="svgB" role="img" aria-label="Grille 10 par 10 : cases visitées par le second agent"></svg>
       <div class="ef" data-ref="lB"></div>
     </div>
   </div>
@@ -27,7 +28,7 @@ const F = tex('Q(s,a) \\leftarrow Q(s,a) + \\alpha\\,\\big(r + \\gamma \\max_{a\
     <div><span>Médiane, 200 graines</span><b data-ref="km"></b><i>pas avant le premier +1</i></div>
     <div><span>10 % les plus lents</span><b data-ref="kq"></b><i>pas, au moins</i></div>
   </div>
-  <p class="note">Intensité de la couleur : nombre de passages dans la case. Les deux agents reçoivent 0 partout sauf au but : tant qu'ils ne l'ont pas trouvé, Q<sub>0</sub> = 0 ne leur donne aucune préférence et ils marchent au hasard ; avec Q<sub>0</sub> = 1, chaque case essayée voit sa valeur baisser, et les cases jamais essayées gardent l'air meilleures.</p>
+  <p class="note">Intensité de la couleur : nombre de passages dans la case. La récompense est 0 partout sauf au but (sauf le bonus de nouveauté, qui s'y ajoute). Les statistiques sur 200 graines sont calculées au moment du choix ; « ≥ 5 000 » : le plafond de 5 000 pas est atteint.</p>
 </div>
 
 <script>
@@ -35,24 +36,33 @@ const F = tex('Q(s,a) \\leftarrow Q(s,a) + \\alpha\\,\\big(r + \\gamma \\max_{a\
 
   document.querySelectorAll<HTMLElement>('[data-widget="optw"]').forEach((root) => {
     const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
-    const R = 10, C = 10, GOAL = R * C - 1, ALPHA = 0.5, GAMMA = 0.9, EPS = 0.1, CAP = 5000, NSEED = 200;
+    const R = 10, C = 10, GOAL = R * C - 1, ALPHA = 0.5, GAMMA = 0.9, CAP = 5000, NSEED = 200;
+    // algorithmes au choix : q0 valeur initiale de Q, eps probabilité de jouer au hasard, sel poids du bonus de choix c/√(N(s,a)+1), beta bonus de nouveauté β/√N(s′)
+    type Algo = { id: string; label: string; col: string; desc: string; q0: number; eps: number; sel: number; beta: number };
+    const ALGOS: Algo[] = [
+      { id: 'eps', label: 'ε-greedy, Q₀ = 0', col: 'var(--a-bc)', desc: 'ε = 0,1', q0: 0, eps: 0.1, sel: 0, beta: 0 },
+      { id: 'opt', label: 'optimiste, Q₀ = 1', col: 'var(--a-ppo)', desc: 'Q₀ = 1, ε = 0,1', q0: 1, eps: 0.1, sel: 0, beta: 0 },
+      { id: 'ucb', label: 'UCB sur les actions', col: 'var(--a-lspi)', desc: 'choisit argmax Q + 0,5/√(N+1), N = essais de l\'action ; ε = 0', q0: 0, eps: 0, sel: 0.5, beta: 0 },
+      { id: 'nov', label: 'bonus de nouveauté', col: 'var(--a-nac)', desc: 'ε = 0,1 ; récompense + 0,5/√N(s′), N = passages dans la case', q0: 0, eps: 0.1, sel: 0, beta: 0.5 },
+    ];
     const DIRS: [number, number, string][] = [[-1, 0, '↑'], [0, 1, '→'], [1, 0, '↓'], [0, -1, '←']];
     const fm = (v: number, d = 2) => v.toFixed(d).replace('.', ',').replace('-', '−');
     type Last = { steps: number; a: number; explore: boolean; rew: number; maxQ: number; target: number; qOld: number; qNew: number };
     class Agent {
-      Q: Float64Array; N = new Int32Array(R * C); s = 0; steps = 0; done = false; visited = 1; rnd: () => number; last: Last | null = null;
-      constructor(q0: number, seed: number) { this.Q = new Float64Array(R * C * 4).fill(q0); this.rnd = rng(seed); this.N[0] = 1; }
+      Q: Float64Array; N = new Int32Array(R * C); NA = new Int32Array(R * C * 4); s = 0; steps = 0; done = false; visited = 1; rnd: () => number; last: Last | null = null; al: Algo;
+      constructor(al: Algo, seed: number) { this.al = al; this.Q = new Float64Array(R * C * 4).fill(al.q0); this.rnd = rng(seed); this.N[0] = 1; }
       step() {
         if (this.done) return;
-        const q = Array.from(this.Q.slice(this.s * 4, this.s * 4 + 4));
-        const explore = this.rnd() < EPS;
+        const q = Array.from(this.Q.slice(this.s * 4, this.s * 4 + 4)).map((v, k) => v + this.al.sel / Math.sqrt(this.NA[this.s * 4 + k] + 1));
+        const explore = this.rnd() < this.al.eps;
         const a = explore ? Math.floor(this.rnd() * 4) : argmaxTie(q, this.rnd);
         let nr = Math.floor(this.s / C) + DIRS[a][0], nc = (this.s % C) + DIRS[a][1];
         if (nr < 0 || nr >= R || nc < 0 || nc >= C) { nr = Math.floor(this.s / C); nc = this.s % C; }
         const s2 = nr * C + nc, goal = s2 === GOAL;
+        this.NA[this.s * 4 + a]++;
         if (this.N[s2] === 0) this.visited++;
         this.N[s2]++;
-        const rew = goal ? 1 : 0;
+        const rew = (goal ? 1 : 0) + (this.al.beta ? this.al.beta / Math.sqrt(this.N[s2]) : 0);
         const maxQ = goal ? 0 : Math.max(...Array.from(this.Q.slice(s2 * 4, s2 * 4 + 4)));
         const target = rew + GAMMA * maxQ, i = this.s * 4 + a, qOld = this.Q[i];
         this.Q[i] += ALPHA * (target - qOld);
@@ -62,17 +72,27 @@ const F = tex('Q(s,a) \\leftarrow Q(s,a) + \\alpha\\,\\big(r + \\gamma \\max_{a\
         if (goal) this.done = true;
       }
     }
-    // pas avant le premier +1, sur NSEED graines (plafonné à CAP)
-    const firstHit = (q0: number, seed: number) => { const g = new Agent(q0, seed); while (!g.done && g.steps < CAP) g.step(); return g.steps; };
-    const quant = (q0: number) => { const v = Array.from({ length: NSEED }, (_, i) => firstHit(q0, 500 + i)).sort((a, b) => a - b); return [v[NSEED / 2], v[Math.floor(NSEED * 0.9)]]; };
-    const stats = [quant(0), quant(1)];
-    const two = (x: string, y: string) => `<i style="font-style:normal;color:var(--a-bc)">${x}</i> · <i style="font-style:normal;color:var(--a-ppo)">${y}</i>`;
-    const nf = (v: number) => v.toLocaleString('fr-FR');
+    // pas avant le premier +1, sur NSEED graines (plafonné à CAP), calculé une fois par algorithme
+    const firstHit = (al: Algo, seed: number) => { const g = new Agent(al, seed); while (!g.done && g.steps < CAP) g.step(); return g.steps; };
+    const cache = new Map<string, number[]>();
+    const stat = (al: Algo) => {
+      if (!cache.has(al.id)) { const v = Array.from({ length: NSEED }, (_, i) => firstHit(al, 500 + i)).sort((a, b) => a - b); cache.set(al.id, [v[NSEED / 2], v[Math.floor(NSEED * 0.9)]]); }
+      return cache.get(al.id)!;
+    };
+    const nf = (v: number) => (v >= CAP ? '≥ ' : '') + v.toLocaleString('fr-FR');
+    const two = (x: string, y: string) => `<i style="font-style:normal;color:${al[0].col}">${x}</i> · <i style="font-style:normal;color:${al[1].col}">${y}</i>`;
+    const al: [Algo, Algo] = [ALGOS[0], ALGOS[1]];
+    (['A', 'B'] as const).forEach((k, i) => {
+      const sel = $('sel' + k) as HTMLSelectElement;
+      ALGOS.forEach((a, j) => { const o = document.createElement('option'); o.value = String(j); o.textContent = a.label; sel.appendChild(o); });
+      sel.value = String(i);
+      sel.addEventListener('change', () => { al[i] = ALGOS[+sel.value]; reset(); });
+    });
 
     let seed = 4, A: Agent, B: Agent, timer: number | null = null, playB: HTMLButtonElement | null = null;
     function reset(newSeed = false) {
       stop(); if (newSeed) seed++;
-      A = new Agent(0, seed); B = new Agent(1, seed); draw();
+      A = new Agent(al[0], seed); B = new Agent(al[1], seed); draw();
     }
     function advance(n: number) { for (let i = 0; i < n; i++) { A.step(); B.step(); } draw(); }
     function stop() { if (timer) { clearInterval(timer); timer = null; } if (playB) playB.textContent = '▶ lecture'; }
@@ -107,13 +127,16 @@ const F = tex('Q(s,a) \\leftarrow Q(s,a) + \\alpha\\,\\big(r + \\gamma \\max_{a\
       return `pas ${l.steps} : ${DIRS[l.a][2]}${l.explore ? ' (hasard)' : ''}\ncible ${fm(l.rew, 0)} + ${fm(GAMMA, 1)} × ${fm(l.maxQ)} = ${fm(l.target)}\nQ(s,a) : ${fm(l.qOld)} → ${fm(l.qNew)}`;
     }
     function draw() {
-      grid($('svgA') as unknown as SVGSVGElement, A, 'var(--a-bc)');
-      grid($('svgB') as unknown as SVGSVGElement, B, 'var(--a-ppo)');
+      grid($('svgA') as unknown as SVGSVGElement, A, al[0].col);
+      grid($('svgB') as unknown as SVGSVGElement, B, al[1].col);
+      $('dA').textContent = al[0].desc; $('dB').textContent = al[1].desc;
+      (['A', 'B'] as const).forEach((k, i) => { ($('sel' + k) as HTMLElement).style.color = al[i].col; });
       $('lA').textContent = line(A); $('lB').textContent = line(B);
       $('kv').innerHTML = two(String(A.visited), String(B.visited));
       $('kg').innerHTML = two(A.done ? String(A.steps) : '–', B.done ? String(B.steps) : '–');
-      $('km').innerHTML = two(nf(stats[0][0]), nf(stats[1][0]));
-      $('kq').innerHTML = two(nf(stats[0][1]), nf(stats[1][1]));
+      const sA = stat(al[0]), sB = stat(al[1]);
+      $('km').innerHTML = two(nf(sA[0]), nf(sB[0]));
+      $('kq').innerHTML = two(nf(sA[1]), nf(sB[1]));
     }
     reset();
   });
@@ -125,9 +148,9 @@ const F = tex('Q(s,a) \\leftarrow Q(s,a) + \\alpha\\,\\big(r + \\gamma \\max_{a\
   .optw .fm { margin: 6px 0 0; font-size: 0.9rem; overflow-x: auto; overflow-y: hidden; }
   .optw .pgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 10px 0 0; }
   .optw .pbox { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px 6px; min-width: 0; }
-  .optw .eh { font-size: 13px; color: var(--text-2); }
-  .optw .eh b { font-size: 14px; }
-  .optw .eh .ev { font-size: 12px; font-style: italic; }
+  .optw .eh { font-size: 13px; color: var(--text-2); display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+  .optw .eh select { font: 600 14px var(--font); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 3px 8px; max-width: 100%; }
+  .optw .eh .ev { font-size: 12px; font-style: italic; min-height: 3.3em; }
   .optw svg.og { max-width: 290px; margin: 6px auto 0; }
   .optw svg.og text.gv { font: 600 11px var(--font); fill: var(--text); }
   .optw svg.og text.vs { font: 10.5px var(--font); fill: var(--text-2); }

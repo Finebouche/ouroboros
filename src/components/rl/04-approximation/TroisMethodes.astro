@@ -1,0 +1,126 @@
+---
+// Cours RL, chapitre 4 : FQI, DQN et LSPI en trois schémas, avec un même vocabulaire visuel.
+// Une fiche = une transition (s, a, r, s′) ; un lot = des fiches rangées dans une boîte en pointillés ; une courbe ou un réseau bleu = Q ;
+// FQI et DQN visent Q* (bleu --a-fqi), LSPI évalue puis améliore une politique (indigo --a-lspi, comme SARSA qui évalue la politique suivie).
+const BLUE = 'var(--a-fqi)', IND = 'var(--a-lspi)', G = 'var(--text-2)';
+// une fiche-transition : un point (état s), une flèche, un point (état s′)
+const fiche = (x: number, y: number, col = G, hl = false, w = 34, h = 17) =>
+  `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="${hl ? col : 'var(--surface)'}" fill-opacity="${hl ? 0.22 : 1}" stroke="${col}" stroke-width="${hl ? 1.5 : 1}"/>` +
+  `<circle cx="${x + 7}" cy="${y + h / 2}" r="2.6" fill="${col}"/><line x1="${x + 9.6}" y1="${y + h / 2}" x2="${x + w - 14}" y2="${y + h / 2}" stroke="${col}" stroke-width="1.4"/><polygon points="${x + w - 10.5},${y + h / 2} ${x + w - 15.5},${y + h / 2 - 3} ${x + w - 15.5},${y + h / 2 + 3}" fill="${col}"/><circle cx="${x + w - 7}" cy="${y + h / 2}" r="2.6" fill="${col}"/>`;
+const arrow = (d: string, col: string, id: string, dash = false) => `<path d="${d}" fill="none" stroke="${col}" stroke-width="1.5" ${dash ? 'stroke-dasharray="4 3"' : ''} marker-end="url(#${id})"/>`;
+const txt = (x: number, y: number, t: string, o = '') => `<text x="${x}" y="${y}" class="tl" ${o}>${t}</text>`;
+const defs = (id: string, col: string) => `<defs><marker id="${id}" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="${col}"/></marker></defs>`;
+// la boîte du lot fixe : 3 × 2 fiches
+const lot = () => {
+  let o = `<rect x="36" y="10" width="150" height="62" rx="8" fill="none" stroke="${G}" stroke-width="1.2" stroke-dasharray="4 3"/>`;
+  for (let r = 0; r < 2; r++) for (let c = 0; c < 3; c++) o += fiche(46 + c * 44, 18 + r * 26, G);
+  return o;
+};
+
+// --- FQI : lot fixe → cibles → régression (courbe bleue) → on recommence ---
+const fqi = (() => {
+  const id = 'tm-f', X = (v: number) => 44 + v * 128, Y = (v: number) => 196 - v * 80;
+  const ptsX = [0.04, 0.14, 0.24, 0.34, 0.45, 0.56, 0.67, 0.78, 0.9];
+  const f = (v: number) => 0.12 + 0.82 / (1 + Math.exp(-9 * (v - 0.42)));
+  const jit = [0.05, -0.06, 0.07, -0.04, 0.05, -0.07, 0.04, -0.03, 0.05];
+  let o = defs(id, BLUE) + lot();
+  o += arrow('M111 74 L111 108', G, id) + txt(120, 96, 'cibles y');
+  o += `<line x1="40" y1="198" x2="180" y2="198" stroke="var(--border)"/><line x1="40" y1="198" x2="40" y2="112" stroke="var(--border)"/>`;
+  ptsX.forEach((v, i) => (o += `<circle cx="${X(v)}" cy="${Y(f(v) + jit[i])}" r="3" fill="${G}" fill-opacity="0.7"/>`));
+  let path = '';
+  for (let i = 0; i <= 40; i++) { const v = (i / 40) * 0.96; path += `${i ? 'L' : 'M'}${X(v).toFixed(1)} ${Y(f(v)).toFixed(1)}`; }
+  o += `<path d="${path}" fill="none" stroke="${BLUE}" stroke-width="2.4"/>` + txt(110, 214, 'régression', 'text-anchor="middle" style="fill:var(--a-fqi)"');
+  o += arrow('M186 150 C 226 150, 226 42, 190 42', BLUE, id) + txt(214, 100, 'itérer', 'text-anchor="middle" transform="rotate(-90 214 100)" style="fill:var(--a-fqi)"');
+  return o;
+})();
+
+// --- DQN : jouer → mémoire → mini-lot → réseau (et sa copie figée) → jouer ---
+const dqn = (() => {
+  const id = 'tm-d';
+  let o = defs(id, BLUE);
+  o += `<circle cx="40" cy="30" r="17" fill="none" stroke="${BLUE}" stroke-width="1.6"/>` + txt(40, 34, 'agent', 'text-anchor="middle"');
+  o += `<rect x="118" y="16" width="52" height="28" rx="5" fill="none" stroke="${G}" stroke-width="1.4"/>` + txt(144, 34, 'jeu', 'text-anchor="middle"');
+  o += arrow('M54 19 C 80 4, 104 4, 118 20', BLUE, id) + txt(86, 8, 'action', 'text-anchor="middle"');
+  o += arrow('M118 40 C 104 56, 80 56, 54 41', G, id) + txt(86, 66, 's′, r', 'text-anchor="middle"');
+  o += arrow('M144 46 L144 78', G, id) + txt(152, 66, 'range');
+  o += `<rect x="24" y="80" width="190" height="30" rx="7" fill="none" stroke="${G}" stroke-width="1.2" stroke-dasharray="4 3"/>`;
+  const hl = [1, 3, 4];
+  for (let i = 0; i < 5; i++) o += fiche(30 + i * 36, 86.5, hl.includes(i) ? BLUE : G, hl.includes(i), 30, 17);
+  o += txt(150, 124, 'mémoire de relecture', 'text-anchor="middle"');
+  const net = (x0: number, y0: number, s: number, col: string, dash: boolean) => {
+    const cols = [[0, 1, 2], [0, 1, 2, 3], [0.5, 1.5]];
+    let n = '';
+    const pos = cols.map((c, k) => c.map((v) => [x0 + k * 26 * s, y0 + v * 15 * s]));
+    pos[0].forEach((a) => pos[1].forEach((b) => (n += `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="${col}" stroke-width="0.7" opacity="0.5"/>`)));
+    pos[1].forEach((a) => pos[2].forEach((b) => (n += `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="${col}" stroke-width="0.7" opacity="0.5"/>`)));
+    pos.flat().forEach((p) => (n += `<circle cx="${p[0]}" cy="${p[1]}" r="${4.2 * s}" fill="${dash ? 'var(--surface)' : col}" fill-opacity="${dash ? 1 : 0.85}" stroke="${col}" stroke-width="1.2" ${dash ? 'stroke-dasharray="2 2"' : ''}/>`));
+    return n;
+  };
+  o += arrow('M80 112 C 80 134, 74 140, 70 150', BLUE, id) + txt(90, 144, 'mini-lot');
+  o += net(44, 160, 1, BLUE, false) + txt(70, 218, 'Q<tspan baseline-shift="sub" font-size="8">θ</tspan>', 'text-anchor="middle" style="fill:var(--a-fqi)"');
+  o += arrow('M114 170 C 128 164, 140 164, 152 168', G, id, true) + txt(133, 156, 'copie', 'text-anchor="middle"');
+  o += net(164, 160, 0.78, G, true) + txt(184, 210, 'cible θ⁻ figée', 'text-anchor="middle"');
+  o += arrow('M42 176 C 4 176, 4 90, 26 46', BLUE, id) + txt(9, 120, 'ε-greedy', 'transform="rotate(-90 9 120)" text-anchor="middle" style="fill:var(--a-fqi)"');
+  return o;
+})();
+
+// --- LSPI : lot fixe → un système linéaire → nouvelle politique → on recommence ---
+const lspi = (() => {
+  const id = 'tm-l';
+  let o = defs(id, IND) + lot();
+  o += arrow('M111 74 L111 100', G, id) + txt(120, 92, 'évaluer π');
+  const grid = (x: number, y: number, nc: number, nr: number, col: string, op: number) => {
+    let g = '';
+    for (let r = 0; r < nr; r++) for (let c = 0; c < nc; c++) g += `<rect x="${x + c * 13}" y="${y + r * 13}" width="12" height="12" rx="2" fill="${col}" fill-opacity="${(op * (0.5 + 0.5 * (((r * 5 + c * 3) % 4) / 3))).toFixed(2)}" stroke="${col}" stroke-width="0.8"/>`;
+    return g;
+  };
+  o += grid(34, 106, 3, 3, G, 0.6) + txt(78, 128, '×', 'text-anchor="middle"') + grid(88, 106, 1, 3, IND, 0.9) + txt(112, 128, '=', 'text-anchor="middle"') + grid(122, 106, 1, 3, G, 0.6);
+  o += txt(150, 122, 'A', 'style="font-weight:600"') + txt(158, 122, 'w = b') + txt(34, 154, 'un seul système linéaire');
+  o += arrow('M111 158 L111 172', IND, id);
+  const dir = ['→', '→', '↓', '↑', '→', '↓', '→', '→', '→'];
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) o += `<rect x="${84 + c * 18}" y="${176 + r * 18}" width="17" height="17" rx="3" fill="var(--surface)" stroke="${IND}" stroke-width="1"/><text x="${84 + c * 18 + 8.5}" y="${176 + r * 18 + 12.5}" text-anchor="middle" class="ar">${dir[r * 3 + c]}</text>`;
+  o += txt(111, 242, 'nouvelle politique', 'text-anchor="middle" style="fill:var(--a-lspi)"');
+  o += arrow('M144 202 C 226 202, 226 42, 190 42', IND, id) + txt(214, 120, 'recommencer', 'text-anchor="middle" transform="rotate(-90 214 120)" style="fill:var(--a-lspi)"');
+  return o;
+})();
+
+// légende : une fiche et un lot
+const legFiche = `<svg viewBox="0 0 48 20" width="48" height="20" aria-hidden="true">${fiche(6, 1.5, G, false, 36, 17)}</svg>`;
+const legLot = `<svg viewBox="0 0 48 22" width="48" height="22" aria-hidden="true"><rect x="2" y="2" width="44" height="18" rx="5" fill="none" stroke="${G}" stroke-width="1.2" stroke-dasharray="4 3"/>${fiche(6, 3.5, G, false, 16, 14).replace(/<\/?text[^>]*>/g, '')}${fiche(26, 3.5, G, false, 16, 14)}</svg>`;
+const cards = [
+  { name: 'FQI', sub: 'régression sur des données fixes', col: BLUE, svg: fqi, note: 'toutes les cibles sont recalculées, puis une régression' },
+  { name: 'DQN', sub: 'un réseau, en jouant', col: BLUE, svg: dqn, note: 'un pas de gradient par mini-lot, cible figée' },
+  { name: 'LSPI', sub: 'moindres carrés', col: IND, svg: lspi, note: 'un système résolu exactement, puis on change de politique' },
+];
+---
+<figure class="tm">
+  {cards.map((c) => (
+    <div class="tmc" style={`--tm:${c.col}`}>
+      <div class="tmh"><b>{c.name}</b><span>{c.sub}</span></div>
+      <svg viewBox="0 0 240 250" role="img" aria-label={`Schéma de ${c.name}`} set:html={c.svg} />
+      <div class="tmn">{c.note}</div>
+    </div>
+  ))}
+  <div class="tmleg">
+    <span><Fragment set:html={legFiche} /><em>une fiche = une transition enregistrée <i>(s, a, r, s′)</i> : le premier point est l'état s, la flèche mène à l'état s′, avec l'action a et la récompense r</em></span>
+    <span><Fragment set:html={legLot} /><em>un lot = des fiches rangées ensemble</em></span>
+  </div>
+</figure>
+
+<style is:global>
+  .tm { margin: 1.4rem 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; font-family: var(--font); }
+  .tm .tmc { border-radius: 10px; background: color-mix(in srgb, var(--text-2) 5%, transparent); padding: 10px 8px 10px; border-top: 3px solid var(--tm); }
+  .tm .tmh { padding: 0 6px; }
+  .tm .tmh b { display: block; font-size: 15px; font-weight: 600; color: var(--tm); }
+  .tm .tmh span { display: block; font-size: 12px; color: var(--text-2); }
+  .tm svg { width: 100%; height: auto; display: block; margin-top: 4px; }
+  .tm svg text.tl { font: 11.5px var(--font); fill: var(--text-2); }
+  .tm svg text.ar { font: 600 12px var(--font); fill: var(--text); }
+  .tm .tmleg { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 12px; color: var(--text-2); }
+  .tm .tmleg span { display: flex; align-items: center; gap: 8px; }
+  .tm .tmleg svg { flex: 0 0 48px; width: 48px; height: auto; margin: 0; }
+  .tm .tmleg em { font-style: normal; }
+  .tm .tmleg i { font-style: normal; color: var(--text); }
+  .tm .tmn { font-size: 12.5px; color: var(--text); line-height: 1.4; padding: 2px 6px 0; }
+  @media (max-width: 760px) { .tm { grid-template-columns: 1fr; } .tm svg { max-width: 360px; margin: 4px auto 0; } }
+</style>
