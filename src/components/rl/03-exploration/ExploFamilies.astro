@@ -1,0 +1,44 @@
+---
+// Cours RL, chapitre 3 : comment chaque famille d'algorithmes explore. Même mise en forme que Families.astro (chapitre 1) :
+// bandes arrondies, famille et exemples à gauche, mécanisme au milieu, type d'exploration à droite (étiquette).
+import katex from 'katex';
+const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
+const rows: { fam: string; ex: string; how: string; kind: string }[] = [
+  { fam: 'Contrôle tabulaire', ex: 'contrôle Monte-Carlo, SARSA, Q-learning', how: `ε-greedy : avec la probabilité ${tx('\\varepsilon')}, une action au hasard ; ${tx('\\varepsilon')} fixe, ou décroissant (condition de convergence de SARSA, chapitre 2).`, kind: 'au hasard' },
+  { fam: 'Réseaux de valeur', ex: 'DQN', how: `ε-greedy sur ${tx('Q')}, avec un ${tx('\\varepsilon')} qui décroît au début de l'entraînement.`, kind: 'au hasard' },
+  { fam: 'Gradient de politique', ex: 'REINFORCE, A2C, PPO', how: `L'agent tire son action dans ${tx('\\pi(a \\mid s)')} : l'exploration est le hasard de la politique elle-même, qu'un bonus d'entropie dans l'objectif empêche de s'éteindre trop vite (A2C, PPO).`, kind: 'dans la politique' },
+  { fam: 'Stratégies d\'évolution', ex: 'OpenAI-ES, CMA-ES', how: 'Un bruit gaussien perturbe les paramètres de la politique : on explore l\'espace des paramètres, pas celui des actions.', kind: 'sur les paramètres' },
+  { fam: 'Planification', ex: 'MCTS', how: `UCB à chaque nœud de l'arbre (UCT) : on descend vers l'action de plus grand ${tx('Q')} plus un bonus d'incertitude, comme sur le bandit.`, kind: 'dirigée' },
+  { fam: 'Bonus de nouveauté', ex: 'pseudo-comptes, ICM, RND', how: 'Complète n\'importe quel algorithme : une récompense intrinsèque, forte pour les états peu vus, s\'ajoute à celle de l\'environnement.', kind: 'dirigée' },
+  { fam: 'Apprentissage hors ligne', ex: 'FQI, LSPI', how: 'Aucune : le lot de transitions est figé. Ce que celui qui l\'a collecté n\'a pas essayé reste inconnu (chapitre 1).', kind: 'aucune' },
+];
+---
+<figure class="xf">
+  <div class="xr xhd">
+    <div>famille <span>· exemples</span></div>
+    <div>comment elle explore</div>
+    <div>exploration</div>
+  </div>
+  {rows.map((r, i) => (
+    <div class={`xr xg${i % 2 ? ' alt' : ''}`}>
+      <div class="xn"><b>{r.fam}</b><small>{r.ex}</small></div>
+      <div class="xh" set:html={r.how} />
+      <div><span class="xk">{r.kind}</span></div>
+    </div>
+  ))}
+</figure>
+
+<style is:global>
+  .xf { margin: 1.4rem 0; font-family: var(--font); }
+  .xf .xr { display: grid; grid-template-columns: 170px minmax(0, 1fr) 130px; column-gap: 16px; align-items: center; }
+  .xf .xhd { padding: 0 14px 8px; font-size: 11.5px; font-weight: 600; color: var(--text); }
+  .xf .xhd span { font-weight: 400; color: var(--text-2); }
+  .xf .xg { border-radius: 8px; background: color-mix(in srgb, var(--text-2) 7%, transparent); padding: 10px 14px; margin-bottom: 6px; }
+  .xf .xg.alt { background: color-mix(in srgb, var(--text-2) 3.5%, transparent); }
+  .xf .xn b { display: block; font-size: 13px; font-weight: 600; color: var(--text); }
+  .xf .xn small { display: block; font-size: 11.5px; color: var(--text-2); margin-top: 2px; line-height: 1.35; }
+  .xf .xh { font-size: 12.5px; color: var(--text); line-height: 1.5; }
+  .xf .xh .katex { font-size: 1em; }
+  .xf .xk { display: inline-block; font-size: 11px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--text-2); color: var(--text); text-align: center; line-height: 1.3; }
+  @media (max-width: 680px) { .xf .xr { grid-template-columns: 1fr; row-gap: 6px; } .xf .xhd { display: none; } }
+</style>

@@ -7,11 +7,11 @@ status: premier-jet
 import Reveal from '@/components/shared/Reveal.astro';
 import Quiz from '@/components/shared/Quiz.astro';
 import Refs from '@/components/shared/Refs.astro';
-import Offline from '@/components/rl/04-approximation/Offline.astro';
 import FQITable from '@/components/rl/04-approximation/FQITable.astro';
 import FitWidget from '@/components/rl/04-approximation/FitWidget.astro';
 import DqnLoop from '@/components/rl/04-approximation/DqnLoop.astro';
 import TroisMethodes from '@/components/rl/04-approximation/TroisMethodes.astro';
+import LspiWidget from '@/components/rl/04-approximation/LspiWidget.astro';
 
 ## 1. Le cadre : trop d'états pour une table
 
@@ -19,9 +19,9 @@ Jusqu'ici, une table donnait une valeur à chaque case. Quand les états sont no
 
 <TroisMethodes />
 
-FQI commence par le cas le plus contraint : on n'a plus que des **transitions déjà enregistrées**, de la forme (état $s$, action $a$, récompense $r$, état suivant $s'$), et on n'a pas le droit d'en produire de nouvelles. C'est l'apprentissage **hors ligne** (*offline*). FQI en tire une politique en apprenant la valeur des actions, puis en jouant la meilleure.
+<Refs items={[["FQI : Tree-Based Batch Mode Reinforcement Learning (JMLR 6, 503–556)", "Ernst, Geurts & Wehenkel", 2005, "https://jmlr.org/papers/v6/ernst05a.html"], ["DQN : Human-level control through deep reinforcement learning (Nature 518)", "Mnih et al.", 2015, "10.1038/nature14236"], ["LSPI : Least-Squares Policy Iteration (JMLR 4, 1107–1149)", "Lagoudakis & Parr", 2003, "https://www.jmlr.org/papers/v4/lagoudakis03a.html"]]} />
 
-<Offline view="data" />
+FQI commence par le cas le plus contraint : on n'a plus que des **transitions déjà enregistrées**, de la forme (état $s$, action $a$, récompense $r$, état suivant $s'$), et on n'a pas le droit d'en produire de nouvelles. C'est l'apprentissage **hors ligne** (*offline*). FQI en tire une politique en apprenant la valeur des actions, puis en jouant la meilleure.
 
 ## 2. FQI : itérer Bellman par régression
 
@@ -52,7 +52,7 @@ La cible contient l'estimation $Q_k$ au lieu du retour observé : c'est le **boo
 
 C'est la cible de Q-learning (chapitre 2) : Q-learning l'applique une transition à la fois, pendant qu'il joue ; FQI la recalcule sur tout le lot enregistré à chaque itération.
 
-Avec un tableau (une valeur par couple case-action), la régression se réduit à écrire chaque cible dans sa case. Voici les six transitions de la section 1, itération après itération :
+Avec un tableau (une valeur par couple case-action), la régression se réduit à écrire chaque cible dans sa case. Voici six transitions sur la grille du chapitre 1 (une case est repérée par (ligne, colonne)), itération après itération :
 
 <FQITable />
 
@@ -95,11 +95,52 @@ Les deux ajouts répondent à deux problèmes :
 
 ## 4. LSPI : itération de politique approchée
 
-À venir : évaluer une politique par moindres carrés (LSTD), puis prendre l'action de plus grande valeur, et recommencer.
+**LSPI** (*least-squares policy iteration*) reprend l'**itération de politique** : évaluer une politique $\pi$, puis l'améliorer en prenant dans chaque état l'action de plus grande valeur, et recommencer. Ici, l'évaluation se fait **à partir des transitions enregistrées**, par moindres carrés.
+
+On représente la valeur des actions par une fonction **linéaire** de caractéristiques (*features*) : $Q(s,a) \approx \varphi(s,a)^{\top} w$, où $\varphi(s,a)$ est un vecteur de nombres décrivant le couple état-action, choisi à la main (avec un tableau, une caractéristique par couple).
+
+### Évaluer $\pi$ : un système linéaire
+
+La valeur de $\pi$ vérifie $Q^\pi(s,a) = \mathbb{E}\big[\, r + \gamma\, Q^\pi(s', \pi(s')) \,\big]$. On demande à $\varphi^{\top} w$ de la vérifier sur chaque transition enregistrée $(s_i, a_i, r_i, s'_i)$ :
+
+$$
+\varphi(s_i, a_i)^{\top} w \;\approx\; r_i + \gamma\, \varphi\big(s'_i, \pi(s'_i)\big)^{\top} w
+$$
+
+Ces équations sont **linéaires en $w$** : leur solution au sens des moindres carrés (étape appelée **LSTDQ**, version à actions de LSTD) est la solution d'un seul système $A\,w = b$, sans gradient ni itération :
+
+$$
+A = \sum_i \varphi_i\,\big(\varphi_i - \gamma\,\varphi'_i\big)^{\top}, \qquad b = \sum_i \varphi_i\, r_i, \qquad w = A^{-1} b
+$$
+
+avec $\varphi_i = \varphi(s_i, a_i)$ et $\varphi'_i = \varphi(s'_i, \pi(s'_i))$ ($\varphi'_i = 0$ si $s'_i$ est terminal). C'est la cible de SARSA (chapitre 2), avec l'action de la politique évaluée $\pi(s')$ à la place de celle jouée dans les données.
+
+### Améliorer, et recommencer
+
+$\pi'(s) = \arg\max_a \varphi(s,a)^{\top} w$. On réévalue $\pi'$ **sur le même lot**, et on s'arrête quand la politique ne change plus. La grille du chapitre 1, avec des transitions tirées par une politique aléatoire (le widget tire $N$ transitions) :
+
+<LspiWidget />
+
+Avec ces réglages ($N = 200$ transitions, caractéristiques « une par couple », $\pi_0$ = toujours ↑) :
+
+- **Quelques itérations** suffisent : la politique se stabilise après environ 4 améliorations en moyenne (3,8 sur 50 jeux de données ; moins avec peu de transitions, un peu plus avec 400).
+- **Chaque évaluation propage le crédit partout à la fois** : un seul système résolu donne la valeur de la politique dans toutes les cases couvertes par les données, sans simuler d'épisode.
+- **La couverture limite le résultat** : les cases dont les 4 actions sont observées finissent presque toutes sur l'action optimale (environ 10 sur 11 avec $N = 200$, 12,8 sur 12,9 avec $N = 400$) ; les autres n'ont aucune information (pointillés), et la politique y reste arbitraire. Moins de transitions, moins de cases couvertes.
+
+### Face à FQI
+
+| | FQI | LSPI |
+|---|---|---|
+| Ce qu'on évalue | $Q^\star$ directement, cible avec $\max$ | la politique courante $\pi$, cible avec $\pi(s')$ |
+| Une itération | une régression (n'importe quel régresseur) | un système linéaire résolu exactement |
+| Représentation | libre (arbres, réseaux) | linéaire en caractéristiques choisies |
+| Politique | lue à la fin : $\arg\max_a Q$ | améliorée à chaque itération |
+
+Le coût d'une évaluation croît avec le cube du nombre de caractéristiques (résolution du système). Avec une représentation linéaire, la convergence de l'itération n'est pas garantie en général.
 
 ## 5. Qui attribue le crédit ?
 
-C'est la question du chapitre 1 : quelle action mérite la récompense d'une suite lointaine ? FQI et DQN l'attribuent par la cible de Bellman, comme TD(0) et Q-learning. FQI le fait sur un lot de transitions rejouées : à chaque itération, toutes les cibles sont recalculées, et le crédit remonte d'un pas **partout à la fois**. Il faut donc autant d'itérations que la distance au but, mais aucun épisode complet n'est nécessaire, et des morceaux de trajectoires différentes se recombinent.
+C'est la question du chapitre 1 : quelle action mérite la récompense d'une suite lointaine ? FQI, DQN et LSPI l'attribuent par la cible de Bellman, comme TD(0) et Q-learning. FQI le fait sur un lot de transitions rejouées : à chaque itération, toutes les cibles sont recalculées, et le crédit remonte d'un pas **partout à la fois**. Il faut donc autant d'itérations que la distance au but, mais aucun épisode complet n'est nécessaire, et des morceaux de trajectoires différentes se recombinent. LSPI résout les équations de Bellman de la politique **toutes ensemble** : une évaluation suffit à propager le crédit jusqu'aux cases lointaines, là où FQI demande une itération par pas.
 
 <div class="retain">
 
@@ -109,11 +150,12 @@ C'est la question du chapitre 1 : quelle action mérite la récompense d'une sui
 - **FQI** : cible $y = r + \gamma \max_{a'} Q_k(s', a')$, puis régression ; c'est l'itération de valeur du chapitre 1 avec des échantillons à la place de $P$. On apprend $Q$ plutôt que $V$ pour pouvoir choisir l'action sans connaître $P$.
 - La régression permet de généraliser entre états ; l'erreur d'une itération passe dans la cible suivante.
 - **DQN** : Q-learning avec un réseau, une **mémoire de relecture** (décorréler, réutiliser) et un **réseau cible** (figer la cible) ; chaque période du réseau cible est une itération de FQI.
+- **LSPI** : itération de politique sur un lot ; évaluer $\pi$ par moindres carrés (un système $A\,w = b$ avec une $Q$ linéaire en caractéristiques), puis $\pi'(s) = \arg\max_a \varphi(s,a)^{\top} w$ ; recommencer jusqu'à stabilité. Hors politique, mais limité par les caractéristiques choisies et par la couverture des données.
 - Risques : la triade mortelle (approximation, bootstrapping, hors politique) et la surestimation par le $\max$ (corrigée par Double DQN).
 
 </div>
 
-<Refs items={[["Tree-Based Batch Mode Reinforcement Learning (JMLR 6, 503–556)", "Ernst, Geurts & Wehenkel", 2005, "https://jmlr.org/papers/v6/ernst05a.html"], ["Playing Atari with Deep Reinforcement Learning", "Mnih et al.", 2013, "1312.5602"], ["Human-level control through deep reinforcement learning (Nature 518)", "Mnih et al.", 2015, "10.1038/nature14236"], ["Deep Reinforcement Learning with Double Q-learning (AAAI 2016)", "van Hasselt, Guez & Silver", 2015, "1509.06461"]]} />
+<Refs items={[["Playing Atari with Deep Reinforcement Learning", "Mnih et al.", 2013, "1312.5602"], ["Deep Reinforcement Learning with Double Q-learning (AAAI 2016)", "van Hasselt, Guez & Silver", 2015, "1509.06461"]]} />
 
 <Quiz>
 
@@ -162,6 +204,22 @@ Il fige la cible $y = r + \gamma \max_{a'} Q_{\theta^-}(s', a')$ pendant $C$ pas
 <Reveal>
 
 Plus que 0 : on garde toujours la plus grande des trois erreurs, qui est positive en moyenne. C'est la surestimation que corrige Double DQN, en choisissant l'action avec un réseau et en l'évaluant avec l'autre.
+
+</Reveal>
+
+**Q7.** Avec 16 couples état-action et une caractéristique par couple, quelle est la taille du système que LSPI résout à chaque évaluation, et qu'y trouve-t-on ?
+
+<Reveal>
+
+$A$ est $16 \times 16$ et $b$ a 16 composantes ; $w$ contient une valeur par couple. Chaque transition $(s, a, r, s')$ ajoute 1 à $A_{(s,a),(s,a)}$, retire $\gamma$ à $A_{(s,a),(s',\pi(s'))}$ et ajoute $r$ à $b_{(s,a)}$.
+
+</Reveal>
+
+**Q8.** Quelle est la différence essentielle entre la cible de FQI et celle de LSPI ?
+
+<Reveal>
+
+FQI utilise $\max_{a'} Q_k(s', a')$ : il vise $Q^\star$ et refait une régression par itération. LSPI utilise $Q(s', \pi(s'))$ : il évalue la politique courante (un système linéaire), puis l'améliore. Les deux apprennent sur un lot enregistré, hors politique.
 
 </Reveal>
 

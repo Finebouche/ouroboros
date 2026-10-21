@@ -7,7 +7,6 @@
     <label class="posl"><span>Coefficient c<sub>k</sub>, k =</span><input type="range" data-ref="k" min="0" max="12" step="1" value="1" /><b data-ref="k-out"></b></label>
     <div class="row"><span>Normalisation :</span><span class="seg" data-ref="nm"></span></div>
   </div>
-  <p class="lg"><i class="sq a"></i>son d'origine <i class="sq b"></i>même son, enregistré à travers le canal</p>
   <svg data-ref="svg" width="100%" role="img" aria-label="Un coefficient MFCC au fil des trames, avec et sans canal"></svg>
   <div class="kpis">
     <div><span>Écart moyen entre les deux courbes</span><b data-ref="k1"></b></div>
@@ -62,18 +61,21 @@
       $('k-out').textContent = `c${k}`;
       const a = track('none', k), b = track(ch, k);
       const T = a.length;
-      const W = 640, ox = 44, wpx = W - ox - 8, H = 170, y0 = 8, hh = H - 28;
+      const W = 640, ox = 44, wpx = W - ox - 132, H = 170, y0 = 8, hh = H - 28;
       const lo = Math.min(...a, ...b), hi = Math.max(...a, ...b), pad = (hi - lo || 1) * 0.08;
       const Y = (v: number) => y0 + (1 - (v - (lo - pad)) / (hi - lo + 2 * pad)) * hh;
       const X = (i: number) => ox + (i / (T - 1)) * wpx;
       let g = '';
-      if (lo < 0 && hi > 0) g += `<line x1="${ox}" y1="${Y(0)}" x2="${W - 8}" y2="${Y(0)}" stroke="var(--border)"/>`;
+      if (lo < 0 && hi > 0) g += `<line x1="${ox}" y1="${Y(0)}" x2="${ox + wpx}" y2="${Y(0)}" stroke="var(--border)"/>`;
       const line = (v: number[], stroke: string, wd: number) => `<polyline points="${v.map((q, i) => `${X(i).toFixed(1)},${Y(q).toFixed(1)}`).join(' ')}" fill="none" stroke="${stroke}" stroke-width="${wd}" stroke-linejoin="round"/>`;
       g += line(a, 'var(--p-wave)', 1.8);
       if (ch !== 'none') g += line(b, 'var(--p-mel)', 1.8);
       for (const ms of [0, 100, 200, 300, 400, 500]) g += `<text x="${X(ms / 10)}" y="${H - 6}" text-anchor="middle" class="ax">${ms}</text>`;
-      g += `<text x="${W - 8}" y="${H - 6}" text-anchor="end" class="ax">ms</text>`;
+      g += `<text x="${ox + wpx}" y="${H - 6}" text-anchor="end" class="ax">ms</text>`;
       g += `<text x="${ox - 4}" y="${Y(hi) + 3.5}" text-anchor="end" class="ax">${fr(hi, 1)}</text><text x="${ox - 4}" y="${Y(lo) + 3.5}" text-anchor="end" class="ax">${fr(lo, 1)}</text>`;
+      const labs = [{ t: 'son d\'origine', y: Y(a[T - 1]), c: 'var(--p-wave)' }, ...(ch !== 'none' ? [{ t: 'même son, via le canal', y: Y(b[T - 1]), c: 'var(--p-mel)' }] : [])].sort((p, q) => p.y - q.y);
+      for (let n = 1; n < labs.length; n++) if (labs[n].y - labs[n - 1].y < 15) labs[n].y = labs[n - 1].y + 15;
+      labs.forEach((l) => (g += `<text x="${ox + wpx + 8}" y="${(l.y + 4).toFixed(1)}" class="ax" style="fill:${l.c};font-weight:600">${l.t}</text>`));
       const s = $('svg') as unknown as SVGSVGElement;
       s.setAttribute('viewBox', `0 0 ${W} ${H}`);
       s.innerHTML = g;

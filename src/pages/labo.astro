@@ -1,0 +1,229 @@
+---
+// LABO : bibliothèque d'essais de présentation. Une section par expérience ; on garde les variantes écartées pour s'y référer.
+// Pour ajouter un essai : une nouvelle <section class="lab"> (titre, statut, démos) et son style, préfixé par une classe propre.
+import Base from '../layouts/Base.astro';
+import FitWidgetAvant from '../components/labo/FitWidgetAvant.astro';
+import FitWidget from '../components/rl/04-approximation/FitWidget.astro';
+const sliders = [
+  { id: 'o0', t: 'Retenu : 2 · Segments', d: 'piste continue en 24 segments, barrette verticale ; barre à points, un par valeur, rond creux pour les valeurs discrètes (en production)' },
+  { id: 'o1', t: '1 · Noir et blanc', d: 'barre fine remplie en noir, rond clair cerclé de noir' },
+  { id: 'o3', t: '3 · Pilule', d: 'piste épaisse arrondie en gris, gros rond blanc avec ombre' },
+  { id: 'o4', t: '4 · Repère', d: 'ligne fine, curseur en pointe de flèche ; graduations pour les valeurs discrètes' },
+  { id: 'o5', t: 'A · Fil fin + graduée', d: 'fil de 2 px gris foncé, rond creux ; graduations et barrette pour les valeurs discrètes' },
+  { id: 'o6', t: 'B · Barre pleine + graduée', d: 'barre bleue pleine ; graduations et barrette pour les valeurs discrètes' },
+  { id: 'o8', t: 'B · Barre pleine + points (ancien style en production)', d: 'barre bleue pleine, rond bleu ; points bleus pour les valeurs discrètes' },
+  { id: 'o7', t: 'C · Graduée partout', d: 'graduations et barrette pour tous les curseurs (sans graduations sur le continu)' },
+];
+
+// ---- Principes de design : graphique d'ajustement, avant / après (données d'illustration, pas un vrai ajustement) ----
+const lcg = (seed: number) => { let x = seed; return () => { x = (x * 16807) % 2147483647; return x / 2147483647; }; };
+const rnd = lcg(11);
+const R = (x: number) => 1.05 / (1 + Math.exp(-9 * (x - 0.72))) - 0.05 + 0.05 * Math.sin(14 * x) * (1 - x);
+const Lf = (x: number) => 0.15 * (1 - x) ** 2 + 0.8 * x ** 3;
+const Qopt = (x: number) => 0.38 + 0.62 * (Math.floor(x * 10) / 10) ** 1.2;
+const ptsR = Array.from({ length: 40 }, () => { const x = rnd(); return [x, R(x) + (rnd() - 0.5) * 0.07]; });
+const ptsL = Array.from({ length: 40 }, () => { const x = rnd(); return [x, Lf(x) + (rnd() - 0.5) * 0.07]; });
+const CW = 600, CH = 300, px = 44, py = 14, pw = CW - px - 128, ph = CH - py - 40;
+const X = (x: number) => px + x * pw, Y = (v: number) => py + ph - ((v + 0.1) / 1.3) * ph;
+const grid = [0, 0.5, 1].map((v) => `<line x1="${px}" y1="${Y(v)}" x2="${px + pw}" y2="${Y(v)}" stroke="var(--border)" stroke-dasharray="2 4"/><text x="${px - 6}" y="${Y(v) + 3.5}" text-anchor="end" class="ct">${v.toString().replace('.', ',')}</text>`).join('') +
+  [0, 0.5, 1].map((v) => `<text x="${X(v)}" y="${py + ph + 16}" text-anchor="middle" class="ct">${v.toString().replace('.', ',')}</text>`).join('') +
+  `<text x="${px + pw / 2}" y="${py + ph + 32}" text-anchor="middle" class="ct">position x dans le couloir</text>`;
+const xs = Array.from({ length: 101 }, (_, i) => i / 100);
+const line = (f: (x: number) => number, col: string, w: number, dash = '') => `<polyline points="${xs.map((x) => `${X(x).toFixed(1)},${Y(f(x)).toFixed(1)}`).join(' ')}" fill="none" stroke="${col}" stroke-width="${w}"${dash ? ` stroke-dasharray="${dash}"` : ''}/>`;
+const stairs = `<polyline points="${xs.flatMap((x, i) => [`${X(x).toFixed(1)},${Y(Qopt(x)).toFixed(1)}`]).join(' ')}" fill="none" stroke="var(--text)" stroke-width="1.2" stroke-dasharray="4 3"/>`;
+const dots = (pts: number[][], col: string, op: number) => pts.map(([x, v]) => `<circle cx="${X(x).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="2.6" fill="${col}" fill-opacity="${op}"/>`).join('');
+const before = grid + dots(ptsR, 'var(--a-act)', 0.7) + dots(ptsL, 'var(--text-2)', 0.7) + stairs + line(Lf, 'var(--text-2)', 2.4) + line(R, 'var(--a-act)', 2.6);
+const lab = (x: number, y: number, t: string, col: string, w = 600) => `<text x="${x}" y="${y}" class="cl" style="fill:${col};font-weight:${w}">${t}</text>`;
+const after = grid + dots(ptsR, 'var(--text-2)', 0.5) + dots(ptsL, 'var(--text-2)', 0.5) + stairs + line(Lf, 'var(--text-2)', 2.2) + line(R, 'var(--a-act)', 2.8) +
+  lab(px + pw + 6, Y(R(1)) - 2, 'Q ajusté, droite', 'var(--a-act)') + lab(px + pw + 6, Y(Lf(1)) + 4, 'Q ajusté, gauche', 'var(--text-2)') + lab(px + pw + 6, Y(Qopt(1)) - 14, 'Q optimal', 'var(--text)', 500) +
+  lab(X(0.04), Y(0.62), 'cibles (80 points)', 'var(--text-2)', 400);
+const palettes = [
+  { c: 'Post-Transformer', s: [['--c-q', 'Q (requête)'], ['--c-k', 'K (clé)'], ['--c-v', 'V (valeur)'], ['--c-w', 'poids d\'attention'], ['--c-neutral', 'sortie de la tête'], ['--text-2', 'vecteurs de mots']] },
+  { c: 'HPC', s: [['--h-calc', 'limité par le calcul'], ['--h-mem', 'limité par la mémoire'], ['--h-py', 'alerte, piège'], ['--text-2', 'surcoût (hachuré), NumPy']] },
+  { c: 'MFCC (preprocessing)', s: [['--p-wave', 'signal'], ['--p-frame-a', 'trame'], ['--p-frame-b', 'trame voisine'], ['--p-mel', 'échelle de Mel']] },
+  { c: 'Reservoir computing', s: [['--r-res', 'états du réservoir'], ['--r-out', 'lecture entraînée'], ['--text-2', 'entrée, tirage figé'], ['--text', 'cible (pointillé)']] },
+  { c: 'RL', s: [['--a-es', 'Monte-Carlo, retour complet'], ['--a-fqi', 'Bellman, TD, Q-learning'], ['--a-act', 'action'], ['--hl-stroke', 'récompense'], ['--h-py', 'piège, glissade, falaise'], ['--a-lspi', 'SARSA']] },
+  { c: 'RL, chapitre 3 seulement', s: [['--c-neutral', 'glouton'], ['--a-bc', 'ε-greedy'], ['--a-fqi', 'softmax'], ['--a-ppo', 'optimiste'], ['--a-lspi', 'UCB'], ['--a-nac', 'bonus de nouveauté']] },
+];
+---
+<Base title="Labo">
+  <h1>Labo</h1>
+  <p class="lead">Essais de présentation et variantes écartées, gardés pour référence. Page non liée depuis le site.</p>
+
+  <h2>Curseurs</h2>
+  <p>Retenu le 21 octobre 2026 : <b>2 · Segments</b>. Choix automatique continu / discret par le script de <code>Base.astro</code> (entre 2 et 20 pas). Testé sous Chrome ; styles Firefox écrits mais non vérifiés.</p>
+  {sliders.map((d) => (
+    <section class={`dm ${d.id}`}>
+      <h3>{d.t} <small>{d.d}</small></h3>
+      <div class="widget">
+        <div class="box"><div class="sl">
+          <label><span>Exploration ε (continu)</span><input type="range" min="0" max="0.5" step="0.01" value="0.15" /><b></b></label>
+          <label><span>Profondeur k (discret)</span><input type="range" min="0" max="6" step="1" value="3" /><b></b></label>
+        </div></div>
+      </div>
+    </section>
+  ))}
+
+  <h3 class="dsn-h">Position du nom et de la valeur</h3>
+  <p class="dsn-n">Par défaut au-dessus du curseur ; option sur le côté : classe <code>side</code> sur un <code>&lt;label&gt;</code>, ou <code>sl-side</code> sur le widget pour tous ses curseurs.</p>
+  <section class="dm o0"><h3>Au-dessus (par défaut)</h3>
+    <div class="widget"><div class="box"><div class="sl">
+      <label><span>Exploration ε</span><input type="range" min="0" max="0.5" step="0.01" value="0.15" /><b></b></label>
+      <label><span>Profondeur k</span><input type="range" min="0" max="6" step="1" value="3" /><b></b></label>
+    </div></div></div>
+  </section>
+  <section class="dm o0"><h3>Sur le côté (<code>sl-side</code>)</h3>
+    <div class="widget sl-side"><div class="box"><div class="sl one">
+      <label><span>Exploration ε</span><input type="range" min="0" max="0.5" step="0.01" value="0.15" /><b></b></label>
+      <label><span>Profondeur k</span><input type="range" min="0" max="6" step="1" value="3" /><b></b></label>
+    </div></div></div>
+  </section>
+  <section class="dm o0"><h3>Mixte : un curseur sur le côté (<code>side</code>), l'autre au-dessus</h3>
+    <div class="widget"><div class="box"><div class="sl one">
+      <label class="side"><span>Itération k</span><input type="range" min="0" max="40" step="1" value="3" /><b></b></label>
+      <label><span>Exploration ε</span><input type="range" min="0" max="0.5" step="0.01" value="0.15" /><b></b></label>
+    </div></div></div>
+  </section>
+
+  <h2>Mise en page des widgets</h2>
+  <p><b>Écarté le 21 octobre 2026</b> : widget en trois niveaux (boîte grise des contrôles au-dessus, cartes sable pour le calcul, blanches pour les graphiques, ardoise pour les indicateurs, sur le fond de la page). Plus lisible par morceaux, mais l'ensemble ne se lisait plus comme un seul élément. <b>Retenu</b> : la carte blanche compacte et bordée (contrôles en haut, puis le contenu), les boutons gardant un léger relief et les curseurs le style « Segments ».</p>
+
+  <h2>Principes de design</h2>
+  <p>Validé le 21 octobre 2026 (écrit dans <code>CLAUDE.md</code>), sauf l'emboîtement en cartes teintées (écarté, voir ci-dessus). Gris par défaut, couleur pour ce qu'on doit regarder, au plus deux séries colorées par graphique, étiquettes directes plutôt que légende, même chose = même apparence partout. Une couleur ne veut dire qu'une chose <b>dans un cours</b> : ce tableau fixe la correspondance.</p>
+
+  <h3 class="dsn-h">Couleur et sens, par cours</h3>
+  <div class="dsn-pal">
+    {palettes.map((p) => (
+      <div class="dsn-row">
+        <div class="dsn-c">{p.c}</div>
+        <div class="dsn-s">{p.s.map(([v, t]) => <span class="dsn-chip"><i style={`background:var(${v})`}></i>{t}</span>)}</div>
+      </div>
+    ))}
+  </div>
+
+  <h3 class="dsn-h">Graphique : avant et après</h3>
+  <p class="dsn-n">Courbes d'illustration (pas un vrai ajustement), pour montrer la présentation.</p>
+  <div class="dsn-ba">
+    <div>
+      <div class="dsn-t">Avant : quatre séries colorées, légende à part</div>
+      <p class="dsn-lg"><span><i style="background:var(--a-act)"></i>cible, « droite »</span><span><i style="background:var(--text-2)"></i>cible, « gauche »</span><span><i class="ln" style="background:var(--a-act)"></i>Q ajusté, « droite »</span><span><i class="ln" style="background:var(--text-2)"></i>Q ajusté, « gauche »</span><span><i class="ln dash"></i>Q optimal de « droite »</span></p>
+      <svg viewBox={`0 0 ${CW} ${CH}`} class="dsn-svg" set:html={before} />
+    </div>
+    <div>
+      <div class="dsn-t">Après : une série colorée, étiquettes sur les courbes</div>
+      <svg viewBox={`0 0 ${CW} ${CH}`} class="dsn-svg" set:html={after} />
+    </div>
+  </div>
+
+
+  <h3 class="dsn-h">Widget d'ajustement (chapitre 4) : avant et après</h3>
+  <p class="dsn-n">Mêmes calculs ; proposition : une seule carte pour le graphique, titre et écart dans l'en-tête, pas de légende, note plus courte.</p>
+  <p class="dsn-t">Avant (archivé : <code>components/labo/FitWidgetAvant.astro</code>)</p>
+  <FitWidgetAvant />
+  <p class="dsn-t">Après (retenu, en production dans le chapitre 4 ; ici dans le widget compact blanc)</p>
+  <FitWidget />
+  <h3 class="dsn-h">Échelle typographique</h3>
+  <div class="dsn-ty">
+    <div><span class="dsn-sz">15 px</span><b style="font-size:15px">Titre de widget</b></div>
+    <div><span class="dsn-sz">13 px</span><span style="font-size:13px">Texte courant d'un widget, étiquettes de contrôle</span></div>
+    <div><span class="dsn-sz">12,5 px</span><span style="font-size:12.5px;color:var(--text-2)">Légende de figure et note de widget</span></div>
+    <div><span class="dsn-sz">11 px</span><span style="font-size:11px;color:var(--text-2)">Étiquettes de graphique, graduations</span></div>
+  </div>
+</Base>
+
+<script>
+  document.querySelectorAll<HTMLInputElement>('.dm input[type="range"]').forEach((r) => {
+    const upd = () => { (r.parentElement!.querySelector('b') as HTMLElement).textContent = (+r.value).toFixed(2).replace('.', ','); };
+    r.addEventListener('input', upd); upd();
+  });
+</script>
+
+<style is:global>
+  .dm { margin: 1.4rem 0; }
+  .dm h3 { margin: 0 0 8px; font-size: 15px; }
+  .dm h3 small { font-weight: 400; color: var(--text-2); margin-left: 8px; font-size: 12.5px; }
+  .dm .box { background: color-mix(in srgb, var(--text-2) 15%, transparent); border-radius: 8px; padding: 10px 16px; }
+  .dm .sl { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 28px; }
+  .dm .sl.one { grid-template-columns: 1fr; }
+.dm.o1 { --sl: var(--text); }
+.dm.o1 input[type="range"]:not([data-discrete])::-webkit-slider-runnable-track { height: 4px; border-radius: 4px; box-shadow: none; background: linear-gradient(to right, var(--text) calc(8px + (100% - 16px) * var(--pf)), color-mix(in srgb, var(--text-2) 35%, transparent) 0);  }
+.dm.o1 input[type="range"]:not([data-discrete])::-moz-range-track { height: 4px; border-radius: 4px; box-shadow: none; background: linear-gradient(to right, var(--text) calc(8px + (100% - 16px) * var(--pf)), color-mix(in srgb, var(--text-2) 35%, transparent) 0);  }
+.dm.o1 input[type="range"]:not([data-discrete])::-moz-range-progress { background: transparent; }
+.dm.o1 input[type="range"]:not([data-discrete])::-webkit-slider-thumb { width: 16px; height: 16px; background: var(--surface); border: 2px solid var(--text); border-radius: 50%; box-sizing: border-box; box-shadow: none; margin-top: -6px; }
+.dm.o1 input[type="range"]:not([data-discrete])::-moz-range-thumb { width: 16px; height: 16px; background: var(--surface); border: 2px solid var(--text); border-radius: 50%; box-sizing: border-box; box-shadow: none;  }
+.dm.o3 input[type="range"] { height: 26px; }
+.dm.o3 input[type="range"]:not([data-discrete])::-webkit-slider-runnable-track { height: 10px; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--border); background: linear-gradient(to right, var(--text-2) calc(12px + (100% - 24px) * var(--pf)), var(--surface) 0);  }
+.dm.o3 input[type="range"]:not([data-discrete])::-moz-range-track { height: 10px; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--border); background: linear-gradient(to right, var(--text-2) calc(12px + (100% - 24px) * var(--pf)), var(--surface) 0);  }
+.dm.o3 input[type="range"]:not([data-discrete])::-moz-range-progress { background: transparent; }
+.dm.o3 input[type="range"]:not([data-discrete])::-webkit-slider-thumb { width: 24px; height: 24px; border-radius: 50%; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28); box-sizing: border-box; margin-top: -7px; }
+.dm.o3 input[type="range"]:not([data-discrete])::-moz-range-thumb { width: 24px; height: 24px; border-radius: 50%; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28); box-sizing: border-box;  }
+.dm.o4 input[type="range"] { height: 30px; --tw: 14px; }
+.dm.o4 input[type="range"]:not([data-discrete])::-webkit-slider-runnable-track { height: 2px; border-radius: 2px; box-shadow: none; background: linear-gradient(to right, var(--text) calc(7px + (100% - 14px) * var(--pf)), var(--border) 0);  }
+.dm.o4 input[type="range"]:not([data-discrete])::-moz-range-track { height: 2px; border-radius: 2px; box-shadow: none; background: linear-gradient(to right, var(--text) calc(7px + (100% - 14px) * var(--pf)), var(--border) 0);  }
+.dm.o4 input[type="range"][data-discrete]::-webkit-slider-runnable-track { height: 2px; border-radius: 0; box-shadow: none; background: var(--ticks, none), linear-gradient(var(--border), var(--border));  }
+.dm.o4 input[type="range"][data-discrete]::-moz-range-track { height: 2px; border-radius: 0; box-shadow: none; background: var(--ticks, none), linear-gradient(var(--border), var(--border));  }
+.dm.o4 input[type="range"]::-moz-range-progress { background: transparent; }
+.dm.o4 input[type="range"]::-webkit-slider-thumb { width: 14px; height: 18px; border: none; border-radius: 0; background: var(--text); box-shadow: none; clip-path: polygon(0 0, 100% 0, 50% 100%); margin-top: -17px; }
+.dm.o4 input[type="range"]::-moz-range-thumb { width: 14px; height: 18px; border: none; border-radius: 0; background: var(--text); box-shadow: none; clip-path: polygon(0 0, 100% 0, 50% 100%); transform: translateY(-8px); }
+.dm.o5 input[type="range"][data-discrete] { height: 22px; --tw: 6px; }
+.dm.o5 input[type="range"][data-discrete]::-webkit-slider-runnable-track { height: 10px; border-radius: 0; border-bottom: 1.5px solid var(--text-2); box-shadow: none; background: var(--ticks, none);  }
+.dm.o5 input[type="range"][data-discrete]::-moz-range-track { height: 10px; border-radius: 0; border-bottom: 1.5px solid var(--text-2); box-shadow: none; background: var(--ticks, none);  }
+.dm.o5 input[type="range"][data-discrete]::-moz-range-progress { background: transparent; }
+.dm.o5 input[type="range"][data-discrete]::-webkit-slider-thumb { width: 6px; height: 20px; border-radius: 2px; background: var(--text); border: 1px solid var(--surface); box-shadow: none; box-sizing: border-box; margin-top: -9px; }
+.dm.o5 input[type="range"][data-discrete]::-moz-range-thumb { width: 6px; height: 20px; border-radius: 2px; background: var(--text); border: 1px solid var(--surface); box-shadow: none; box-sizing: border-box;  }
+.dm.o6 input[type="range"][data-discrete] { height: 22px; --tw: 6px; }
+.dm.o6 input[type="range"][data-discrete]::-webkit-slider-runnable-track { height: 10px; border-radius: 0; border-bottom: 1.5px solid var(--text-2); box-shadow: none; background: var(--ticks, none);  }
+.dm.o6 input[type="range"][data-discrete]::-moz-range-track { height: 10px; border-radius: 0; border-bottom: 1.5px solid var(--text-2); box-shadow: none; background: var(--ticks, none);  }
+.dm.o6 input[type="range"][data-discrete]::-moz-range-progress { background: transparent; }
+.dm.o6 input[type="range"][data-discrete]::-webkit-slider-thumb { width: 6px; height: 20px; border-radius: 2px; background: var(--text); border: 1px solid var(--surface); box-shadow: none; box-sizing: border-box; margin-top: -9px; }
+.dm.o6 input[type="range"][data-discrete]::-moz-range-thumb { width: 6px; height: 20px; border-radius: 2px; background: var(--text); border: 1px solid var(--surface); box-shadow: none; box-sizing: border-box;  }
+.dm.o5 input[type="range"]:not([data-discrete])::-webkit-slider-runnable-track { height: 2px; border-radius: 2px; box-shadow: none; background: linear-gradient(to right, var(--text-2) calc(7px + (100% - 14px) * var(--pf)), var(--border) 0);  }
+.dm.o5 input[type="range"]:not([data-discrete])::-moz-range-track { height: 2px; border-radius: 2px; box-shadow: none; background: linear-gradient(to right, var(--text-2) calc(7px + (100% - 14px) * var(--pf)), var(--border) 0);  }
+.dm.o5 input[type="range"]:not([data-discrete])::-moz-range-progress { background: transparent; }
+.dm.o5 input[type="range"]:not([data-discrete])::-webkit-slider-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--surface); border: 2px solid var(--text); box-sizing: border-box; box-shadow: none; margin-top: -6px; }
+.dm.o5 input[type="range"]:not([data-discrete])::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--surface); border: 2px solid var(--text); box-sizing: border-box; box-shadow: none;  }
+.dm.o7 input[type="range"] { height: 22px; --tw: 6px; }
+.dm.o7 input[type="range"]::-webkit-slider-runnable-track { height: 10px; border-radius: 0; border-bottom: 1.5px solid var(--text-2); box-shadow: none; background: var(--ticks, none);  }
+.dm.o7 input[type="range"]::-moz-range-track { height: 10px; border-radius: 0; border-bottom: 1.5px solid var(--text-2); box-shadow: none; background: var(--ticks, none);  }
+.dm.o7 input[type="range"]::-moz-range-progress { background: transparent; }
+.dm.o7 input[type="range"]::-webkit-slider-thumb { width: 6px; height: 20px; border-radius: 2px; background: var(--text); border: 1px solid var(--surface); box-shadow: none; box-sizing: border-box; margin-top: -9px; }
+.dm.o7 input[type="range"]::-moz-range-thumb { width: 6px; height: 20px; border-radius: 2px; background: var(--text); border: 1px solid var(--surface); box-shadow: none; box-sizing: border-box;  }
+.dm.o6 input[type="range"] { height: 20px; --tw: 16px; }
+.dm.o6 input[type="range"]:not([data-discrete])::-webkit-slider-runnable-track { height: 6px; border-radius: 6px; box-shadow: inset 0 0 0 1px var(--border); background: linear-gradient(to right, var(--accent) calc(8px + (100% - 16px) * var(--pf)), var(--surface-2) 0);  }
+.dm.o6 input[type="range"]:not([data-discrete])::-moz-range-track { height: 6px; border-radius: 6px; box-shadow: inset 0 0 0 1px var(--border); background: linear-gradient(to right, var(--accent) calc(8px + (100% - 16px) * var(--pf)), var(--surface-2) 0);  }
+.dm.o6 input[type="range"]:not([data-discrete])::-moz-range-progress { background: transparent; }
+.dm.o6 input[type="range"]:not([data-discrete])::-webkit-slider-thumb { width: 16px; height: 16px; border-radius: 50%; background: var(--accent); border: 3px solid var(--surface); box-shadow: 0 0 0 1px var(--accent); box-sizing: border-box; margin-top: -5px; }
+.dm.o6 input[type="range"]:not([data-discrete])::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: var(--accent); border: 3px solid var(--surface); box-shadow: 0 0 0 1px var(--accent); box-sizing: border-box;  }
+.dm.o8 input[type="range"] { height: 20px; --tw: 16px; }
+.dm.o8 input[type="range"]:not([data-discrete])::-webkit-slider-runnable-track { height: 6px; border-radius: 6px; box-shadow: inset 0 0 0 1px var(--border); background: linear-gradient(to right, var(--accent) calc(8px + (100% - 16px) * var(--pf)), var(--surface-2) 0);  }
+.dm.o8 input[type="range"]:not([data-discrete])::-moz-range-track { height: 6px; border-radius: 6px; box-shadow: inset 0 0 0 1px var(--border); background: linear-gradient(to right, var(--accent) calc(8px + (100% - 16px) * var(--pf)), var(--surface-2) 0);  }
+.dm.o8 input[type="range"]:not([data-discrete])::-moz-range-progress { background: transparent; }
+.dm.o8 input[type="range"]:not([data-discrete])::-webkit-slider-thumb { width: 16px; height: 16px; border-radius: 50%; background: var(--accent); border: 3px solid var(--surface); box-shadow: 0 0 0 1px var(--accent); box-sizing: border-box; margin-top: -5px; }
+.dm.o8 input[type="range"]:not([data-discrete])::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: var(--accent); border: 3px solid var(--surface); box-shadow: 0 0 0 1px var(--accent); box-sizing: border-box;  }
+.dm.o8 { --sl: var(--accent); }
+
+  .dsn-h { margin: 1.6rem 0 8px; font-size: 16px; }
+  .dsn-n { font-size: 12.5px; color: var(--text-2); margin: 0 0 8px; }
+  .dsn-pal { display: flex; flex-direction: column; gap: 6px; }
+  .dsn-row { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 12px; align-items: center; background: color-mix(in srgb, var(--text-2) 7%, transparent); border-radius: 8px; padding: 8px 14px; }
+  .dsn-c { font-size: 13px; font-weight: 600; }
+  .dsn-s { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+  .dsn-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; }
+  .dsn-chip i { width: 14px; height: 14px; border-radius: 4px; display: inline-block; border: 1px solid var(--border); }
+  .dsn-ba { display: grid; grid-template-columns: 1fr; gap: 12px; }
+  .dsn-ba .dsn-svg { max-width: 680px; margin: 0 auto; }
+  .dsn-ba > div { background: var(--surface); border-radius: 8px; padding: 10px 12px; min-width: 0; }
+  .dsn-t { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .dsn-svg { width: 100%; height: auto; display: block; }
+  .dsn-svg text.ct { font: 11px var(--font); fill: var(--text-2); }
+  .dsn-svg text.cl { font: 11.5px var(--font); }
+  .dsn-lg { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11.5px; color: var(--text-2); margin: 0 0 4px; }
+  .dsn-lg span { display: inline-flex; align-items: center; gap: 5px; }
+  .dsn-lg i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dsn-lg i.ln { width: 16px; height: 3px; border-radius: 2px; }
+  .dsn-lg i.dash { background: repeating-linear-gradient(to right, var(--text) 0 4px, transparent 4px 7px); height: 2px; }
+  .dsn-ty { display: flex; flex-direction: column; gap: 6px; background: var(--surface); border-radius: 8px; padding: 10px 14px; }
+  .dsn-ty > div { display: flex; align-items: baseline; gap: 14px; }
+  .dsn-sz { width: 56px; font: 11px var(--mono); color: var(--text-2); }
+  @media (max-width: 760px) { .dsn-ba { grid-template-columns: 1fr; } .dsn-row { grid-template-columns: 1fr; } }
+</style>

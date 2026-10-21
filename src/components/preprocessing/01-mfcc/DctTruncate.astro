@@ -10,7 +10,6 @@
   <svg data-ref="wave" width="100%" role="img" aria-label="Signal d'origine x entier, avec la trame choisie surlignée"></svg>
 
   <div class="ft">La courbe des 40 log-énergies, et sa reconstruction avec les K premiers coefficients</div>
-  <p class="lg"><i class="sq pts"></i>log-énergies (40 valeurs) <i class="sq rec"></i>reconstruction avec K coefficients</p>
   <svg data-ref="rec" width="100%" role="img" aria-label="Log-énergies de Mel et leur reconstruction à partir des premiers coefficients de la DCT"></svg>
 
   <div class="ft">Les coefficients de la DCT <span>(c<sub>0</sub> = niveau général, hors échelle)</span></div>
@@ -57,6 +56,7 @@
       r.forEach((a, i) => { pl += `${X(i).toFixed(1)},${Y(a).toFixed(1)} `; });
       g += `<polyline points="${pl}" fill="none" stroke="var(--p-mel)" stroke-width="2" stroke-linejoin="round"/>`;
       g += `<text x="${ox}" y="${H1 - 4}" class="ax">filtre 1 (graves)</text><text x="${W - 8}" y="${H1 - 4}" text-anchor="end" class="ax">filtre 40 (aigus)</text>`;
+      g += `<text x="${W - 12}" y="${y0 + 12}" text-anchor="end" class="ax" style="fill:var(--p-wave);font-weight:600">● log-énergies (40 valeurs)</text><text x="${W - 12}" y="${y0 + 27}" text-anchor="end" class="ax" style="fill:var(--p-mel);font-weight:600">━ reconstruction avec ${K} coefficients</text>`;
       const s1 = $('rec') as unknown as SVGSVGElement;
       s1.setAttribute('viewBox', `0 0 ${W} ${H1}`);
       s1.innerHTML = g;

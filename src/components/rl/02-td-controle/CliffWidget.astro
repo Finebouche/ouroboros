@@ -1,5 +1,5 @@
 ---
-// Cours RL, chapitre 3 : le monde de la falaise (Sutton & Barto). Deux agents ε-greedy apprennent Q à chaque pas :
+// Cours RL, chapitre 2 : le monde de la falaise (Sutton & Barto). Deux agents ε-greedy apprennent Q à chaque pas :
 // SARSA vise r + γ Q(s′, a′) avec l'action a′ qu'il jouera vraiment, Q-learning vise r + γ max Q(s′, ·).
 // Chaque pas coûte −1 ; tomber dans la falaise coûte −100 et renvoie au départ. α = 0,5, γ = 1.
 import katex from 'katex';
@@ -16,6 +16,7 @@ const F = {
     <label class="sl" title="Probabilité de jouer une action au hasard"><span>Exploration ε</span><input type="range" data-ref="e" min="0" max="0.3" step="0.05" value="0.1" /><b data-ref="e-out"></b></label>
     <div class="fm cfu" set:html={F.u} />
   </div>
+  <div class="cfgrid">
   <div class="cfbox">
     <div class="eh"><b style="color:var(--a-lspi)">SARSA</b><span class="es" data-ref="evS"></span></div>
     <div class="fm" set:html={F.s} /><div class="ef" data-ref="lS"></div>
@@ -25,6 +26,7 @@ const F = {
     <div class="eh"><b style="color:var(--a-fqi)">Q-learning</b><span class="es" data-ref="evQ"></span></div>
     <div class="fm" set:html={F.q} /><div class="ef" data-ref="lQ"></div>
     <svg class="exp cfg" data-ref="svgQ" role="img" aria-label="Monde de la falaise, agent Q-learning : position et chemin glouton"></svg>
+  </div>
   </div>
   <div class="plotrow">
     <svg class="plot" data-ref="svg2" role="img" aria-label="Retour de chaque épisode pendant l'apprentissage, pour SARSA et Q-learning"></svg>
@@ -185,9 +187,11 @@ const F = {
   .cliffw .cfrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 24px; align-items: center; margin-top: 4px; }
   .cliffw .cfrow .sl { grid-template-columns: auto 1fr 34px; gap: 10px; margin: 0; }
   .cliffw .cfu { margin: 0; font-size: 0.85rem; }
-  .cliffw .cfbox { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px 8px; margin-top: 10px; }
-  .cliffw .ef { white-space: pre; overflow-x: auto; min-height: 3em; }
+  .cliffw .cfgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
+  .cliffw .cfbox { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px 8px; min-width: 0; }
+  .cliffw .ef { white-space: pre-wrap; overflow-wrap: anywhere; min-height: 4.6em; font-size: 10px; }
   .cliffw svg.cfg { max-width: 380px; margin: 6px auto 0; }
+  @media (max-width: 700px) { .cliffw .cfgrid { grid-template-columns: 1fr; } }
   .cliffw svg.cfg text.cfl { font: 600 10px var(--font); fill: var(--text); }
   .cliffw svg.cfg text.cfc { font: 10px var(--font); fill: var(--h-py); }
   @media (max-width: 640px) { .cliffw .cfrow { grid-template-columns: 1fr; } }

@@ -4,7 +4,6 @@
 ---
 <div class="widget pcliff hp" data-widget="pcliff">
   <div class="row"><span>Précision :</span><span class="seg" data-ref="pr"></span></div>
-  <p class="lg"><span><i style="background:var(--m-chol)"></i>Cholesky (équations normales)</span><span><i style="background:var(--m-qr)"></i>QR de Householder</span><span><i style="background:var(--m-svd)"></i>SVD (seuil rcond)</span><span class="ref">pointillé : κ·u et κ²·u</span></p>
   <svg data-ref="svg" width="100%" role="img" aria-label="Erreur relative en fonction du conditionnement pour quatre solveurs"></svg>
   <div class="kpis" data-ref="kp"></div>
   <p class="note" data-ref="note"></p>
@@ -37,7 +36,7 @@
         err[1].push(rel(qrSolve(A, b, r), P.xt));
         err[2].push(rel(svdSolve(A, b, r, u), P.xt));
       });
-      const W = 640, ox = 52, oy = 8, pw = W - ox - 10, ph = 250;
+      const W = 640, ox = 52, oy = 8, pw = W - ox - 124, ph = 250;
       const ylo = -16, yhi = 1;
       const X = (e: number) => ox + (e / 16) * pw, Y = (v: number) => oy + (1 - (Math.log10(Math.max(1e-17, Math.min(10, v))) - ylo) / (yhi - ylo)) * ph;
       let g = '';
@@ -55,6 +54,11 @@
         g += `<polyline points="${p}" fill="none" stroke="${COL[i]}" stroke-width="2.2" stroke-linejoin="round"/>`;
         vals.forEach((v, j) => { if (!Number.isFinite(v)) g += `<text x="${X(j)}" y="${Y(10) + 4}" text-anchor="middle" class="x" fill="${COL[i]}">×</text>`; });
       });
+      // étiquettes directes au bout des courbes (écartées d'au moins 15 px), en place d'une légende
+      const labs = NAMES.map((n, i) => ({ t: n, y: Y(Number.isFinite(err[i][16]) ? err[i][16] : 10), c: COL[i] })).sort((p, q) => p.y - q.y);
+      for (let n = 1; n < labs.length; n++) if (labs[n].y - labs[n - 1].y < 15) labs[n].y = labs[n - 1].y + 15;
+      labs.forEach((l) => (g += `<text x="${ox + pw + 8}" y="${(l.y + 4).toFixed(1)}" class="ax lb" style="fill:${l.c}">${l.t}</text>`));
+      g += `<text x="${ox + 8}" y="${oy + 12}" class="ax">pointillés : κ·u (QR, SVD) et κ²·u (Cholesky)</text>`;
       const s = $('svg') as unknown as SVGSVGElement;
       s.setAttribute('viewBox', `0 0 ${W} ${oy + ph + 38}`);
       s.innerHTML = g;
@@ -73,8 +77,7 @@
   .pcliff .row { margin-bottom: 4px; }
   .pcliff .seg { display: inline-flex; gap: 6px; flex-wrap: wrap; }
   .pcliff .seg button { font-size: 13px; padding: 4px 12px; }
-  .pcliff .lg { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--text-2); margin: 4px 0; }
-  .pcliff .lg i { display: inline-block; width: 14px; height: 4px; margin-right: 5px; vertical-align: 3px; border-radius: 2px; }
+  .pcliff svg text.ax.lb { font-weight: 600; font-size: 11.5px; }
   .pcliff svg text.ax { font: 11px var(--font); fill: var(--text-2); }
   .pcliff svg text.ax.hl { fill: var(--hl-text); }
   .pcliff svg text.x { font: 700 13px var(--font); }

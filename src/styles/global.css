@@ -52,6 +52,7 @@
   --a-nac: #a0703f;
   --a-ppo: #b05a6e;
   --a-es: #4f8a5b;
+  --a-act: #8e5aa8;
   /* cours Reservoir computing : état du réservoir, sortie (lecture entraînée) ; entrée en gris --text-2, cible en trait pointillé --text */
   --r-res: #2f8a8a;
   --r-out: #6656c8;
@@ -84,6 +85,7 @@
     --c-w: #8ea5d8;
     --c-reach: #7d786f;
     --c-reach-target: #ecebe5;
+    --c-reach-soft: #4d4a43;
     --c-w-soft: #4f6aa6;
     --c-cache-bg: #233a6b;
     --c-cache-border: #8ea5d8;
@@ -108,6 +110,7 @@
     --a-nac: #d1a06a;
     --a-ppo: #dc9aa9;
     --a-es: #8fc79c;
+    --a-act: #c3a0e0;
     --r-res: #6cc3c3;
     --r-out: #a99cf0;
     --r-p1: #5ba8e0;
@@ -132,11 +135,14 @@ h2 { font-size: 22px; margin-top: 2.2rem; }
 h3 { font-size: 18px; }
 button {
   font: inherit; font-size: 14px; color: var(--text);
-  background: transparent; border: 1px solid var(--border);
+  background: var(--surface); border: 1px solid color-mix(in srgb, var(--text-2) 38%, transparent);
   padding: 6px 12px; border-radius: var(--radius); cursor: pointer;
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--text) 14%, transparent), 0 2px 4px color-mix(in srgb, var(--text) 8%, transparent);
+  transition: box-shadow 0.12s, background 0.12s, transform 0.06s;
 }
-button:hover { background: var(--surface-2); }
-button.active { border-color: var(--accent); color: var(--accent); }
+button:hover { background: var(--surface-2); box-shadow: 0 1px 0 color-mix(in srgb, var(--text) 18%, transparent), 0 3px 6px color-mix(in srgb, var(--text) 12%, transparent); }
+button:active { transform: translateY(1px); box-shadow: 0 0 0 color-mix(in srgb, var(--text) 0%, transparent), inset 0 1px 2px color-mix(in srgb, var(--text) 18%, transparent); }
+button.active { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--surface)); box-shadow: inset 0 1px 2px color-mix(in srgb, var(--text) 14%, transparent); }
 .shell { max-width: 780px; margin: 0 auto; padding: 0 16px 4rem; }
 .site-header { border-bottom: 1px solid var(--border); margin-bottom: 2rem; }
 .site-header .shell { display: flex; align-items: baseline; gap: 1.5rem; padding-bottom: 0; }
@@ -185,6 +191,36 @@ button.active { border-color: var(--accent); color: var(--accent); }
 .widget label:has(> input[type="range"])[hidden] { display: none; }
 .widget label:has(> input[type="range"]) > b { grid-column: 2; grid-row: 1; text-align: right; color: var(--text); font-weight: 500; }
 .widget label:has(> input[type="range"]) > input[type="range"] { grid-column: 1 / -1; grid-row: 2; width: 100%; }
+/* style des curseurs (essai « Segments », labo : /labo/) : valeur continue = piste en 24 segments (--segs, calculé par le script de Base.astro),
+   barrette verticale ; valeur discrète = barre à points, un par valeur (--dots), rond creux, choisie par le script (data-discrete, --n) ;
+   --pf : position, de 0 à 1 ; --sl : couleur de la partie parcourue et du rond des curseurs discrets (variable de curseur, distincte de --accent) */
+input[type="range"] { -webkit-appearance: none; appearance: none; background: transparent; height: 22px; cursor: pointer; --pf: 0.5; --n: 10; --tw: 6px; --sl: var(--text-2); }
+input[type="range"]::-webkit-slider-runnable-track { height: 8px; border-radius: 0; background: var(--segs, none); box-shadow: none; }
+input[type="range"]::-moz-range-track { height: 8px; border-radius: 0; background: var(--segs, none); box-shadow: none; }
+input[type="range"]::-moz-range-progress { background: transparent; height: 8px; }
+input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 6px; height: 22px; margin-top: -7px; border-radius: 3px; background: var(--text); border: none; box-shadow: none; }
+input[type="range"]::-moz-range-thumb { width: 6px; height: 22px; border-radius: 3px; background: var(--text); border: none; box-shadow: none; }
+input[type="range"]:focus-visible { outline: none; }
+input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 40%, transparent); }
+input[type="range"]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 40%, transparent); }
+input[type="range"][data-discrete] { height: 24px; --tw: 20px; --dot: color-mix(in srgb, var(--text) 60%, transparent); }
+input[type="range"][data-discrete]::-webkit-slider-runnable-track { height: 6px; border-radius: 6px; background: var(--dots, none), linear-gradient(to right, var(--sl) calc(10px + (100% - 20px) * var(--pf)), var(--surface-2) 0); box-shadow: inset 0 0 0 1px var(--border); }
+input[type="range"][data-discrete]::-moz-range-track { height: 6px; border-radius: 6px; background: var(--dots, none), linear-gradient(to right, var(--sl) calc(10px + (100% - 20px) * var(--pf)), var(--surface-2) 0); box-shadow: inset 0 0 0 1px var(--border); }
+input[type="range"][data-discrete]::-moz-range-progress { background: transparent; height: 6px; }
+input[type="range"][data-discrete]::-webkit-slider-thumb { width: 20px; height: 20px; margin-top: -7px; border-radius: 50%; background: var(--surface); border: 4px solid var(--sl); box-sizing: border-box; box-shadow: none; }
+input[type="range"][data-discrete]::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: var(--surface); border: 4px solid var(--sl); box-sizing: border-box; box-shadow: none; }
+input[type="range"][data-discrete]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
+input[type="range"][data-discrete]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
+/* mise en forme commune des figures et des widgets d'un chapitre : mêmes marges, même légende */
+article > figure[class], article > .widget.widget { margin-top: 1.5rem; margin-bottom: 1.5rem; }
+article figure[class] > figcaption, .widget.widget .note { font-size: 12.5px; line-height: 1.55; margin: 10px 0 0; color: var(--text-2); }
+/* nom du curseur à gauche, valeur calée à droite au-dessus de la piste, quel que soit le gabarit propre au widget */
+.widget.widget label:has(> input[type="range"]) { grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; row-gap: 4px; }
+/* option : nom et valeur sur les côtés du curseur, sur une seule ligne (classe `side` sur le label, ou `sl-side` sur le widget ; colonne du nom de largeur fixe, pour que les pistes s'alignent) ; sans l'option, ils sont au-dessus */
+.widget.widget :is(label.side, .sl-side label):has(> input[type="range"]) { grid-template-columns: 8.5em minmax(0, 1fr) 3.4em; align-items: center; column-gap: 12px; row-gap: 0; }
+.widget.widget :is(label.side, .sl-side label):has(> input[type="range"]) > span { grid-column: 1; grid-row: 1; }
+.widget.widget :is(label.side, .sl-side label):has(> input[type="range"]) > input[type="range"] { grid-column: 2; grid-row: 1; }
+.widget.widget :is(label.side, .sl-side label):has(> input[type="range"]) > b { grid-column: 3; grid-row: 1; text-align: right; }
 /* conteneurs de curseurs : plusieurs par ligne quand il y a la place (poids nul : un widget peut imposer ses colonnes) */
 :where(.widget) :where(div.sl, .sliders) { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); column-gap: 24px; }
 .widget .kpis { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
@@ -255,6 +291,8 @@ article > table tbody td:last-child { border-radius: 0 8px 8px 0; }
 .rlw .kpis span { font-size: 13px; color: var(--text-2); }
 .rlw .kpis b { font-size: 15px; font-weight: 500; }
 .rlw svg { width: 100%; height: auto; display: block; margin: 8px auto; }
+/* les racines de KaTeX sont des svg : ne pas leur appliquer la règle précédente */
+.rlw .katex svg { height: inherit; margin: 0; }
 .rlw svg.clk { max-width: 420px; cursor: pointer; }
 .rlw svg text.gv { font: 600 13px var(--font); fill: var(--text); }
 .rlw svg text.vs { font: 10.5px var(--font); fill: var(--text-2); }

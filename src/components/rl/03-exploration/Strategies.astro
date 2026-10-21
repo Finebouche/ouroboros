@@ -1,0 +1,63 @@
+---
+// Cours RL, chapitre 3 : les stratégies d'exploration d'un bandit, en tableau. Même mise en forme que Families.astro (chapitre 1) :
+// stratégie et règle de choix à gauche (couleur de la stratégie dans les widgets, bandit.ts), où on la trouve, pour et contre.
+import katex from 'katex';
+import { COLORS } from './bandit';
+const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
+const rows: { name: string; col: string; rule: string; where: string; pro: string; con: string }[] = [
+  { name: 'Glouton', col: COLORS.glouton, rule: tx('a = \\arg\\max_a Q(a)'),
+    where: 'Pour jouer la politique apprise, une fois l\'apprentissage fini.',
+    pro: 'ne perd rien à explorer', con: 'se fige sur un bras moyen après quelques récompenses chanceuses' },
+  { name: 'ε-greedy', col: COLORS.eps, rule: 'au hasard avec la probabilité ' + tx('\\varepsilon') + ', sinon glouton',
+    where: 'Contrôle tabulaire (SARSA, Q-learning), DQN ; souvent avec ' + tx('\\varepsilon') + ' décroissant.',
+    pro: 'simple, s\'ajoute à toute estimation de ' + tx('Q') + ' ; ' + tx('\\varepsilon') + ' décroissant : condition de convergence de SARSA (chapitre 2)',
+    con: 'aveugle : essaie autant un bras nul qu\'un bras prometteur, et coûte encore quand tout est connu' },
+  { name: 'Softmax', col: COLORS.soft, rule: tx('P(a) \\propto e^{Q(a)/\\tau}'),
+    where: 'Politiques du gradient de politique à actions discrètes (REINFORCE, A2C, PPO), sur des préférences apprises.',
+    pro: 'les bras clairement mauvais sont rarement joués ; la politique est dérivable, ce que demande le gradient',
+    con: 'un réglage de plus, la <b>température</b> ' + tx('\\tau') + ' (élevée : bras équiprobables ; basse : glouton)' },
+  { name: 'Optimiste', col: COLORS.opt, rule: tx('Q_0') + ' au-dessus de toute valeur possible',
+    where: 'Tables, avec le glouton ou ε-greedy ; dans un MDP, l\'optimisme se propage d\'un état à l\'autre (section 3).',
+    pro: 'chaque essai déçoit, donc tout est essayé, sans réglage', con: 'ne dure qu\'au début ; inutile si les récompenses changent' },
+  { name: 'UCB', col: COLORS.ucb, rule: tx('a = \\arg\\max_a Q(a) + c\\sqrt{\\ln t / N(a)}'),
+    where: 'Bandits ; MCTS (UCT), à chaque nœud de l\'arbre (section 4).',
+    pro: '<b>optimisme face à l\'incertitude</b> (<i>optimism in the face of uncertainty</i>) : l\'exploration va vers ce qu\'on connaît mal ; regret qui croît comme ' + tx('\\ln t') + ' (Auer et al.)',
+    con: 'un compteur ' + tx('N(a)') + ' par action : une table' },
+  { name: 'Thompson sampling', col: 'var(--text)', rule: 'tirer une moyenne plausible de chaque bras dans sa loi a posteriori, jouer le maximum',
+    where: 'Bandits en ligne (publicité, recommandation).',
+    pro: 'dirigée comme UCB, sans bonus à régler', con: 'demande une loi a posteriori de chaque moyenne (non montré ici)' },
+];
+---
+<figure class="xs">
+  <div class="sr shd">
+    <div>stratégie <span>· règle de choix</span></div>
+    <div>où on la trouve</div>
+    <div>pourquoi</div>
+  </div>
+  {rows.map((r, i) => (
+    <div class={`sr sg${i % 2 ? ' alt' : ''}`}>
+      <div class="sn"><b style={`color:${r.col}`}>{r.name}</b><small set:html={r.rule} /></div>
+      <div class="sw" set:html={r.where} />
+      <div class="sp"><div><i>+</i><span set:html={r.pro} /></div><div><i>−</i><span set:html={r.con} /></div></div>
+    </div>
+  ))}
+</figure>
+
+<style is:global>
+  .xs { margin: 1.4rem 0; font-family: var(--font); }
+  .xs .sr { display: grid; grid-template-columns: 190px minmax(0, 1fr) minmax(0, 1.3fr); column-gap: 16px; align-items: center; }
+  .xs .shd { padding: 0 14px 8px; font-size: 11.5px; font-weight: 600; color: var(--text); }
+  .xs .shd span { font-weight: 400; color: var(--text-2); }
+  .xs .sg { border-radius: 8px; background: color-mix(in srgb, var(--text-2) 7%, transparent); padding: 10px 14px; margin-bottom: 6px; }
+  .xs .sg.alt { background: color-mix(in srgb, var(--text-2) 3.5%, transparent); }
+  .xs .sn b { display: block; font-size: 13.5px; font-weight: 600; }
+  .xs .sn small { display: block; font-size: 11.5px; color: var(--text-2); margin-top: 3px; line-height: 1.4; }
+  .xs .sn small .katex { font-size: 1.05em; color: var(--text); }
+  .xs .sw { font-size: 12.5px; color: var(--text); line-height: 1.45; }
+  .xs .sp { font-size: 12.5px; color: var(--text); line-height: 1.45; display: flex; flex-direction: column; gap: 3px; }
+  .xs .sp > div { display: grid; grid-template-columns: 12px 1fr; }
+  .xs .sp > div > i { font-style: normal; font-weight: 600; color: var(--text-2); }
+  .xs .sp b { font-weight: 600; }
+  .xs .katex { font-size: 1em; }
+  @media (max-width: 680px) { .xs .sr { grid-template-columns: 1fr; row-gap: 6px; } .xs .shd { display: none; } }
+</style>

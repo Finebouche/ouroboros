@@ -5,7 +5,7 @@
 <div class="widget roof hp" data-widget="roof">
   <div class="row"><span>Machine :</span><span class="seg" data-ref="hw"></span></div>
   <div class="row"><span>Calcul en :</span><span class="seg" data-ref="pr"></span></div>
-  <div class="sl">
+  <div class="sl sl-side">
     <label><span>Chaîne de k opérations élément par élément</span><input type="range" data-ref="k" min="1" max="32" step="1" value="8" /><b data-ref="k-out"></b></label>
     <label><span>Lot B regroupé par vmap</span><input type="range" data-ref="b" min="0" max="10" step="1" value="6" /><b data-ref="b-out"></b></label>
     <label><span>Taille n du GEMM (n × n × n)</span><input type="range" data-ref="n" min="5" max="13" step="1" value="10" /><b data-ref="n-out"></b></label>
@@ -135,7 +135,13 @@
   .roof .seg { display: inline-flex; gap: 6px; flex-wrap: wrap; }
   .roof .seg button { font-size: 13px; padding: 4px 12px; }
   .roof .seg button:disabled { opacity: 0.35; cursor: default; }
-  .roof .sl { display: grid; gap: 4px; margin: 8px 0; }
+  .roof .sl { display: grid; grid-template-columns: 1fr; gap: 4px; margin: 8px 0; }
+  .widget.roof.hp .sl.sl-side label:has(> input[type="range"]) { grid-template-columns: 20em minmax(0, 1fr) 3.4em; }
+  @media (max-width: 600px) {
+    .widget.roof.hp .sl.sl-side label:has(> input[type="range"]) { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
+    .widget.roof.hp .sl.sl-side label:has(> input[type="range"]) > input[type="range"] { grid-column: 1 / -1; grid-row: 2; }
+    .widget.roof.hp .sl.sl-side label:has(> input[type="range"]) > b { grid-column: 2; }
+  }
   .roof .sl label { display: grid; grid-template-columns: 280px 1fr 50px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); }
   .roof .sl b { text-align: right; color: var(--text); font-weight: 500; }
   .roof .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }

@@ -42,7 +42,6 @@
     <div class="row"><span>Zéros ajoutés :</span><span class="seg" data-ref="zc"></span></div>
     <label class="posl"><span>Écart entre les deux sons</span><input type="range" data-ref="dc" min="10" max="200" step="5" value="40" /><b data-ref="dc-out"></b></label>
     <svg data-ref="svgc" width="100%" role="img" aria-label="Spectre de deux sons proches, autour de 1 kHz"></svg>
-    <p class="lg"><i class="sq pts"></i>spectre calculé (un point par case) <i class="sq exact"></i>spectre exact (autant de zéros qu'on veut)</p>
     <div class="kpis">
       <div><span>Séparation minimale ≈ f<sub>s</sub> / L</span><b data-ref="c1"></b></div>
       <div><span>Écart entre les deux sons</span><b data-ref="c2"></b></div>
@@ -199,6 +198,7 @@
       const sep = SR / L, bx0 = FXs(1000 - sep / 2), bx1 = FXs(1000 + sep / 2), by = YS(0) + 12;
       g += `<path d="M${bx0} ${by - 4}V${by}H${bx1}V${by - 4}" fill="none" stroke="var(--text)" stroke-width="1.2"/><text x="${(bx0 + bx1) / 2}" y="${by + 13}" text-anchor="middle" class="ax">f<tspan dy="3" font-size="8">s</tspan><tspan dy="-3"> / L = ${fr(sep)} Hz</tspan></text>`;
       for (let f = lo; f <= hi; f += 100) g += `<text x="${FXs(f)}" y="${H - 2}" text-anchor="${f === hi ? 'end' : 'middle'}" class="ax">${f}${f === hi ? ' Hz' : ''}</text>`;
+      g += `<text x="${ox + 8}" y="${y0 + 12}" class="ax" style="fill:var(--p-mel);font-weight:600">● spectre calculé (un point par case)</text><text x="${ox + 8}" y="${y0 + 27}" class="ax" style="fill:var(--text-2);font-weight:600">━ spectre exact (autant de zéros qu'on veut)</text>`;
       svgOf('svgc').setAttribute('viewBox', `0 0 ${W} ${H}`);
       svgOf('svgc').innerHTML = g;
 

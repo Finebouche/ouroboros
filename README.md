@@ -42,6 +42,10 @@ src/
 
 Les imports dans les `.mdx` utilisent l'alias `@/` (= `src/`) : `import Quiz from '@/components/shared/Quiz.astro';`.
 
+## Labo
+
+`src/pages/labo.astro` (`/labo/`) : bibliothèque d'essais de présentation (curseurs pour l'instant), avec le style retenu et les variantes écartées. Non liée depuis le site. Pour un nouvel essai, ajouter une section avec son style, préfixé par une classe propre.
+
 ## Ajouter un cours
 
 1. Ajouter une entrée dans `COURSES` (`src/lib/courses.ts`) : la clé est le nom du dossier.

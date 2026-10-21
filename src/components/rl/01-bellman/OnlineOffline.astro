@@ -1,0 +1,59 @@
+---
+// Cours RL, chapitre 1 : apprendre en ligne ou hors ligne. Deux rangées de même gabarit.
+// En ligne : la politique joue, produit des transitions, apprend, et la nouvelle politique produit de nouvelles données (boucle fermée) ;
+// à droite, un état et ses quatre actions : la dernière peut être essayée. Hors ligne : un lot enregistré une fois, une seule direction,
+// le retour vers l'environnement est coupé ; à droite, la même action reste « ? ».
+const T = 'var(--text)', T2 = 'var(--text-2)';
+const node = (x: number, y: number, w: number, t1: string, t2 = '') =>
+  `<rect x="${x}" y="${y}" width="${w}" height="44" rx="9" fill="var(--surface)" stroke="${T}" stroke-width="1.2"/>` +
+  `<text x="${x + w / 2}" y="${y + (t2 ? 20 : 26)}" text-anchor="middle" class="oh">${t1}</text>` + (t2 ? `<text x="${x + w / 2}" y="${y + 35}" text-anchor="middle" class="os">${t2}</text>` : '');
+const arr = (d: string, dashed = false) => `<path d="${d}" fill="none" stroke="${dashed ? T2 : T}" stroke-width="1.3"${dashed ? ' stroke-dasharray="4 3"' : ''} marker-end="url(#ar)"/>`;
+const lab = (x: number, y: number, t: string) => `<text x="${x}" y="${y}" text-anchor="middle" class="os">${t}</text>`;
+// transition : point → point
+const chip = (x: number, y: number) => `<circle cx="${x}" cy="${y}" r="3.2" fill="${T2}"/><line x1="${x + 4}" y1="${y}" x2="${x + 16}" y2="${y}" stroke="${T2}" stroke-width="1.2" marker-end="url(#ar)"/><circle cx="${x + 21}" cy="${y}" r="3.2" fill="${T2}"/>`;
+const data = (x: number, y: number, title: string) => {
+  let o = `<rect x="${x}" y="${y}" width="150" height="72" rx="9" fill="${T2}" fill-opacity="0.08" stroke="${T2}" stroke-width="1"/><text x="${x + 75}" y="${y + 17}" text-anchor="middle" class="os">${title}</text>`;
+  for (let i = 0; i < 6; i++) o += chip(x + 14 + (i % 3) * 44, y + 38 + Math.floor(i / 3) * 20);
+  return o;
+};
+// un état, quatre actions ; la dernière (←) est essayée (en ligne) ou jamais jouée (hors ligne)
+const star = (cx: number, cy: number, tried: boolean) => {
+  const ends: [number, number][] = [[cx, cy - 34], [cx + 34, cy], [cx, cy + 34], [cx - 34, cy]];
+  let o = `<circle cx="${cx}" cy="${cy}" r="6" fill="${T}"/>`;
+  ends.forEach(([x, y], k) => {
+    const left = k === 3, miss = left && !tried;
+    const ux = (x - cx) / 34, uy = (y - cy) / 34;
+    o += `<line x1="${cx + ux * 8}" y1="${cy + uy * 8}" x2="${x - ux * 5}" y2="${y - uy * 5}" stroke="${miss ? T2 : 'var(--a-act)'}" stroke-width="${left && tried ? 2.2 : 1.3}"${miss ? ' stroke-dasharray="3 3"' : ''}/>`;
+    o += miss ? `<circle cx="${x}" cy="${y}" r="5" fill="var(--surface)" stroke="${T2}" stroke-dasharray="2 2"/><text x="${x}" y="${y + 3.5}" text-anchor="middle" class="os">?</text>` : `<circle cx="${x}" cy="${y}" r="4.5" fill="var(--a-act)"/>`;
+  });
+  return o;
+};
+const defs = `<defs><marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="${T2}"/></marker></defs>`;
+const on = defs +
+  `<text x="6" y="46" class="oT">En ligne</text><text x="6" y="64" class="os">l'agent produit</text><text x="6" y="78" class="os">ses données</text>` +
+  node(136, 34, 90, 'politique π') + arr('M228,56 L280,56') + lab(254, 48, 'joue') +
+  data(282, 20, 'transitions (s, a, r, s′)') + arr('M434,56 L486,56') + lab(460, 48, 'apprend') +
+  node(488, 34, 90, 'politique π′') +
+  arr('M533,80 L533,112 L181,112 L181,82') + lab(357, 128, 'la nouvelle politique produit de nouvelles données') +
+  star(678, 56, true) + lab(678, 110, '← essayée : donnée ajoutée');
+const off = defs +
+  `<text x="6" y="46" class="oT">Hors ligne</text><text x="6" y="64" class="os">un lot enregistré</text><text x="6" y="78" class="os">une fois</text>` +
+  node(136, 34, 90, 'autre agent', 'dans le passé') + arr('M228,56 L280,56') + lab(254, 48, 'a joué') +
+  data(282, 20, 'lot (s, a, r, s′)') + arr('M434,56 L486,56') + lab(460, 48, 'apprend') +
+  node(488, 34, 90, 'politique π') +
+  arr('M533,80 L533,112 L181,112 L181,82', true) + `<rect x="338" y="102" width="38" height="20" fill="var(--surface)"/><text x="357" y="117" text-anchor="middle" class="oh">✕</text>` + lab(357, 128, 'aucune interaction : pas de nouvelle donnée') +
+  star(678, 56, false) + lab(678, 110, '← jamais jouée : inconnue');
+---
+<figure class="oo">
+  <svg viewBox="0 0 760 136" role="img" aria-label="En ligne : la politique joue, produit des transitions, apprend, et la nouvelle politique produit de nouvelles données ; l'action essayée ajoute une donnée" set:html={on} />
+  <svg viewBox="0 0 760 136" role="img" aria-label="Hors ligne : un lot de transitions enregistrées par un autre agent alimente l'apprentissage, sans retour vers l'environnement ; l'action jamais jouée reste inconnue" set:html={off} />
+</figure>
+
+<style is:global>
+  .oo { margin: 1.4rem 0; font-family: var(--font); }
+  .oo svg { width: 100%; height: auto; display: block; }
+  .oo svg + svg { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+  .oo svg text.oT { font: 600 15px var(--font); fill: var(--text); }
+  .oo svg text.oh { font: 600 12px var(--font); fill: var(--text); }
+  .oo svg text.os { font: 11px var(--font); fill: var(--text-2); }
+</style>

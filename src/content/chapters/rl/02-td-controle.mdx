@@ -29,6 +29,8 @@ Les deux méthodes ne diffèrent que par l'action qu'elles supposent en $s'$ :
 - **SARSA** tire son nom des cinq éléments de sa mise à jour, $(s, a, r, s', a')$. Sa cible utilise l'action $a'$ qu'il va réellement jouer, exploration comprise : il apprend la valeur de **la politique qu'il suit**.
 - **Q-learning** prend le maximum en $s'$, quelle que soit l'action jouée ensuite : il apprend la valeur de **la politique optimale**, tout en jouant autre chose. Ses données peuvent venir de n'importe quel comportement, à condition de couvrir les situations utiles : c'est ce qui permet à FQI et à DQN (chapitre 4) de réutiliser des transitions anciennes.
 
+<Refs items={[["SARSA : On-line Q-learning using connectionist systems (rapport technique CUED/F-INFENG/TR 166)", "Rummery & Niranjan", 1994, "https://mi.eng.cam.ac.uk/reports/abstracts/rummery_tr166.html"], ["Q-learning : Q-learning (Machine Learning 8, 279–292)", "Watkins & Dayan", 1992, "10.1007/BF00992698"]]} />
+
 Les deux convergent vers $Q^\star$ dans le cas d'une table, si toutes les paires (état, action) sont essayées indéfiniment et si le pas $\alpha$ décroît assez lentement ; pour SARSA, il faut en plus que l'exploration diminue peu à peu (Watkins & Dayan pour Q-learning, Sutton & Barto pour SARSA).
 
 ## 3. La falaise : quand l'exploration coûte cher
@@ -39,7 +41,7 @@ L'exemple classique de Sutton & Barto : il faut aller de S au but en longeant un
 
 - **Ce qu'ils apprennent** : Q-learning trouve le plus court chemin, le long de la falaise. SARSA apprend le plus souvent le chemin sûr, plus haut.
 - **Pourquoi** : SARSA évalue la politique qu'il suit vraiment, et cette politique explore ; le long du bord, une action au hasard sur dix risque la chute. Il en tient compte et s'écarte. Q-learning évalue la politique sans exploration, pour laquelle le bord n'est pas dangereux.
-- **Ce que ça coûte** : pendant l'apprentissage, c'est SARSA qui obtient les meilleurs retours. Avec $\varepsilon = 0{,}1$ et ces réglages, le retour moyen des épisodes 200 à 300 est d'environ $-27$ pour SARSA et $-50$ pour Q-learning, qui tombe plus souvent.
+- **Ce que ça coûte** : pendant l'apprentissage, c'est SARSA qui obtient les meilleurs retours. Avec $\varepsilon = 0{,}1$ et ces réglages, le retour moyen des épisodes 200 à 300 est d'environ $-28$ pour SARSA et $-50$ pour Q-learning, qui tombe plus souvent.
 - **Sans exploration** ($\varepsilon = 0$), les deux cibles se confondent et les deux trouvent le plus court chemin.
 
 Le bon choix dépend donc de ce qu'on veut : bien jouer pendant l'apprentissage (SARSA), ou apprendre la meilleure politique et l'utiliser ensuite sans exploration (Q-learning).
@@ -59,7 +61,7 @@ Comme TD(0) au chapitre 1, SARSA et Q-learning attribuent le crédit par la cibl
 
 </div>
 
-<Refs items={[["Q-learning (Machine Learning 8, 279–292)", "Watkins & Dayan", 1992, "10.1007/BF00992698"], ["Reinforcement Learning: An Introduction, 2e éd. (version de travail de 2015 ; chapitre 6 : apprentissage TD)", "Sutton & Barto", 2015, "https://web.stanford.edu/class/psych209/Readings/SuttonBartoIPRLBook2ndEd.pdf"]]} />
+<Refs items={[["Reinforcement Learning: An Introduction, 2e éd. (version de travail de 2015 ; chapitre 6 : apprentissage TD)", "Sutton & Barto", 2015, "https://web.stanford.edu/class/psych209/Readings/SuttonBartoIPRLBook2ndEd.pdf"]]} />
 
 <Quiz>
 

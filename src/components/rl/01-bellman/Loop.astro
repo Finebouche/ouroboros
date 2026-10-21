@@ -5,8 +5,8 @@ const items = ['s₀', 'a₀', 'r₁', 's₁', 'a₁', 'r₂', 's₂', '…'];
 ---
 <figure class="rlf rlf-loop" data-widget="loop">
   <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Boucle agent–environnement : l'agent choisit une action, l'environnement renvoie un nouvel état et une récompense">
-    <defs><marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--text-2)" /></marker></defs>
-    <rect data-ref="agent" class="box" x="20" y="40" width="170" height="80" rx="10" fill="var(--a-fqi)" fill-opacity="0.18" stroke="var(--a-fqi)" />
+    <defs><marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--text-2)" /></marker><marker id="aha" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="var(--a-act)" /></marker></defs>
+    <rect data-ref="agent" class="box" x="20" y="40" width="170" height="80" rx="10" fill="var(--a-act)" fill-opacity="0.18" stroke="var(--a-act)" />
     <text x="105" y="72" text-anchor="middle" class="t">Agent</text>
     <text x="105" y="92" text-anchor="middle" class="s">choisit une action</text>
     <text x="105" y="108" text-anchor="middle" class="s">selon sa politique π</text>
@@ -14,8 +14,8 @@ const items = ['s₀', 'a₀', 'r₁', 's₁', 'a₁', 'r₂', 's₂', '…'];
     <text x="495" y="72" text-anchor="middle" class="t">Environnement</text>
     <text x="495" y="92" text-anchor="middle" class="s">change d'état (règles P)</text>
     <text x="495" y="108" text-anchor="middle" class="s">et donne une récompense</text>
-    <line x1="192" y1="62" x2="408" y2="62" stroke="var(--text-2)" stroke-width="1.6" marker-end="url(#ah)" />
-    <text x="300" y="54" text-anchor="middle" class="l">action aₜ</text>
+    <line x1="192" y1="62" x2="408" y2="62" stroke="var(--a-act)" stroke-width="1.6" marker-end="url(#aha)" />
+    <text x="300" y="54" text-anchor="middle" class="l act">action aₜ</text>
     <line x1="408" y1="100" x2="192" y2="100" stroke="var(--text-2)" stroke-width="1.6" marker-end="url(#ah)" />
     <text x="300" y="118" text-anchor="middle" class="l">état sₜ₊₁, récompense rₜ₊₁</text>
     <g data-ref="token" class="token" style="opacity:0">
@@ -75,7 +75,7 @@ const items = ['s₀', 'a₀', 'r₁', 's₁', 'a₁', 'r₂', 's₂', '…'];
   .rlf svg .t { font: 600 14px var(--font); fill: var(--text); }
   .rlf svg .s { font: 12px var(--font); fill: var(--text-2); }
   .rlf svg .l { font: 13px var(--font); fill: var(--text); }
-  .rlf svg .l.act { fill: var(--a-fqi); font-weight: 600; }
+  .rlf svg .l.act { fill: var(--a-act); font-weight: 600; }
   .rlf svg .l.rew { fill: var(--hl-stroke); font-weight: 600; }
   .rlf figcaption { font-size: 13px; color: var(--text-2); line-height: 1.5; margin-top: 6px; }
   .rlf-loop { position: relative; }

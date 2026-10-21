@@ -23,5 +23,46 @@ const courseTitle = course ? COURSES[course].title : 'Ouroboros';
     <main class:list={["shell", { wide }]}>
       <slot />
     </main>
+    <script>
+      // curseurs : position (--pf) pour la partie parcourue, et style gradué (data-discrete, --n) quand la valeur est discrète :
+      // entre 2 et 20 pas entre le minimum et le maximum
+      const upd = (r: HTMLInputElement) => {
+        const mn = +r.min || 0, mx = r.max === '' ? 100 : +r.max, st = +r.step || 1, n = Math.round((mx - mn) / st);
+        r.style.setProperty('--pf', mx > mn ? String((+r.value - mn) / (mx - mn)) : '0');
+        const discrete = n >= 2 && n <= 20;
+        r.toggleAttribute('data-discrete', discrete);
+        if (discrete) { r.style.setProperty('--n', String(n)); marks(r); } else segs(r);
+      };
+      // repères d'un curseur discret (--dots : points, --ticks : graduations) : un par valeur, placés en pixels sur la course du curseur
+      // (la largeur de la piste moins celle du rond), donc valables dans tous les navigateurs
+      const marks = (r: HTMLInputElement) => {
+        const n = +r.style.getPropertyValue('--n'), W = r.clientWidth;
+        if (!n || !W) return;
+        const tw = parseFloat(getComputedStyle(r).getPropertyValue('--tw')) || 20;
+        const xs = Array.from({ length: n + 1 }, (_, k) => tw / 2 + (k * (W - tw)) / n);
+        r.style.setProperty('--dots', xs.map((x) => `radial-gradient(circle at ${x.toFixed(1)}px 50%, var(--dot) 0 2.5px, transparent 3px)`).join(','));
+        r.style.setProperty('--ticks', xs.map((x) => `linear-gradient(var(--tick, var(--text-2)), var(--tick, var(--text-2))) ${(x - 0.5).toFixed(1)}px 100% / 1px 7px no-repeat`).join(','));
+      };
+      // piste continue en 24 segments au plus (au moins 6 px chacun, moins si le curseur est étroit) : ceux qui précèdent le curseur sont foncés, les autres clairs (--segs)
+      const segs = (r: HTMLInputElement) => {
+        const W = r.clientWidth, G = 3, N = Math.max(6, Math.min(24, Math.floor((W + G) / 9)));
+        if (!W) return;
+        const tw = parseFloat(getComputedStyle(r).getPropertyValue('--tw')) || 6, w = (W - (N - 1) * G) / N;
+        const pf = parseFloat(r.style.getPropertyValue('--pf')) || 0, thumb = tw / 2 + pf * (W - tw);
+        r.style.setProperty('--segs', Array.from({ length: N }, (_, k) => {
+          const x = k * (w + G), on = x + w / 2 <= thumb;
+          const c = on ? 'var(--sl)' : 'color-mix(in srgb, var(--text-2) 25%, transparent)';
+          return `linear-gradient(${c}, ${c}) ${x.toFixed(1)}px 0 / ${w.toFixed(1)}px 100% no-repeat`;
+        }).join(','));
+      };
+      const ro = new ResizeObserver((es) => es.forEach((e) => { const r = e.target as HTMLInputElement; if (r.hasAttribute('data-discrete')) marks(r); else segs(r); }));
+      const all = () => document.querySelectorAll<HTMLInputElement>('input[type="range"]').forEach((r) => { upd(r); ro.observe(r); });
+      // les widgets changent parfois la valeur par script : pas d'événement, donc on intercepte le réglage de value
+      const d = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+      if (d && d.set) Object.defineProperty(HTMLInputElement.prototype, 'value', { ...d, set(v) { d.set!.call(this, v); if (this.type === 'range') upd(this); } });
+      document.addEventListener('input', (e) => { if ((e.target as HTMLInputElement).type === 'range') upd(e.target as HTMLInputElement); }, true);
+      new MutationObserver((ms) => ms.forEach((m) => { if ((m.target as HTMLInputElement).type === 'range') upd(m.target as HTMLInputElement); })).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['min', 'max', 'step', 'value'] });
+      all();
+    </script>
   </body>
 </html>

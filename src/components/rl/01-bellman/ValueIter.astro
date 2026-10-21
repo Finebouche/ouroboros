@@ -1,176 +1,105 @@
 ---
-// Cours RL, chapitre 1 : itération de valeur sur une grille 4 × 4 déterministe, case par case.
-// Chaque mise à jour lit les valeurs de l'itération précédente (V_k), calcule r + γ V_k(s') pour les 4 actions,
-// garde le maximum (nouvelle valeur, évaluation) et l'action qui l'atteint (flèche, amélioration de la politique).
+// Cours RL, chapitre 1 : itération de valeur sur la grille 4 × 4 (but +1, piège −1, mur). Deux rangées de boutons : γ (0,5 ; 0,9 ; 0,99) et l'itération (0 à 6, puis la convergence).
+// Tout est calculé à la construction : V_0 = 0, puis V_{k+1}(s) = max_a [r + γ V_k(s')], toutes les cases à partir de V_k.
+// Chaque case est une croix : quatre triangles, un par action (↑ → ↓ ←), avec la valeur r + γ V_k(s') de l'action ; la meilleure est colorée ;
+// au centre, V_{k+1}(s), le maximum des quatre. Dernière position : valeurs à la convergence (V*).
 import katex from 'katex';
 const tx = (t: string) => katex.renderToString(t, { throwOnError: false });
 const F = tx('V_{k+1}(s) = \\max_a \\big[\\, r + \\gamma\\, V_k(s\') \\,\\big]');
-// règles du MDP de la grille (déterministe)
-const RULES: [string, string][] = [
-  ['actions', tx('a \\in \\{\\uparrow, \\rightarrow, \\downarrow, \\leftarrow\\}')],
-  ['transition', tx("s'") + ' = la case voisine dans la direction ' + tx('a') + ' (on reste sur place contre un mur ou un bord)'],
-  ['récompense', tx("r = +1") + ' si ' + tx("s'") + ' est le but, ' + tx('-1') + ' si c\'est le piège, ' + tx('0') + ' sinon'],
-];
+
+const R = 4, C = 4, GAMMAS = [0.5, 0.9, 0.99], GOAL = [0, 3], PIT = [1, 3], WALL = [1, 1], START = [3, 0];
+const DIRS: [number, number, string][] = [[-1, 0, '↑'], [0, 1, '→'], [1, 0, '↓'], [0, -1, '←']];
+const is = (p: number[], r: number, c: number) => p[0] === r && p[1] === c;
+const term = (r: number, c: number) => is(GOAL, r, c) || is(PIT, r, c);
+const mv = (r: number, c: number, a: number): [number, number, number] => {
+  let nr = r + DIRS[a][0], nc = c + DIRS[a][1];
+  if (nr < 0 || nr >= R || nc < 0 || nc >= C || is(WALL, nr, nc)) { nr = r; nc = c; }
+  return [nr, nc, is(GOAL, nr, nc) ? 1 : is(PIT, nr, nc) ? -1 : 0];
+};
+const fm = (v: number) => (Math.abs(v) < 5e-3 ? '0' : v.toFixed(2).replace('.', ',').replace('-', '−'));
+type Grid = number[][];
+const cands = (V: Grid, r: number, c: number, G: number) => [0, 1, 2, 3].map((a) => { const [nr, nc, rw] = mv(r, c, a); const vn = term(nr, nc) ? 0 : V[nr][nc]; return rw + G * vn; });
+const next = (V: Grid, G: number): Grid => V.map((row, r) => row.map((_, c) => (term(r, c) || is(WALL, r, c) ? 0 : Math.max(...cands(V, r, c, G)))));
+// V_0 … V_6 (le départ reçoit sa première valeur à l'itération 6), puis la convergence
+// (pour chaque γ ; sur cette grille déterministe, V_6 = V* quel que soit γ)
+const VS: Grid[][] = GAMMAS.map((G) => {
+  const Vs: Grid[] = [Array.from({ length: R }, () => new Array(C).fill(0))];
+  for (let k = 1; k <= 6; k++) Vs.push(next(Vs[k - 1], G));
+  let Vstar = Vs[6];
+  for (let k = 0; k < 400; k++) Vstar = next(Vstar, G);
+  return [...Vs, Vstar];
+});
+// position p du curseur : p = 0 → V_0 (rien n'est encore calculé) ; 1…6 → V_p, calculé à partir de V_{p-1} ; 7 → V*, calculé à partir de V*
+const labels = ['0', '1', '2', '3', '4', '5', '6', 'convergence'];
+const frame = (g: number, p: number) => ({ V: VS[g][p], prev: p === 0 ? null : p === 7 ? VS[g][7] : VS[g][p - 1] });
+
+const cs = 112, w = cs - 12, GW = 4 * cs + 12, GH = 4 * cs + 12;
+const tri = (x: number, y: number, a: number) => {
+  const cx = x + w / 2, cy = y + w / 2;
+  return [`${x},${y} ${x + w},${y} ${cx},${cy}`, `${x + w},${y} ${x + w},${y + w} ${cx},${cy}`, `${x + w},${y + w} ${x},${y + w} ${cx},${cy}`, `${x},${y + w} ${x},${y} ${cx},${cy}`][a];
+};
+const txtPos = (x: number, y: number, a: number): [number, number, string] => {
+  const cx = x + w / 2, cy = y + w / 2;
+  return [[cx, y + 13, 'middle'], [x + w - 5, cy + 3.5, 'end'], [cx, y + w - 6, 'middle'], [x + 5, cy + 3.5, 'start']][a] as [number, number, string];
+};
+const cell = (g: number, p: number, r: number, c: number) => {
+  const x = 6 + c * cs, y = 6 + r * cs, { V, prev } = frame(g, p);
+  if (is(WALL, r, c)) return `<rect x="${x}" y="${y}" width="${w}" height="${w}" rx="10" fill="var(--text-2)" fill-opacity="0.2"/>`;
+  if (is(GOAL, r, c)) return `<rect x="${x}" y="${y}" width="${w}" height="${w}" rx="10" fill="var(--hl-stroke)" fill-opacity="0.3" stroke="var(--hl-stroke)"/><text x="${x + w / 2}" y="${y + w / 2 + 5}" text-anchor="middle" class="vgv">+1</text>`;
+  if (is(PIT, r, c)) return `<rect x="${x}" y="${y}" width="${w}" height="${w}" rx="10" fill="var(--h-py)" fill-opacity="0.3" stroke="var(--h-py)"/><text x="${x + w / 2}" y="${y + w / 2 + 5}" text-anchor="middle" class="vgv">−1</text>`;
+  const q = prev ? cands(prev, r, c, GAMMAS[g]) : null, m = q ? Math.max(...q) : 0;
+  let o = `<rect x="${x}" y="${y}" width="${w}" height="${w}" rx="10" fill="var(--surface)" stroke="${is(START, r, c) ? 'var(--text)' : 'var(--border)'}" stroke-width="${is(START, r, c) ? 2 : 0.9}"/>`;
+  if (q) for (let a = 0; a < 4; a++) {
+    const best = m > 1e-9 && q[a] > m - 1e-9, [tx0, ty0, an] = txtPos(x, y, a);
+    o += `<polygon points="${tri(x, y, a)}" fill="var(--text-2)" fill-opacity="${best ? 0.26 : 0.025}" stroke="var(--border)" stroke-opacity="0.7" stroke-width="0.6" stroke-linejoin="round"/>`;
+    o += `<text x="${tx0}" y="${ty0}" text-anchor="${an}" class="${q[a] < -1e-9 ? 'vqn' : best ? 'vqb' : 'vqz'}">${fm(q[a])}</text>`;
+  }
+  const v = V[r][c];
+  o += `<circle cx="${x + w / 2}" cy="${y + w / 2}" r="15.5" fill="var(--surface)" stroke="var(--text-2)" stroke-width="${v > 1e-9 ? 1.8 : 0.9}"/>`;
+  o += `<text x="${x + w / 2}" y="${y + w / 2 + 4}" text-anchor="middle" class="vvc">${fm(v)}</text>`;
+  return o;
+};
 ---
-<div class="widget rlw vi" data-widget="vi">
-  <div class="row"><span class="seg" data-ref="ctl"></span></div>
-  <div class="row2">
-    <div class="row"><span>Placer :</span><span class="seg" data-ref="mode"></span></div>
-    <label class="sl"><span>Actualisation γ</span><input type="range" data-ref="g" min="0.5" max="0.99" step="0.01" value="0.9" /><b data-ref="g-out"></b></label>
+<div class="widget rlw vif" data-widget="vif">
+  <div class="vih"><b>Itération de valeur</b><span>règles connues (P : où mène chaque action ; r : la récompense) : on calcule, on ne joue pas</span></div>
+  <div class="vif-fm" set:html={F} />
+  <div class="row"><span>Actualisation γ :</span><span class="seg" data-ref="segG"></span></div>
+  <div class="row"><span>Itération k :</span><span class="seg" data-ref="seg"></span></div>
+  <div class="vgrids">
+    {GAMMAS.map((G, g) => labels.map((_, p) => (
+      <svg class="vsv" data-g={g} data-p={p} viewBox={`0 0 ${GW} ${GH}`} role="img" aria-label={`γ = ${G}, itération ${labels[p]} : valeur des quatre actions dans chaque case, et V au centre`} hidden={!(g === 1 && p === 2)} set:html={Array.from({ length: 16 }, (_, i) => cell(g, p, Math.floor(i / 4), i % 4)).join('')} />
+    )))}
   </div>
-  <div class="vibody">
-    <svg class="clk" data-ref="svg" role="img" aria-label="Itération de valeur case par case : valeurs et actions choisies"></svg>
-    <div class="viside">
-      <div class="fm" set:html={F} />
-      <dl class="rules">{RULES.map(([k, v]) => (<><dt>{k}</dt><dd set:html={v} /></>))}</dl>
-      <div class="calc" data-ref="calc"></div>
-    <div class="kpis">
-      <div><span>Itération k</span><b data-ref="kk"></b></div>
-      <div><span>Valeur du départ</span><b data-ref="vs"></b></div>
-    </div>
-    </div>
-  </div>
-  <p class="note">Contour bleu : case mise à jour ; pointillés : cases lues, avec les valeurs de l'itération précédente (V<sub>k</sub>). Flèche : action qui atteint le maximum. Clique une case pour y placer le but, le piège ou le mur.</p>
+  <p class="note"><i>s′</i> : case voisine dans la direction de l'action (sur place contre un mur ou un bord) ; <i>r</i> = +1 au but, −1 au piège, 0 sinon. Chaque case est une croix : un triangle par direction (↑ → ↓ ←) avec la valeur <i>r + γ V<sub>k−1</sub>(s′)</i> de l'action ; la meilleure est grisée. Au centre, <i>V<sub>k</sub>(s)</i> : le maximum des quatre, qui sert à l'itération suivante. Contour noir : la case de départ. À la convergence, les triangles grisés donnent la politique optimale.</p>
 </div>
 
 <script>
-  document.querySelectorAll<HTMLElement>('[data-widget="vi"]').forEach((root) => {
-    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
-    const R = 4, C = 4, START: [number, number] = [3, 0], cs = 62, PAD = 4, LBL = 16;
-    const DIRS: [number, number, string][] = [[-1, 0, '↑'], [0, 1, '→'], [1, 0, '↓'], [0, -1, '←']];
-    const st = { goal: [0, 3] as [number, number], pit: [1, 3] as [number, number], wall: [1, 1] as [number, number], mode: 'goal' };
-    const same = (p: [number, number], r: number, c: number) => p[0] === r && p[1] === c;
-    const term = (r: number, c: number) => same(st.goal, r, c) || same(st.pit, r, c);
-    const step = (r: number, c: number, a: number): [number, number, number] => {
-      let nr = r + DIRS[a][0], nc = c + DIRS[a][1];
-      if (nr < 0 || nr >= R || nc < 0 || nc >= C || same(st.wall, nr, nc)) { nr = r; nc = c; }
-      return [nr, nc, same(st.goal, nr, nc) ? 1 : same(st.pit, nr, nc) ? -1 : 0];
+  document.querySelectorAll<HTMLElement>('[data-widget="vif"]').forEach((root) => {
+    const seg = root.querySelector<HTMLElement>('[data-ref="seg"]')!, segG = root.querySelector<HTMLElement>('[data-ref="segG"]')!;
+    const names = ['0', '1', '2', '3', '4', '5', '6', 'convergence'], gammas = ['0,5', '0,9', '0,99'];
+    let g = 1, p = 2;
+    const show = () => {
+      root.querySelectorAll<SVGElement>('svg.vsv').forEach((s) => { s.toggleAttribute('hidden', !(+s.dataset.g! === g && +s.dataset.p! === p)); });
+      seg.querySelectorAll('button').forEach((b, i) => b.classList.toggle('active', i === p));
+      segG.querySelectorAll('button').forEach((b, i) => b.classList.toggle('active', i === g));
     };
-    const gIn = $('g') as HTMLInputElement;
-    const fm = (v: number) => v.toFixed(2).replace('.', ',').replace('-', '−');
-    const grid = (v: number) => Array.from({ length: R }, () => new Array(C).fill(v));
-    type Cand = { a: number; nr: number; nc: number; rew: number; vn: number; val: number };
-    let g = 0.9, V = grid(0), Vk = grid(0), best: (number[] | null)[][] = [], order: [number, number][] = [], idx = 0, k = 0, conv = false;
-    let cur: { r: number; c: number; cands: Cand[]; old: number; nw: number; kRead: number } | null = null;
-    let timer: number | null = null;
-
-    function reset() {
-      stop(); g = +gIn.value; V = grid(0); Vk = grid(0); idx = 0; k = 0; conv = false; cur = null;
-      best = Array.from({ length: R }, () => new Array(C).fill(null));
-      order = [];
-      for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) if (!term(r, c) && !same(st.wall, r, c)) order.push([r, c]);
-      draw();
-    }
-    function stepCell() {
-      if (conv) return;
-      if (idx === 0) Vk = V.map((row) => row.slice());
-      const [r, c] = order[idx];
-      const cands: Cand[] = DIRS.map((_, a) => { const [nr, nc, rew] = step(r, c, a); const vn = term(nr, nc) ? 0 : Vk[nr][nc]; return { a, nr, nc, rew, vn, val: rew + g * vn }; });
-      const nw = Math.max(...cands.map((q) => q.val));
-      cur = { r, c, cands, old: Vk[r][c], nw, kRead: k };
-      V[r][c] = nw;
-      best[r][c] = cands.filter((q) => q.val > nw - 1e-9).map((q) => q.a);
-      idx++;
-      if (idx === order.length) {
-        idx = 0; k++;
-        const d = Math.max(...V.flatMap((row, i) => row.map((v, j) => Math.abs(v - Vk[i][j]))));
-        if (d < 1e-4) conv = true;
-      }
-    }
-    const mk = (label: string, f: () => void) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', f); $('ctl').appendChild(b); return b; };
-    let playB: HTMLButtonElement | null = null;
-    function stop() { if (timer) { clearInterval(timer); timer = null; } if (playB) playB.textContent = '▶ lecture'; }
-    mk('case suivante', () => { stop(); stepCell(); draw(); });
-    mk('itération suivante', () => { stop(); do stepCell(); while (idx !== 0 && !conv); draw(); });
-    playB = mk('▶ lecture', () => {
-      if (timer) { stop(); return; }
-      playB!.textContent = '⏸ pause';
-      timer = window.setInterval(() => { stepCell(); draw(); if (conv) stop(); }, 380);
-    });
-    mk('recommencer', () => reset());
-    [['but (+1)', 'goal'], ['piège (−1)', 'pit'], ['mur', 'wall']].forEach(([l, v]) => {
-      const b = document.createElement('button'); b.textContent = l; b.dataset.v = v;
-      b.addEventListener('click', () => { st.mode = v; draw(); }); $('mode').appendChild(b);
-    });
-
-    function draw() {
-      $('mode').querySelectorAll('button').forEach((b) => b.classList.toggle('active', (b as HTMLElement).dataset.v === st.mode));
-      $('g-out').textContent = fm(+gIn.value);
-      const vmax = Math.max(1e-9, ...V.flat());
-      const read = new Set(cur ? cur.cands.map((q) => `${q.nr},${q.nc}`) : []);
-      let s = '';
-      for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
-        const x = PAD + c * cs, y = PAD + r * cs, w = cs - 4;
-        const isCur = !!cur && cur.r === r && cur.c === c, isRead = read.has(`${r},${c}`) && !isCur;
-        if (same(st.wall, r, c)) s += `<rect x="${x}" y="${y}" width="${w}" height="${w}" rx="5" fill="var(--text-2)" fill-opacity="0.35"/>`;
-        else if (same(st.goal, r, c)) s += `<rect x="${x}" y="${y}" width="${w}" height="${w}" rx="5" fill="var(--hl-stroke)" fill-opacity="0.35" stroke="var(--hl-stroke)"/><text x="${x + w / 2}" y="${y + w / 2 + 5}" text-anchor="middle" class="vv">+1</text>`;
-        else if (same(st.pit, r, c)) s += `<rect x="${x}" y="${y}" width="${w}" height="${w}" rx="5" fill="var(--h-py)" fill-opacity="0.35" stroke="var(--h-py)"/><text x="${x + w / 2}" y="${y + w / 2 + 5}" text-anchor="middle" class="vv">−1</text>`;
-        else {
-          const v = V[r][c];
-          s += `<rect x="${x}" y="${y}" width="${w}" height="${w}" rx="5" fill="var(--a-fqi)" fill-opacity="${(0.06 + 0.7 * Math.max(v, 0) / vmax).toFixed(2)}" stroke="var(--border)" stroke-width="0.8"/>`;
-          s += `<text x="${x + w / 2}" y="${y + w / 2 - 2}" text-anchor="middle" class="${v !== 0 ? 'vv' : 'vz'}">${v === 0 ? '0' : fm(v)}</text>`;
-          const b = best[r][c];
-          if (b && v > 0) s += `<text x="${x + w / 2}" y="${y + w / 2 + 17}" text-anchor="middle" class="va">${b.map((a) => DIRS[a][2]).join(' ')}</text>`;
-          if (same(START, r, c)) s += `<text x="${x + w / 2}" y="${PAD + R * cs + 11}" text-anchor="middle" class="vs">départ</text>`;
-        }
-        if (isRead) s += `<rect x="${x + 2}" y="${y + 2}" width="${w - 4}" height="${w - 4}" rx="4" fill="none" stroke="var(--a-fqi)" stroke-width="1.5" stroke-dasharray="4 3"/>`;
-        if (isCur) s += `<rect x="${x + 1}" y="${y + 1}" width="${w - 2}" height="${w - 2}" rx="5" fill="none" stroke="var(--a-fqi)" stroke-width="3"/>`;
-      }
-      const svg = $('svg') as unknown as SVGSVGElement;
-      svg.setAttribute('viewBox', `0 0 ${C * cs + 2 * PAD} ${R * cs + PAD + LBL}`); svg.innerHTML = s;
-      // calcul de la case courante
-      const calc = $('calc'); calc.innerHTML = '';
-      if (cur) {
-        const head = document.createElement('div'); head.className = 'ch';
-        head.textContent = `case (${cur.r + 1}, ${cur.c + 1}), avec les valeurs V${['₀', '₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉'][cur.kRead % 10] ?? ''}${cur.kRead >= 10 ? ` (k = ${cur.kRead})` : ''}`;
-        calc.appendChild(head);
-        cur.cands.forEach((q) => {
-          const d = document.createElement('div'); d.className = 'cr' + (q.val > cur!.nw - 1e-9 ? ' best' : '');
-          const dest = q.nr === cur!.r && q.nc === cur!.c ? 'reste' : term(q.nr, q.nc) ? (q.rew > 0 ? 'but' : 'piège') : `(${q.nr + 1},${q.nc + 1})`;
-          d.textContent = `${DIRS[q.a][2]} ${dest.padEnd(5)}  ${q.rew === 1 ? '+1' : q.rew === -1 ? '−1' : ' 0'} + ${fm(g)}×${fm(q.vn)} = ${fm(q.val)}`;
-          calc.appendChild(d);
-        });
-        const e = document.createElement('div'); e.className = 'ce';
-        e.textContent = `max : V(${cur.r + 1},${cur.c + 1}) ${fm(cur.old)} → ${fm(cur.nw)}`;
-        calc.appendChild(e);
-      }
-      $('kk').textContent = conv ? `${k} (convergé)` : String(k);
-      $('vs').textContent = fm(V[START[0]][START[1]]);
-    }
-    ($('svg') as unknown as SVGSVGElement).addEventListener('click', (e) => {
-      const svg = $('svg') as unknown as SVGSVGElement, rect = svg.getBoundingClientRect();
-      const sx = (C * cs + 2 * PAD) / rect.width, c = Math.floor(((e.clientX - rect.left) * sx - PAD) / cs), r = Math.floor(((e.clientY - rect.top) * sx - PAD) / cs);
-      if (r < 0 || r >= R || c < 0 || c >= C || (r === START[0] && c === START[1])) return;
-      const others = (['goal', 'pit', 'wall'] as const).filter((m) => m !== st.mode);
-      if (others.some((m) => same(st[m], r, c))) return;
-      (st as any)[st.mode] = [r, c]; reset();
-    });
-    gIn.addEventListener('input', reset);
-    reset();
+    names.forEach((n, i) => { const b = document.createElement('button'); b.textContent = n; b.addEventListener('click', () => { p = i; show(); }); seg.appendChild(b); });
+    gammas.forEach((n, i) => { const b = document.createElement('button'); b.textContent = n; b.addEventListener('click', () => { g = i; show(); }); segG.appendChild(b); });
+    show();
   });
 </script>
 
 <style is:global>
-  .vi .row > .seg { display: flex; flex-wrap: wrap; }
-  .vi .row2 { display: grid; grid-template-columns: auto 1fr; gap: 0 28px; align-items: center; margin-top: 6px; }
-  .vi .row2 .sl { grid-template-columns: auto 1fr 34px; gap: 10px; }
-  .vi .vibody { display: flex; gap: 24px; align-items: flex-start; margin-top: 12px; }
-  .vi .vibody svg.clk { flex: 0 0 auto; width: 256px; max-width: 100%; margin: 0; }
-  .vi .viside { flex: 1 1 0; min-width: 0; }
-  .vi .fm { font-size: 1rem; margin: 0 0 8px; overflow-x: auto; overflow-y: hidden; }
-  .vi .rules { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0 0 10px; font-size: 12px; color: var(--text-2); line-height: 1.45; }
-  .vi .rules dt { font-weight: 600; color: var(--text); }
-  .vi .rules dd { margin: 0; }
-  .vi .rules .katex { font-size: 1.05em; }
-  .vi .calc { font: 11.5px/1.6 var(--mono); color: var(--text-2); min-height: 9.6em; margin-bottom: 10px; white-space: pre; overflow-x: auto; }
-  .vi .calc .ch { font-family: var(--font); font-size: 12px; margin-bottom: 2px; }
-  .vi .calc .cr.best { color: var(--a-fqi); font-weight: 700; }
-  .vi .calc .ce { color: var(--text); margin-top: 2px; }
-  .vi .kpis { flex-direction: row; margin: 0; max-width: 420px; }
-  .vi .kpis > div { flex: 1 1 0; display: block; }
-  .vi .kpis > div > span { display: block; margin-bottom: 2px; }
-  .vi svg text.vv { font: 600 12px var(--font); fill: var(--text); }
-  .vi svg text.vz { font: 11px var(--font); fill: var(--text-2); }
-  .vi svg text.va { font: 600 15px var(--font); fill: var(--text); }
-  @media (max-width: 640px) { .vi .vibody { flex-direction: column; align-items: stretch; } .vi .vibody svg.clk { margin: 0 auto; } .vi .row2 { grid-template-columns: 1fr; } }
+  .vif .vih { margin-bottom: 6px; }
+  .vif .vih b { font-size: 15px; font-weight: 600; color: var(--text); margin-right: 10px; }
+  .vif .vih span { display: block; font-size: 12.5px; color: var(--text-2); margin-top: 1px; }
+  .vif .vif-fm { font-size: 1rem; overflow-x: auto; overflow-y: hidden; margin-bottom: 8px; }
+  .vif .vgrids { margin-top: 4px; }
+  .vif svg.vsv { width: 100%; max-width: 460px; height: auto; display: block; margin: 0 auto; }
+  .vif svg.vsv[hidden] { display: none; }
+  .vif svg text.vgv { font: 600 13px var(--font); fill: var(--text); }
+  .vif svg text.vqz { font: 10.5px var(--font); fill: var(--text-2); opacity: 0.85; }
+  .vif svg text.vqb { font: 600 11px var(--font); fill: var(--text); }
+  .vif svg text.vqn { font: 10.5px var(--font); fill: var(--h-py); }
+  .vif svg text.vvc { font: 600 12.5px var(--font); fill: var(--text); }
 </style>

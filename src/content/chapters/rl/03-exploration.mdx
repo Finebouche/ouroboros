@@ -1,7 +1,7 @@
 ---
 num: 3
 title: "Exploration"
-summary: "Essayer pour apprendre : le dilemme exploration / exploitation sur un bandit, puis ε-greedy, softmax, optimisme, UCB ; l'optimisme dans un MDP ; bonus de nouveauté et curiosité pour les grands espaces d'états."
+summary: "Essayer pour apprendre : le dilemme exploration / exploitation sur un bandit, puis ε-greedy, softmax, optimisme, UCB ; explorer un MDP : bonus de nouveauté et curiosité pour les grands espaces d'états."
 status: premier-jet
 ---
 import Reveal from '@/components/shared/Reveal.astro';
@@ -9,59 +9,49 @@ import Quiz from '@/components/shared/Quiz.astro';
 import Refs from '@/components/shared/Refs.astro';
 import BanditIntro from '@/components/rl/03-exploration/BanditIntro.astro';
 import BanditWidget from '@/components/rl/03-exploration/BanditWidget.astro';
-import Compare from '@/components/rl/03-exploration/Compare.astro';
-import OptimismGrid from '@/components/rl/03-exploration/OptimismGrid.astro';
+import Strategies from '@/components/rl/03-exploration/Strategies.astro';
+import ExploFamilies from '@/components/rl/03-exploration/ExploFamilies.astro';
 
 ## 1. Le dilemme : exploiter ou explorer
 
-Un agent ne connaît pas les récompenses : il doit **essayer** pour apprendre. Mais chaque essai sur un mauvais choix coûte, et répéter ce qui semble le meilleur peut le figer sur un choix médiocre. C'est le **dilemme exploration / exploitation**.
+Un agent ne connaît pas les récompenses : il doit **essayer** pour apprendre. Mais essayer un mauvais choix coûte, et ne répéter que ce qui semble le meilleur peut le figer sur un choix médiocre : c'est le **dilemme exploration / exploitation**.
 
 <BanditIntro />
 
-Le cas le plus simple est le **bandit à plusieurs bras** (*multi-armed bandit*) : $k$ machines (les bras), chacune rend une récompense bruitée dont la moyenne $q^\star(a)$ est inconnue. Pas de transitions ni de suite de décisions : c'est un MDP à un seul état, où l'on répète un seul choix. L'agent garde une estimation $Q(a)$ pour chaque bras, la moyenne des récompenses reçues, et choisit un bras selon une **stratégie**. Pour comparer les stratégies, on mesure le **regret** : ce qu'on perd à chaque pas face au meilleur bras, $q^\star_{\max} - q^\star(a_t)$, cumulé. Il croît tant que l'agent joue un autre bras que le meilleur ; une bonne stratégie le fait croître de plus en plus lentement.
+Le cas le plus simple est le **bandit à plusieurs bras** (*multi-armed bandit*) : $k$ bras, chacun rend une récompense bruitée de moyenne $q^\star(a)$ inconnue ; c'est un MDP à un seul état. L'agent estime $Q(a)$, la moyenne des récompenses reçues. Le **regret** cumule ce qu'il perd à chaque pas face au meilleur bras, $q^\star_{\max} - q^\star(a_t)$ : une bonne stratégie le fait croître de plus en plus lentement.
 
 ## 2. Les stratégies
 
-Chaque stratégie répond autrement à la question « quand essayer autre chose que le meilleur $Q$ ? » :
+Quand essayer autre chose que le meilleur $Q$ ?
 
-- **Glouton** : toujours le bras de plus grand $Q$. Quelques récompenses chanceuses sur un bras moyen suffisent à le figer : les autres ne sont plus essayés, et un meilleur bras reste ignoré.
-- **ε-greedy** : avec une petite probabilité $\varepsilon$, un bras au hasard. Simple, mais l'exploration est aveugle et constante : elle continue de coûter quand tout est connu. On peut faire décroître $\varepsilon$ au fil du temps ; c'est ce que demande la convergence de SARSA au [chapitre 2](/rl/02-td-controle/).
-- **Softmax** (distribution de Boltzmann) : la probabilité de jouer un bras croît avec son $Q$. Les bras clairement mauvais sont peu joués, contrairement à ε-greedy. La **température** $\tau$ règle le compromis : élevée, tous les bras sont équiprobables ; basse, on retrouve le glouton.
-- **Optimiste** : on initialise $Q$ très au-dessus de toute valeur possible. Toute estimation déçoit en se rapprochant de la réalité, donc l'agent essaie chaque bras avant de s'installer. Cette exploration ne dure qu'au début : elle ne sert pas si l'environnement change.
-- **UCB** (*upper confidence bound*) : on ajoute à $Q(a)$ un bonus qui mesure l'incertitude, $c\sqrt{\ln t / N(a)}$. Un bras peu essayé a un grand bonus, qui fond à chaque essai : c'est l'**optimisme face à l'incertitude** (*optimism in the face of uncertainty*). L'exploration est dirigée vers ce qu'on connaît mal, au lieu d'être aléatoire.
-- **Thompson sampling** : pour chaque bras, on tire une valeur plausible dans la distribution a posteriori de sa moyenne, et on joue le bras au tirage maximal. Même idée, sans bonus explicite (non montré ici).
+<Strategies />
 
 <BanditWidget />
 
-- **Le glouton** plafonne bien sous le meilleur bras : il se fige trop souvent sur un mauvais bras.
-- **ε-greedy** finit meilleur que le glouton mais perd une part $\varepsilon$ de ses pas à jouer au hasard ; un $\varepsilon$ petit démarre plus mal et rattrape plus lentement.
-- **UCB et optimiste** finissent en tête, mais démarrent lentement : UCB doit essayer chaque bras, l'optimiste les décevoir tous. Ce classement dépend des paramètres choisis, qu'on règle en pratique sur le problème.
+Avec ces réglages (moyenne de 200 tirages, 1 000 pas) :
 
-## 3. L'optimisme dans un MDP
+- **Le glouton** donne moins de 10 % de ses essais au meilleur bras dans 121 tirages sur 200 : il s'est figé sur un autre. Regret moyen de 385.
+- **ε-greedy** donne autant d'essais au pire bras (17, valeur $-1{,}1$) qu'au bras 1 (20, valeur $0{,}3$) : l'exploration est aveugle. Regret de 165.
+- **UCB** ne donne que 5 à 7 essais aux pires bras, mais 84 au bras 4, proche du meilleur : l'exploration est dirigée. Regret de 105, le plus bas à 1 000 pas, mais pas au début (38 à 100 pas, contre 25 pour softmax).
 
-Dans un MDP (*Markov decision process*, [chapitre 1](/rl/01-bellman/)), explorer veut dire **visiter des états** : une récompense rare n'est trouvée qu'en arrivant à l'endroit où elle se trouve. Sur cette grille, la seule récompense est au but, à l'opposé du départ ; ailleurs, 0. L'idée de l'agent optimiste s'étend telle quelle : si $Q$ est initialisé à $1$, plus que toute valeur possible ici, une action jamais essayée paraît excellente, et chaque essai fait baisser la valeur de l'action essayée. Grâce au maximum de la cible de Bellman, cet optimisme se propage d'une case à l'autre.
+## 3. Explorer un MDP : bonus de nouveauté
 
-<OptimismGrid />
+Dans un MDP, explorer veut dire **visiter des états** : une récompense rare n'est trouvée qu'en allant là où elle est, souvent à plusieurs pas. Choisir au hasard à chaque pas (ε-greedy) donne une marche aléatoire, qui repasse sans cesse près du départ ; il vaut mieux pousser l'agent vers les états jamais vus. Dans une table, des valeurs initiales optimistes le font : une action jamais essayée paraît excellente, et le maximum de la cible de Bellman propage cet optimisme d'un état à l'autre.
 
-- **Avec $Q_0 = 0$**, tous les $Q$ restent à 0 tant que le but n'est pas trouvé : l'agent n'a aucune préférence et marche au hasard.
-- **Avec $Q_0 = 1$**, il balaye la grille presque case par case, en s'éloignant de ce qu'il a déjà vu. Sur 200 graines, il trouve le but plus vite en moyenne, et évite surtout les très longues errances (ligne « 10 % les plus lents »).
-- Sur une graine précise, le hasard peut donner l'avantage à l'autre : c'est pourquoi les cartes du bas donnent la médiane sur 200 graines.
-- **Au choix, dans chaque panneau** : l'algorithme de chaque agent. Avec ces réglages, la médiane sur 200 graines est de 465 pas pour ε-greedy avec $Q_0 = 0$, 343 pour l'optimiste, 432 pour UCB sur les actions (choix de l'action par $Q + 0{,}5/\sqrt{N+1}$, $N$ : essais de l'action), et 3 410 pour le bonus de nouveauté ajouté à la récompense, dont les 10 % les plus lents atteignent le plafond de 5 000 pas.
+Dans un grand espace (des images), un état n'est presque jamais revu : les tables et les compteurs $N(s)$ ne servent plus. On ajoute alors à la récompense un **bonus de nouveauté** (récompense intrinsèque), fort pour les états peu familiers : $r + \text{bonus}(s')$.
 
-## 4. Grands espaces d'états : bonus de nouveauté
+- **Compteurs** : $\beta / \sqrt{N(s)}$ dans une table ; les **pseudo-comptes** (Bellemare et al.) les estiment avec un modèle de densité des états.
+- **Curiosité** : le bonus est l'erreur d'un modèle de prédiction, forte sur un état nouveau : conséquence d'une action (ICM, Pathak et al.) ou sortie d'un réseau aléatoire fixe (RND, Burda et al.).
 
-Les valeurs initiales optimistes et les compteurs $N(s)$ supposent une table. Dans un grand espace (des images, par exemple), un état n'est presque jamais revu à l'identique : $N(s)$ vaut presque toujours 0, et ε-greedy ne suffit plus pour trouver une récompense rare.
+Ce bonus change l'objectif : il doit s'effacer avec le temps.
 
-La réponse courante est le **bonus de nouveauté** (récompense intrinsèque) : on ajoute à la récompense de l'environnement un bonus qui décroît avec la familiarité de l'état, $r + \text{bonus}(s')$.
+## 4. Quelle exploration dans quel algorithme
 
-- **Compteurs** : dans une table, $\text{bonus}(s) = \beta / \sqrt{N(s)}$. Pour de grands espaces, les **pseudo-comptes** (Bellemare et al.) en déduisent un compteur d'un modèle de densité des états rencontrés.
-- **Curiosité** : le bonus est l'erreur d'un modèle qui prédit quelque chose sur l'état. ICM (Pathak et al.) prédit la conséquence d'une action ; RND (Burda et al.) prédit la sortie d'un réseau aléatoire fixe. Une erreur forte signale un état nouveau.
-
-Ce bonus change le problème que l'agent optimise : il faut qu'il s'efface avec le temps. Dans notre grille, ajouté tel quel à la récompense d'un Q-learning tabulaire (bonus $\beta / \sqrt{N(s')}$), il a fait pire qu'ε-greedy avec ces réglages (choisis « bonus de nouveauté » dans le widget de la section 3 ; cause non analysée) : l'agent a mis plus de pas à trouver le but, ou ne l'a pas trouvé.
+<ExploFamilies />
 
 ## 5. Explorer, c'est aussi attribuer le crédit
 
-Le crédit ne peut être attribué que si une trajectoire atteint la récompense ([chapitre 1](/rl/01-bellman/)) : tant qu'on n'a jamais vu le $+1$, il n'y a rien à propager. Plus la récompense est rare, plus l'exploration est le goulot, et plus ce choix de stratégie pèse. Et comme dans la falaise du [chapitre 2](/rl/02-td-controle/), explorer coûte pendant l'apprentissage : SARSA tient compte de ce coût, Q-learning l'ignore.
+Le crédit ne peut être attribué que si une trajectoire atteint la récompense ([chapitre 1](/rl/01-bellman/)) : sans $+1$ observé, rien à propager. Plus la récompense est rare, plus l'exploration est le goulot. Et explorer coûte pendant l'apprentissage : dans la falaise du [chapitre 2](/rl/02-td-controle/), SARSA en tient compte, Q-learning non.
 
 <div class="retain">
 
@@ -70,8 +60,7 @@ Le crédit ne peut être attribué que si une trajectoire atteint la récompense
 - **Dilemme** : exploiter ce qui semble le meilleur, ou essayer pour mieux connaître. Le glouton se fige ; le **regret** mesure le prix de l'ignorance.
 - **ε-greedy** : un bras au hasard avec la probabilité $\varepsilon$. **Softmax** : probabilité croissante avec $Q$, réglée par la température $\tau$.
 - **Optimisme face à l'incertitude** : valeurs initiales hautes, ou bonus $c\sqrt{\ln t / N(a)}$ (**UCB**) : on essaie d'abord ce qu'on connaît mal.
-- Dans un MDP, un $Q_0$ optimiste fait balayer l'espace d'états ; avec $Q_0 = 0$ et une récompense rare, l'agent marche au hasard.
-- Grands espaces : **bonus de nouveauté** (pseudo-comptes, curiosité) ajouté à la récompense.
+- Dans un MDP, explorer c'est **visiter des états** : valeurs initiales optimistes dans une table, **bonus de nouveauté** (pseudo-comptes, curiosité) ajouté à la récompense dans les grands espaces.
 
 </div>
 
@@ -103,11 +92,11 @@ Chaque essai rapproche l'estimation de la valeur réelle, donc l'optimisme dispa
 
 </Reveal>
 
-**Q4.** Sur la grille, que fait l'agent avec $Q_0 = 0$ tant qu'il n'a pas trouvé le but, et pourquoi ?
+**Q4.** Dans un MDP où seule une case lointaine rapporte $+1$, que fait un agent Q-learning ε-greedy avec $Q_0 = 0$ tant qu'il n'a pas trouvé le but, et pourquoi ?
 
 <Reveal>
 
-Il joue au hasard : toutes les cibles valent $0 + \gamma \times 0 = 0$, donc tous les $Q$ restent à 0 et aucune action n'est préférée. Seul le premier $+1$ crée une différence entre les actions.
+Il marche au hasard : toutes les cibles valent $0 + \gamma \times 0 = 0$, donc tous les $Q$ restent à 0 et aucune action n'est préférée. Seul le premier $+1$ crée une différence entre les actions.
 
 </Reveal>
 

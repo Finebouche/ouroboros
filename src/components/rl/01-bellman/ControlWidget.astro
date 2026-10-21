@@ -10,6 +10,7 @@ const F = {
   mc2: tex('Q(s,a) \\leftarrow Q(s,a) + \\alpha\\,\\big(G_t - Q(s,a)\\big)'),
   q1: tex('\\text{cible} = r + \\gamma \\max_{a\'} Q(s\', a\')'),
   q2: tex('Q(s,a) \\leftarrow Q(s,a) + \\alpha\\,\\big(\\text{cible} - Q(s,a)\\big)'),
+  impr: tex('a = \\arg\\max_a Q(s,a) \\quad (\\text{au hasard avec la probabilité } \\varepsilon)'),
 };
 ---
 <div class="widget rlw runw ctlw" data-widget="ctlw">
@@ -21,14 +22,20 @@ const F = {
   <div class="expgrid">
     <div class="expbox">
       <div class="eh"><b style="color:var(--a-es)">Contrôle Monte-Carlo</b><span class="es" data-ref="stepMC"></span></div>
+      <div class="tg"><b style="color:var(--a-es)">Évaluation</b> de la politique : Q estimé par le retour complet</div>
       <div class="fm" set:html={F.mc1} /><div class="ef" data-ref="l1MC"></div>
       <div class="fm" set:html={F.mc2} /><div class="ef" data-ref="l2MC"></div>
+      <div class="tg"><b style="color:var(--a-es)">Amélioration</b> : on joue la meilleure action selon Q</div>
+      <div class="fm" set:html={F.impr} />
       <svg class="exp cg" data-ref="svgMC" role="img" aria-label="Agent contrôle Monte-Carlo : meilleure action selon Q dans chaque case et position de l'agent"></svg>
     </div>
     <div class="expbox">
       <div class="eh"><b style="color:var(--a-fqi)">Q-learning</b><span class="es" data-ref="stepQ"></span></div>
+      <div class="tg"><b style="color:var(--a-fqi)">Évaluation</b> de la politique : Q estimé par la cible de Bellman</div>
       <div class="fm" set:html={F.q1} /><div class="ef" data-ref="l1Q"></div>
       <div class="fm" set:html={F.q2} /><div class="ef" data-ref="l2Q"></div>
+      <div class="tg"><b style="color:var(--a-fqi)">Amélioration</b> : on joue la meilleure action selon Q</div>
+      <div class="fm" set:html={F.impr} />
       <svg class="exp cg" data-ref="svgQ" role="img" aria-label="Agent Q-learning : meilleure action selon Q dans chaque case et position de l'agent"></svg>
     </div>
   </div>
@@ -39,7 +46,7 @@ const F = {
       <div title="vert : contrôle Monte-Carlo, bleu : Q-learning"><span>Valeur de la politique</span><b data-ref="kv"></b></div>
     </div>
   </div>
-  <p class="note"><b>Amélioration de la politique, sans connaître P.</b> Chaque agent joue la meilleure action selon sa table Q, sauf avec la probabilité ε, où il joue au hasard pour explorer. Flèche : meilleure action selon Q ; couleur : sa valeur. Le contrôle Monte-Carlo met à jour en fin d'épisode avec le retour complet ; Q-learning met à jour à chaque pas avec la cible de Bellman d'optimalité. Courbe : vraie valeur, depuis le départ, de la politique « meilleure action selon Q », calculée avec les règles que les agents ignorent ; pointillé gris : l'optimum. γ = 0,9, α = 0,1.</p>
+  <p class="note"><b>Évaluation et amélioration de la politique, sans connaître P.</b> Flèche : meilleure action selon Q ; couleur : sa valeur. Le contrôle Monte-Carlo met à jour en fin d'épisode, Q-learning à chaque pas. Courbe : vraie valeur, depuis le départ, de la politique « meilleure action selon Q », calculée avec les règles que les agents ignorent ; pointillé gris : l'optimum. γ = 0,9, α = 0,1.</p>
 </div>
 
 <script>
@@ -197,6 +204,8 @@ const F = {
 </script>
 
 <style is:global>
+  .ctlw .tg { font-size: 11.5px; color: var(--text-2); margin: 8px 0 0; line-height: 1.4; }
+  .ctlw .tg b { font-weight: 600; }
   .ctlw svg.exp.cg { max-width: 150px; margin: 6px auto 0; }
   .ctlw svg.cg text.cv { font: 600 11px var(--font); fill: var(--text); }
   .ctlw svg.cg text.ca { font: 600 14px var(--font); fill: var(--text); }
