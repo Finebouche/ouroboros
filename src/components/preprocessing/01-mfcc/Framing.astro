@@ -4,7 +4,8 @@
 <div class="widget framing pp" data-widget="framing">
   <div class="row"><span>Longueur de trame :</span><span class="seg" data-ref="len"></span></div>
   <div class="row"><span>Pas entre deux trames :</span><span class="seg" data-ref="hop"></span><label class="pre"><input type="checkbox" data-ref="pre" /> Pré-accentuation (0,97)</label></div>
-  <label class="posl"><span>Position de la trame</span><input type="range" data-ref="pos" min="0" max="0" step="1" value="0" /><b data-ref="pos-out"></b></label>
+  <input type="range" data-ref="pos" min="0" max="0" step="1" value="0" hidden />
+  <div class="ft">Signal <span>(clique ou glisse sur le signal pour placer la trame)</span></div>
   <svg data-ref="wave" width="100%" role="img" aria-label="Signal audio, avec la trame choisie et ses voisines"></svg>
   <div class="ft">Contenu de la trame <span data-ref="range"></span></div>
   <svg data-ref="zoom" width="100%" role="img" aria-label="Valeurs du signal à l'intérieur de la trame choisie"></svg>
@@ -66,7 +67,6 @@
       $('hop').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.v! === hopMs));
       const j = Math.min(+inp('pos').value, n - 1);
       const s0 = j * Hs;
-      $('pos-out').textContent = `${Math.round((s0 / SR) * 1000)} ms`;
 
       // --- signal entier ---
       const W = 640, ox = 8, wpx = W - 16, cy = 58, amp = 40;
@@ -116,7 +116,7 @@
       const zoom = $('zoom') as unknown as SVGSVGElement;
       zoom.setAttribute('viewBox', `0 0 ${W} ${zH + 4}`);
       zoom.innerHTML = z;
-      $('range').textContent = inp('pre').checked ? '(échelle ajustée)' : '';
+      $('range').textContent = `à ${Math.round((s0 / SR) * 1000)} ms${inp('pre').checked ? ' (échelle ajustée)' : ''}`;
 
       $('k1').innerHTML = `${len} <small>= ${lenMs} ms × ${SR / 1000} kHz</small>`;
       $('k2').innerHTML = lenMs > hopMs ? `${Math.round((1 - hopMs / lenMs) * 100)} %` : `aucun <small>(trous entre trames)</small>`;
@@ -136,6 +136,19 @@
       draw();
     });
     inp('pre').addEventListener('change', draw);
+    // position de la trame : clic ou glissé sur le signal (le centre de la trame suit le pointeur)
+    const wave = $('wave') as unknown as SVGSVGElement;
+    const pick = (e: PointerEvent) => {
+      const r = wave.getBoundingClientRect(), n = nFrames();
+      const smp = (((e.clientX - r.left) / r.width) * 640 - 8) / 624 * N;
+      const j = Math.max(0, Math.min(n - 1, Math.round((smp - ms(lenMs) / 2) / ms(hopMs))));
+      if (j === +inp('pos').value) return;
+      inp('pos').value = String(j);
+      draw();
+      publish();
+    };
+    wave.addEventListener('pointerdown', (e) => { wave.setPointerCapture(e.pointerId); pick(e); });
+    wave.addEventListener('pointermove', (e) => { if (wave.hasPointerCapture(e.pointerId)) pick(e); });
     draw();
   });
 </script>
@@ -145,12 +158,10 @@
   .framing .pre { cursor: pointer; margin-left: 12px; }
   .framing .seg { display: inline-flex; gap: 6px; }
   .framing .seg button { font-size: 13px; padding: 4px 12px; }
-  .framing .posl { display: grid; grid-template-columns: 160px 1fr 60px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); margin: 8px 0; }
-  .framing .posl b { text-align: right; color: var(--text); font-weight: 500; }
+  .framing svg[data-ref="wave"] { cursor: ew-resize; touch-action: pan-y; }
   .framing .ft { font-size: 13px; font-weight: 500; margin: 10px 0 2px; }
   .framing .ft span { font-weight: 400; color: var(--text-2); }
   .framing svg text.sg { font: 11px var(--font); fill: var(--text-2); }
   .framing svg text.ax { font: 11px var(--font); fill: var(--text-2); }
   .framing .kpis small { font-size: 13px; color: var(--text-2); font-weight: 400; }
-  @media (max-width: 600px) { .framing .posl { grid-template-columns: 1fr; } }
 </style>

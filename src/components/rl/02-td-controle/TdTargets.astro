@@ -21,7 +21,7 @@ const rows: [string, string, string?][] = [
   ['Évaluation, commune aux deux', '<div class="mbf">' + tx("Q(s,a) \\leftarrow Q(s,a) + \\alpha\\,\\big(\\text{cible} - Q(s,a)\\big)") + '</div><div class="mbt">TD(0) (chapitre 1) appliqué à ' + tx('Q(s,a)') + ' au lieu de ' + tx('V(s)') + ' : une mise à jour à chaque transition. Seule la cible change.</div>'],
   ['Cible', tx("r + \\gamma\\, Q(s', a')"), tx("r + \\gamma \\max_{a'} Q(s', a')")],
   ['Action en s′', tree('s') + '<span>celle que l\'agent jouera vraiment ensuite, exploration comprise</span>', tree('q') + '<span>la meilleure selon Q, qu\'elle soit jouée ou non</span>'],
-  ['Ce qu\'il apprend', 'la valeur de la politique qu\'il suit (avec ses explorations)', 'la valeur de la politique optimale'],
+  ['Ce qu\'il apprend', '<div>' + tx('Q^\\pi') + ' : la valeur des actions pour la politique qu\'il suit (avec ses explorations)</div>', '<div>' + tx('Q^\\star') + ' : la valeur des actions pour la politique optimale</div>'],
   ['Équation visée', 'Bellman pour une politique', 'Bellman d\'optimalité'],
   ['Nom', '<b>sur la politique</b> (<i>on-policy</i>)', '<b>hors politique</b> (<i>off-policy</i>)'],
 ];

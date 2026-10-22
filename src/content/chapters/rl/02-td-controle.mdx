@@ -26,8 +26,8 @@ Les deux méthodes ne diffèrent que par l'action qu'elles supposent en $s'$ :
 
 <TdTargets />
 
-- **SARSA** tire son nom des cinq éléments de sa mise à jour, $(s, a, r, s', a')$. Sa cible utilise l'action $a'$ qu'il va réellement jouer, exploration comprise : il apprend la valeur de **la politique qu'il suit**.
-- **Q-learning** prend le maximum en $s'$, quelle que soit l'action jouée ensuite : il apprend la valeur de **la politique optimale**, tout en jouant autre chose. Ses données peuvent venir de n'importe quel comportement, à condition de couvrir les situations utiles : c'est ce qui permet à FQI et à DQN (chapitre 4) de réutiliser des transitions anciennes.
+- **SARSA** tire son nom des cinq éléments de sa mise à jour, $(s, a, r, s', a')$. Sa cible utilise l'action $a'$ qu'il va réellement jouer, exploration comprise : il apprend $Q^\pi$, la valeur des actions pour **la politique qu'il suit**.
+- **Q-learning** prend le maximum en $s'$, quelle que soit l'action jouée ensuite : il apprend $Q^\star$, la valeur des actions pour **la politique optimale**, tout en jouant autre chose. Ses données peuvent venir de n'importe quel comportement, à condition de couvrir les situations utiles : c'est ce qui permet à FQI et à DQN (chapitre 4) de réutiliser des transitions anciennes.
 
 <Refs items={[["SARSA : On-line Q-learning using connectionist systems (rapport technique CUED/F-INFENG/TR 166)", "Rummery & Niranjan", 1994, "https://mi.eng.cam.ac.uk/reports/abstracts/rummery_tr166.html"], ["Q-learning : Q-learning (Machine Learning 8, 279–292)", "Watkins & Dayan", 1992, "10.1007/BF00992698"]]} />
 
@@ -55,8 +55,8 @@ Comme TD(0) au chapitre 1, SARSA et Q-learning attribuent le crédit par la cibl
 **À retenir**
 
 - Contrôle TD : après chaque transition, $Q(s,a) \leftarrow Q(s,a) + \alpha\,(\text{cible} - Q(s,a))$, avec une politique ε-greedy.
-- **SARSA** : cible $r + \gamma\, Q(s', a')$ avec l'action jouée ensuite ; apprend la politique qu'il suit (**sur la politique**).
-- **Q-learning** : cible $r + \gamma \max_{a'} Q(s', a')$ ; apprend la politique optimale en jouant autre chose (**hors politique**).
+- **SARSA** : cible $r + \gamma\, Q(s', a')$ avec l'action jouée ensuite ; apprend $Q^\pi$, pour la politique qu'il suit (**sur la politique**).
+- **Q-learning** : cible $r + \gamma \max_{a'} Q(s', a')$ ; apprend $Q^\star$, pour la politique optimale, en jouant autre chose (**hors politique**).
 - Falaise : Q-learning apprend le chemin le plus court mais tombe plus pendant l'apprentissage ; SARSA apprend un chemin sûr, adapté à son exploration.
 
 </div>
@@ -77,7 +77,7 @@ SARSA : $0 + 0{,}9 \times 0{,}5 = 0{,}45$ (l'action réellement jouée). Q-learn
 
 <Reveal>
 
-SARSA évalue la politique qu'il suit, exploration comprise : le long du bord, une action au hasard peut faire tomber, ce qui baisse la valeur de ces cases. Q-learning évalue la politique sans exploration, pour laquelle longer le bord ne coûte rien de plus.
+SARSA évalue la politique qu'il suit, exploration comprise : le long du bord, une action au hasard peut faire tomber, ce qui baisse la valeur $Q$ des actions qui longent le bord. Q-learning évalue la politique sans exploration, pour laquelle longer le bord ne coûte rien de plus.
 
 </Reveal>
 

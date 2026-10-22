@@ -1,0 +1,135 @@
+---
+num: 2
+title: "Mémoire de Legendre"
+summary: "Résumer en continu les θ derniers pas d'un signal en n coefficients de Legendre, mis à jour par un système linéaire (Legendre Memory Unit)."
+status: premier-jet
+---
+import Reveal from '@/components/shared/Reveal.astro';
+import Quiz from '@/components/shared/Quiz.astro';
+import Refs from '@/components/shared/Refs.astro';
+import LegendreBasis from '@/components/preprocessing/02-legendre/LegendreBasis.astro';
+import WindowWidget from '@/components/preprocessing/02-legendre/WindowWidget.astro';
+import StreamWidget from '@/components/preprocessing/02-legendre/StreamWidget.astro';
+import PulseWidget from '@/components/preprocessing/02-legendre/PulseWidget.astro';
+
+Un signal $u$ arrive un pas après l'autre. À chaque pas, on veut un **résumé de son passé récent**, les $\theta$ derniers pas, avec peu de nombres, mis à jour à faible coût, et dans lequel on peut relire la valeur du signal à n'importe quel retard. La **mémoire de Legendre**, tirée de la *Legendre Memory Unit* (LMU), fait exactement ça.
+
+## 1. Résumer une fenêtre en n nombres
+
+Garder les $\theta$ dernières valeurs coûterait $\theta$ nombres. On résume plutôt la fenêtre par sa forme, décomposée sur des **polynômes de Legendre** (*Legendre polynomials*) décalés sur la fenêtre, du plus lent au plus rapide :
+
+<LegendreBasis />
+
+$$
+u(t - \tau) \;\approx\; \sum_{i=0}^{n-1} m_i(t)\, \tilde P_i(\tau / \theta), \qquad 0 \le \tau \le \theta
+$$
+
+- $\tau$ : le retard, de 0 (maintenant) à $\theta$ (le début de la fenêtre) ; $m_i(t)$ : les $n$ coefficients, le résumé.
+- $m_0$ est la moyenne de la fenêtre, $m_1$ sa tendance, $m_2$ sa courbure, puis des ondulations de plus en plus fines. C'est la même idée que la DCT du chapitre 1 : garder les premières formes, c'est garder l'allure générale.
+- Pour relire le signal il y a $\tau$ pas, il suffit d'une **combinaison linéaire fixe** des coefficients : c'est une ligne à retard compressée.
+
+Chaque coefficient est une **moyenne pondérée** de la fenêtre, avec sa forme comme poids :
+
+$$
+m_i(t) \;\approx\; \frac{2i+1}{\theta} \int_0^{\theta} u(t-\tau)\, \tilde P_i(\tau/\theta)\, d\tau
+$$
+
+- Pour $i = 0$, $\tilde P_0 = 1$ : $m_0$ est exactement la moyenne de la fenêtre.
+- Les polynômes de Legendre sont **orthogonaux** : chaque coefficient se calcule indépendamment des autres, et en ajouter un ne change pas les précédents (la LMU s'en approche : avec $n = 8$ ou $n = 16$, les premiers coefficients sont quasi identiques).
+- Avec $n = 8$ et $\theta = 100$, les coefficients de la LMU (section 2) coïncident avec ces moyennes pondérées à 0,002 près pour un signal lent ; pour un signal en paliers, les quatre premiers à 0,01 près, les derniers moins bien.
+
+<WindowWidget />
+
+- **Plus de coefficients, meilleure reconstruction** : avec ces réglages, l'écart moyen entre la fenêtre et sa reconstruction vaut 0,11 pour $n = 4$, 0,07 pour $n = 8$ et 0,04 pour $n = 16$ (moyenne sur toute l'entrée).
+- **Un palier bref est lissé** : avec peu de coefficients, les détails rapides de la fenêtre se perdent.
+
+## 2. Mettre à jour sans relire la fenêtre
+
+Recalculer les moyennes pondérées sur toute la fenêtre à chaque pas coûterait $\theta \times n$ opérations. La LMU fait suivre les coefficients par un **système linéaire** fixe, dérivé dans l'article pour que $m$ reste égal aux coefficients de Legendre de la fenêtre qui glisse :
+
+$$
+\theta\, \dot m = A\, m + B\, u, \qquad A_{ij} = (2i+1) \begin{cases} -1 & i < j \\ (-1)^{i-j+1} & i \ge j \end{cases}, \qquad B_i = (2i+1)(-1)^i
+$$
+
+- $A$ et $B$ ne sont pas appris : ils ne dépendent que de $n$ ; $\theta$ règle la longueur de la fenêtre.
+- On discrétise sur un pas en tenant l'entrée constante pendant le pas (bloqueur d'ordre zéro, *zero-order hold*) :
+
+$$
+A_d = e^{A/\theta}, \qquad B_d = A^{-1}(A_d - I)\, B, \qquad m \leftarrow A_d\, m + B_d\, u
+$$
+
+- **Coût** : un produit $n \times n$ par pas, sans garder la fenêtre : c'est un petit réseau récurrent linéaire, à poids fixes.
+- **Départ** : on part de l'état d'une entrée constante égale à la première valeur, $m = (u_0, 0, \dots, 0)$. La tendance et la courbure partent de zéro, au lieu de voir un faux saut depuis 0.
+- **Sortie** : à chaque pas, un vecteur $m(t)$ de $n$ nombres. Chaque coefficient est donc lui-même un signal, qui se met à jour au fil du temps :
+
+<StreamWidget />
+
+- **Chaque coefficient trace sa propre courbe** : $m_0$ suit la moyenne glissante (écart maximal 0,011 avec la moyenne exacte des 100 derniers pas, sur ce signal), les suivants réagissent aux changements de forme de la fenêtre, de plus en plus fins.
+- **La reconstruction suit** : la courbe brune dans la fenêtre est refaite à chaque pas avec les coefficients du moment, sans relire le signal passé.
+
+## 3. Mémoire uniforme ou exponentielle
+
+La mémoire la plus simple est une **moyenne glissante exponentielle** (EMA, *exponential moving average*) : $e \leftarrow e + (u - e)/T$. Elle donne au passé un poids qui décroît avec l'âge. Comparaison sur un événement bref :
+
+<PulseWidget />
+
+- **Legendre** : l'événement reste dans la fenêtre reconstruite, **à sa place** (il y a 25, 50, 75 pas…), avec une bosse de hauteur à peu près constante (0,13 à 0,17 entre 25 et 100 pas, avec ces réglages). Puis il disparaît vite : 0,06 à 110 pas, environ 0 à 125.
+- **EMA** : la valeur baisse sans cesse et ne dit pas quand l'événement a eu lieu. La rapide ($T = 10$) l'a oublié en 50 pas ; la lente ($T = 100$) le garde, mais mélangé à tout le reste (0,030 juste après, 0,011 à 100 pas).
+- **Résolution** : avec $n = 8$ et $\theta = 100$, l'événement de 3 pas devient une bosse d'environ 25 pas de large à mi-hauteur, soit de l'ordre de $2\theta / n$.
+
+La mémoire de Legendre convient donc quand il faut se rappeler **quoi et quand** dans une fenêtre donnée ; une EMA suffit quand seul compte un niveau récent.
+
+**Limites**
+
+- Rien n'est retenu au-delà de $\theta$ pas.
+- Avec peu de coefficients, la reconstruction est lissée : deux événements plus proches qu'environ $2\theta/n$ pas se confondent (avec $n = 8$ et $\theta = 100$, deux impulsions à 25 pas d'écart donnent une seule bosse, à 30 pas deux).
+- Le système est entièrement linéaire : il résume le passé, il ne le transforme pas.
+
+<div class="retain">
+
+**À retenir**
+
+- La mémoire de Legendre résume les $\theta$ derniers pas d'un signal en $n$ coefficients : $u(t-\tau) \approx \sum_i m_i(t)\, \tilde P_i(\tau/\theta)$.
+- Chaque coefficient est une moyenne de la fenêtre pondérée par un polynôme de Legendre : $m_0$ moyenne, $m_1$ tendance, $m_2$ courbure.
+- Les coefficients suivent un système linéaire fixe (LMU) : $m \leftarrow A_d\, m + B_d\, u$, en $n^2$ opérations par pas, sans garder la fenêtre.
+- Mémoire uniforme sur $\theta$ pas, puis oubliée ; résolution de l'ordre de $2\theta/n$ pas. Une EMA, elle, efface progressivement le passé.
+
+</div>
+
+<Refs items={[["Legendre Memory Units: Continuous-Time Representation in Recurrent Neural Networks (NeurIPS 2019)", "Voelker, Kajić & Eliasmith", 2019, "https://proceedings.neurips.cc/paper/2019/hash/952285b9b7e7a1be5aa7849f32ffff05-Abstract.html"]]} />
+
+<Quiz>
+
+**Q1.** Avec $n = 8$ et $\theta = 100$, peut-on retrouver la valeur du signal il y a 60 pas à partir des coefficients ? Il y a 150 pas ?
+
+<Reveal>
+
+Il y a 60 pas : oui, approximativement, par $\sum_i m_i\, \tilde P_i(0{,}6)$, une combinaison linéaire fixe des coefficients. Il y a 150 pas : non, c'est hors de la fenêtre, la mémoire l'a oublié.
+
+</Reveal>
+
+**Q2.** Pourquoi la LMU n'a-t-elle pas besoin de garder les 100 dernières valeurs pour mettre à jour ses coefficients ?
+
+<Reveal>
+
+Parce que les coefficients suivent un système linéaire : $m \leftarrow A_d\, m + B_d\, u$ ne demande que l'état précédent et l'entrée du moment. Le système est construit pour que $m$ reste égal aux coefficients de Legendre de la fenêtre qui glisse.
+
+</Reveal>
+
+**Q3.** Dans le widget de l'événement, que dit la moyenne exponentielle lente ($T = 100$) 50 pas après l'événement, et que dit la mémoire de Legendre ?
+
+<Reveal>
+
+L'EMA vaut environ 0,018 : il y a eu quelque chose, mais on ne sait pas quand (une valeur plus forte plus ancienne donnerait le même nombre). La mémoire de Legendre place une bosse à 50 pas dans la fenêtre reconstruite : on sait quand l'événement a eu lieu.
+
+</Reveal>
+
+**Q4.** Pour $\theta = 100$, que vaut $m_0$ si le signal vaut 1 pendant les 30 derniers pas et 0 avant ?
+
+<Reveal>
+
+Environ 0,3 : $m_0$ est la moyenne de la fenêtre ($\tilde P_0 = 1$), soit $30 / 100$.
+
+</Reveal>
+
+</Quiz>

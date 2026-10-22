@@ -50,36 +50,41 @@ $\gamma \in [0, 1]$ est le **facteur d'actualisation** : avec $\gamma = 0$ seule
 
 ## 3. L'évaluation d'une politique
 
-Avant de chercher une meilleure politique, il faut savoir **évaluer** celle qu'on a : estimer la **valeur** de chaque état, c'est-à-dire le retour moyen obtenu en partant de cet état et en suivant la politique. C'est l'**évaluation de politique**, et c'est là que se joue l'attribution du crédit : la valeur d'un état dit combien rapporte, en moyenne, ce qui vient après lui. Deux façons de la faire :
+Avant de chercher une meilleure politique, il faut savoir **évaluer** celle qu'on a. C'est l'**évaluation de politique**, et c'est là que se joue l'attribution du crédit : on estime ce que vaut chaque état, c'est-à-dire combien rapporte, en moyenne, ce qui vient après lui. Ce qu'on veut estimer, c'est la **valeur** d'un état :
 
-- **Le retour complet** (méthode de Monte-Carlo) : attendre la fin de l'épisode, puis donner à chaque état visité le retour $G_t$ observé après lui. C'est simple et sans biais, mais bruité (tout le hasard de la suite entre dans le crédit) et il faut des épisodes entiers.
-- **Bellman** : chaque état hérite de l'estimation de l'état suivant : « ce que je vaux = ma récompense + $\gamma$ × ce que vaut la suite ». La cible contient donc une estimation au lieu du retour observé : c'est le **bootstrapping**. Le crédit remonte d'**un pas à chaque mise à jour**, sans attendre la fin, et peut même se recombiner entre épisodes différents.
+$$
+V^\pi(s) = \mathbb{E}[\, G_t \mid s_t = s \,]
+$$
 
-Les deux estiment la même **valeur** $V^\pi(s) = \mathbb{E}[\, G_t \mid s_t = s \,]$, ou la **valeur d'une action** (*action value*) :
+le retour moyen en partant de $s$ et en suivant la politique $\pi$ ; et la **valeur d'une action** (*action value*) :
 
 $$
 Q^\pi(s,a) = \mathbb{E}[\, G_t \mid s_t = s,\ a_t = a \,]
 $$
 
-le retour moyen quand on joue $a$ dans $s$, puis qu'on suit $\pi$. $V^\pi$ dit ce que vaut un état ; $Q^\pi$ dit ce que vaut chaque action dans cet état, et permet donc de les comparer. C'est elle qu'on apprend pour améliorer une politique sans connaître $P$ (section 4). Les deux méthodes diffèrent par l'équation qu'elles tirent de ces définitions.
+le retour moyen quand on joue $a$ dans $s$, puis qu'on suit $\pi$. $V^\pi$ dit ce que vaut un état ; $Q^\pi$ dit ce que vaut chaque action dans cet état, et permet donc de les comparer. C'est elle qu'on apprend pour améliorer une politique sans connaître $P$ (section 4).
 
-**Monte-Carlo** prend cette définition telle quelle : la valeur est la moyenne du retour complet.
+Deux façons de l'estimer, qui diffèrent par l'équation qu'elles tirent de ces définitions :
+
+**Le retour complet** (méthode de **Monte-Carlo**) : attendre la fin de l'épisode, puis donner à chaque état visité le retour $G_t$ observé après lui. On prend la définition telle quelle : la valeur est la moyenne du retour complet.
 
 $$
 V^\pi(s) = \mathbb{E}\big[\, r_{t+1} + \gamma\, r_{t+2} + \gamma^2 r_{t+3} + \dots \mid s_t = s \,\big]
 $$
 
-Le membre de droite ne contient que des récompenses : on l'estime par la moyenne des retours observés depuis $s$.
+Le membre de droite ne contient que des récompenses : on l'estime par la moyenne des retours observés depuis $s$. C'est simple et sans biais, mais bruité (tout le hasard de la suite entre dans le crédit) et il faut des épisodes entiers.
 
-**Bellman** coupe le retour après la première récompense : $G_t = r_{t+1} + \gamma\, G_{t+1}$. En moyenne, la suite $G_{t+1}$ vaut la valeur de l'état suivant, d'où l'**équation de Bellman** :
+**Bellman** : chaque état hérite de l'estimation de l'état suivant : « ce que je vaux = ma récompense + $\gamma$ × ce que vaut la suite ». On coupe le retour après la première récompense, $G_t = r_{t+1} + \gamma\, G_{t+1}$, et en moyenne la suite $G_{t+1}$ vaut la valeur de l'état suivant, d'où l'**équation de Bellman** :
 
 $$
 V^\pi(s) = \mathbb{E}\big[\, r_{t+1} + \gamma\, V^\pi(s_{t+1}) \mid s_t = s \,\big]
 $$
 
+La cible contient donc une estimation au lieu du retour observé : c'est le **bootstrapping**. Le crédit remonte d'**un pas à chaque mise à jour**, sans attendre la fin, et peut même se recombiner entre épisodes différents.
+
 <McBellman />
 
-Dans l'équation de Bellman, $V^\pi$ apparaît des deux côtés : la cible contient une estimation de la valeur, pas seulement des récompenses (le bootstrapping). Développée, la moyenne porte sur l'action choisie par la politique, puis sur l'état où l'environnement envoie :
+Dans l'équation de Bellman, $V^\pi$ apparaît des deux côtés. Développée, la moyenne porte sur l'action choisie par la politique, puis sur l'état où l'environnement envoie :
 
 $$
 V^\pi(s) = \sum_a \pi(a \mid s) \sum_{s'} P(s' \mid s, a)\,\big[\, r(s, a, s') + \gamma\, V^\pi(s') \,\big]
@@ -135,7 +140,7 @@ $$
 V^\star(s) = \max_a \sum_{s'} P(s'|s,a)\,\big[\, r + \gamma\, V^\star(s') \,\big]
 $$
 
-La valeur optimale d'un état est celle de sa meilleure action : la récompense immédiate, plus $\gamma$ fois la valeur de l'état atteint, en supposant qu'on joue ensuite au mieux. $V^\star$ est le seul jeu de valeurs qui vérifie cette égalité.
+La somme entre crochets est la valeur $Q^\star(s,a)$ de l'action $a$ : la récompense immédiate, plus $\gamma$ fois la valeur de l'état atteint, en supposant qu'on joue ensuite au mieux. La valeur optimale d'un état est celle de sa meilleure action, $V^\star(s) = \max_a Q^\star(s,a)$. $V^\star$ est le seul jeu de valeurs qui vérifie cette égalité.
 
 Le maximum empêche de la résoudre d'un coup, mais on peut la répéter. On part de $V_0 = 0$ partout, puis on calcule chaque nouvelle valeur à partir des valeurs de l'itération précédente :
 
@@ -172,7 +177,6 @@ L'itération de valeur calcule chaque moyenne avec $P$. Sans $P$, on apprend à 
 
 - **En ligne** (*online*) : l'agent joue et apprend en même temps, et ses actions produisent les données suivantes. Il peut donc essayer ce qu'il ignore (Q-learning, DQN, PPO).
 - **Hors ligne** (*offline*) : on apprend sur un lot de transitions déjà enregistrées, sans en produire de nouvelles. Une action absente des données reste inconnue (FQI, LSPI, chapitre 4).
-- Ne pas confondre avec *sur / hors politique* (chapitre 2), qui porte sur la cible : Q-learning est hors politique, mais en ligne.
 
 ## 6. Les grandes familles d’amélioration de la politique
 
@@ -186,7 +190,7 @@ Le chapitre 2 détaille le contrôle TD (SARSA, Q-learning) ; le chapitre 4 pass
 
 - Un agent choisit des actions pour maximiser le **retour** $G_t = r_{t+1} + \gamma r_{t+2} + \dots$.
 - Le problème central est l'**attribution du crédit** : quelle action mérite la récompense d'une suite lointaine. Deux réponses : le **retour complet** (Monte-Carlo : la cible est le retour observé, sans biais mais bruitée) et **Bellman** (bootstrapping : la cible contient l'estimation de l'état suivant, le crédit remonte un pas à la fois).
-- **Évaluer** une politique (politique fixe), c'est estimer la **valeur** de chaque état : le retour moyen en la suivant. Elle vérifie $V^\pi(s) = $ récompense $+\ \gamma \times V^\pi(\text{état suivant})$, en moyenne sur les actions et les transitions : c'est l'équation de Bellman. L'**erreur TD** $r + \gamma V(s') - V(s)$ mesure son écart sur une transition observée.
+- **Évaluer** une politique (politique fixe), c'est estimer la **valeur** de chaque état $V^\pi(s)$, ou de chaque action $Q^\pi(s,a)$ : le retour moyen en la suivant. Elle vérifie $V^\pi(s) = $ récompense $+\ \gamma \times V^\pi(\text{état suivant})$, en moyenne sur les actions et les transitions : c'est l'équation de Bellman. L'**erreur TD** $r + \gamma V(s') - V(s)$ mesure son écart sur une transition observée.
 - Deux équations de Bellman : pour une politique (moyenne sur les actions, pour **évaluer**) et d'optimalité (maximum sur les actions, pour **améliorer**).
 - Pour **améliorer** la politique (le contrôle), chaque algorithme s'appuie sur une technique d'évaluation (tableau de la section 3). Avec $P$ connu, l'itération de valeur répète la mise à jour avec le maximum jusqu'à convergence. Sans $P$, on apprend $Q(s,a)$ à partir d'épisodes : contrôle Monte-Carlo (retour complet) ou Q-learning (cible de Bellman d'optimalité).
 
@@ -224,7 +228,7 @@ On remplace la moyenne pondérée par $\pi$ sur les actions par un maximum : la 
 
 <Reveal>
 
-Parce que le maximum de la mise à jour choisit à chaque itération la meilleure action d'après la valeur courante. La politique n'est pas donnée, elle est lue à la fin comme l'action qui maximise « récompense + $\gamma$ × valeur de la case atteinte ».
+Parce que le maximum de la mise à jour choisit à chaque itération la meilleure action d'après la valeur courante. La politique n'est pas donnée, elle est lue à la fin comme l'action de plus grande valeur $Q$, c'est-à-dire « récompense + $\gamma$ × valeur de la case atteinte ». 
 
 </Reveal>
 

@@ -4,28 +4,22 @@
 ---
 <div class="widget logc pp" data-widget="logc">
   <div class="ctl">
-    <label class="posl"><span>Position de la trame (25 ms)</span><input type="range" data-ref="pos" min="0" max="575" step="5" value="100" /><b data-ref="pos-out"></b></label>
+    <input type="range" data-ref="pos" min="0" max="575" step="5" value="100" hidden />
     <div class="row"><span>Volume du signal :</span><span class="seg" data-ref="gain"></span></div>
   </div>
 
+  <div class="ft">Signal <span>(clique ou glisse sur le signal pour placer la trame de 25 ms)</span></div>
   <svg data-ref="wave" width="100%" role="img" aria-label="Signal d'origine x entier, avec la trame choisie surlignée"></svg>
 
   <div class="ft">Énergies de Mel E<sub>m</sub> <span>(échelle linéaire)</span></div>
   <svg data-ref="lin" width="100%" role="img" aria-label="Énergies de Mel en échelle linéaire"></svg>
   <div class="ft">Après le logarithme : ln E<sub>m</sub></div>
   <svg data-ref="log" width="100%" role="img" aria-label="Logarithme des énergies de Mel"></svg>
-
-  <div class="kpis">
-    <div><span>Plus forte énergie</span><b data-ref="k1"></b></div>
-    <div><span>Plus faible énergie</span><b data-ref="k2"></b></div>
-    <div><span>Rapport plus forte / plus faible</span><b data-ref="k3"></b></div>
-    <div><span>Décalage de la courbe log</span><b data-ref="k4"></b></div>
-  </div>
 </div>
 
 <script>
   import { makeSignal } from './signal';
-  import { drawWaveStrip } from './waveStrip';
+  import { drawWaveStrip, pickOnWave } from './waveStrip';
   import { melEnergiesAt } from './mel';
 
   document.querySelectorAll<HTMLElement>('[data-widget="logc"]').forEach((root) => {
@@ -35,8 +29,6 @@
     const M = 40;
     const GAINS = [1, 3, 10]; // facteurs d'amplitude
     let gain = 1;
-    const fr = (v: number, d = 1) => v.toLocaleString('fr-FR', { maximumFractionDigits: d });
-    const sci = (v: number) => { const e = Math.floor(Math.log10(v)); return `${fr(v / 10 ** e, 1)} × 10<sup>${e}</sup>`; };
 
     GAINS.forEach((g) => {
       const b = document.createElement('button');
@@ -65,11 +57,10 @@
     function draw() {
       $('gain').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.v! === gain));
       const t0 = +inp('pos').value;
-      $('pos-out').textContent = `${t0} ms`;
       drawWaveStrip($('wave') as unknown as SVGSVGElement, x, t0);
       const E = melEnergiesAt(x, t0, M, gain).map((e) => Math.max(e, 1e-12));
       const E1 = melEnergiesAt(x, t0, M, 1).map((e) => Math.max(e, 1e-12));
-      const emax = Math.max(...E), emin = Math.min(...E);
+      const emax = Math.max(...E);
       bars('lin', E.map((e) => e / emax), 0, 1, 'var(--p-mel)', [[0, '0'], [1, 'max']]);
       // l'échelle du log est fixée sur le volume le plus fort, pour que le décalage se voie
       const L1 = E1.map(Math.log), top = Math.max(...L1) + 2 * Math.log(Math.max(...GAINS)) + 0.5, bot = Math.min(...L1) - 0.5;
@@ -77,24 +68,18 @@
       for (let t = Math.ceil(bot / step) * step; t <= top; t += step) ticks.push([t, String(t)]);
       bars('log', E.map(Math.log), bot, top, 'var(--p-wave)', ticks);
 
-      $('k1').innerHTML = sci(emax);
-      $('k2').innerHTML = sci(emin);
-      $('k3').innerHTML = sci(emax / emin);
-      $('k4').textContent = gain === 1 ? '0' : `+ ${fr(2 * Math.log(gain), 2)} (= ln ${gain}²)`;
     }
     inp('pos').addEventListener('input', draw);
+    pickOnWave($('wave') as unknown as SVGSVGElement, () => 25, inp('pos'), draw);
     draw();
   });
 </script>
 
 <style is:global>
   .logc .ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 32px; margin-bottom: 6px; }
-  .logc .ctl .posl { flex: 1 1 280px; }
   .logc .ctl .row { margin: 0; }
   .logc .seg { display: inline-flex; gap: 6px; }
   .logc .seg button { font-size: 13px; padding: 4px 12px; }
-  .logc .posl { display: grid; grid-template-columns: 200px 1fr 70px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); margin: 6px 0; }
-  .logc .posl b { text-align: right; color: var(--text); font-weight: 500; }
   .logc .ft { font-size: 13px; font-weight: 500; margin: 12px 0 2px; }
   .logc .ft span { font-weight: 400; color: var(--text-2); }
   .logc svg text.ax { font: 11px var(--font); fill: var(--text-2); }

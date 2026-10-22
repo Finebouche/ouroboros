@@ -30,4 +30,4 @@ Affirmations écrites dans les cours mais pas encore vérifiées dans une source
 
 ## HPC et Preprocessing
 
-- Rien de signalé pour l'instant.
+- **Preprocessing, chapitre 2 (mémoire de Legendre)** : vérifiés dans keras-lmu et par simulation (matrices A et B, discrétisation, reconstruction, état de départ, formule intégrale des coefficients, chiffres des widgets). Non vérifié : la formule intégrale $m_i = \frac{2i+1}{\theta}\int u\,\tilde P_i$ n'est pas relue dans l'article (contrôlée numériquement : écart de 0,002 pour un signal lent) ; « dérivé dans l'article pour que $m$ reste égal aux coefficients de Legendre de la fenêtre » vient du résumé de l'article.

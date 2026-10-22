@@ -11,13 +11,15 @@ const courseTitle = course ? COURSES[course].title : 'Ouroboros';
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <title>{title} · {courseTitle}</title>
   </head>
   <body>
     <header class="site-header">
       <div class:list={["shell", { wide }]}>
         <a class="brand" href="/">Ouroboros</a>
-        {course && <span class="crumb"><span aria-hidden="true">/ </span><a href={`/${course}/`}>{courseTitle}</a></span>}
+        {course && <span class="crumb"><span aria-hidden="true">/ </span><a href={`/${course}/`} title="Retour au sommaire du cours">{courseTitle}</a></span>}
       </div>
     </header>
     <main class:list={["shell", { wide }]}>

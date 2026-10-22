@@ -46,7 +46,7 @@ const F = {
       <div title="vert : contrôle Monte-Carlo, bleu : Q-learning"><span>Valeur de la politique</span><b data-ref="kv"></b></div>
     </div>
   </div>
-  <p class="note"><b>Évaluation et amélioration de la politique, sans connaître P.</b> Flèche : meilleure action selon Q ; couleur : sa valeur. Le contrôle Monte-Carlo met à jour en fin d'épisode, Q-learning à chaque pas. Courbe : vraie valeur, depuis le départ, de la politique « meilleure action selon Q », calculée avec les règles que les agents ignorent ; pointillé gris : l'optimum. γ = 0,9, α = 0,1.</p>
+  <p class="note"><b>Évaluation et amélioration de la politique, sans connaître P.</b> Flèche : meilleure action selon Q ; couleur : valeur Q de cette action. Le contrôle Monte-Carlo met à jour en fin d'épisode, Q-learning à chaque pas. Courbe : vraie valeur, depuis le départ, de la politique « meilleure action selon Q », calculée avec les règles que les agents ignorent ; pointillé gris : l'optimum. γ = 0,9, α = 0,1.</p>
 </div>
 
 <script>

@@ -1,0 +1,83 @@
+---
+// Chapitre 2 : un événement bref (u = 1 pendant 3 pas, 0 sinon), vu par le banc « legendre » (n = 8, θ = 100) et par trois moyennes exponentielles.
+// Un bouton par durée écoulée depuis l'événement. À gauche : la fenêtre reconstruite ; à droite : les trois EMA au cours du temps.
+---
+<div class="widget lpw pp" data-widget="lpw">
+  <div class="row"><span>Pas écoulés depuis l'événement :</span><span class="seg" data-ref="dt"></span></div>
+  <div class="lpp">
+    <div><div class="ft">Legendre <span>(n = 8, θ = 100) : la fenêtre reconstruite</span></div><svg data-ref="lg" role="img" aria-label="Fenêtre reconstruite par le banc de Legendre"></svg></div>
+    <div><div class="ft">EMA <span>: trois moyennes exponentielles</span></div><svg data-ref="em" role="img" aria-label="Trois moyennes exponentielles au cours du temps après l'événement"></svg></div>
+  </div>
+  <p class="note">Entrée : 1 pendant 3 pas, 0 avant et après. EMA de constante de temps T : e ← e + (u − e) / T.</p>
+</div>
+
+<script>
+  import { runLmu, reconstruct, runEma } from './lmu';
+
+  document.querySelectorAll<HTMLElement>('[data-widget="lpw"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const TH = 100, N = 8, E = 200, L = 3, END = E + L - 1, DTS = [0, 25, 50, 75, 100, 110, 125, 150], TS = [10, 30, 100];
+    const u = Array.from({ length: END + 200 }, (_, k) => (k >= E && k < E + L ? 1 : 0));
+    const M = runLmu(u, N, TH), EM = TS.map((T) => runEma(u, T, 0));
+    let dt = 50;
+    const f = (v: number, d = 2) => v.toFixed(d).replace('.', ',').replace('-', '−');
+    DTS.forEach((v) => { const b = document.createElement('button'); b.textContent = String(v); b.dataset.v = String(v); b.addEventListener('click', () => { dt = v; draw(); }); $('dt').appendChild(b); });
+
+    function draw() {
+      $('dt').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.v! === dt));
+      const t = END + dt, m = M[t];
+
+      // --- Legendre : fenêtre des θ derniers pas, maintenant à droite ---
+      const W = 320, H = 190, ox = 8, pw = W - 16, y0 = 10, ph = H - 40, lo = -0.25, hi = 1.15;
+      const X = (tau: number) => ox + (1 - tau / TH) * pw, Y = (v: number) => y0 + (1 - (Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * ph;
+      let g = `<line x1="${ox}" y1="${Y(0)}" x2="${W - ox}" y2="${Y(0)}" stroke="var(--border)"/>`;
+      let d = `M${X(TH)},${Y(u[t - TH])}`;
+      for (let tau = TH - 1; tau >= 0; tau--) d += `H${X(tau).toFixed(1)}V${Y(u[t - tau]).toFixed(1)}`;
+      g += `<path d="${d}" fill="none" stroke="var(--p-wave)" stroke-width="1.5" stroke-opacity="0.75"/>`;
+      let pts = '', pk = -1, pkTau = 0;
+      for (let tau = TH; tau >= 0; tau--) { const r = reconstruct(m, tau / TH); pts += `${X(tau).toFixed(1)},${Y(r).toFixed(1)} `; if (r > pk) { pk = r; pkTau = tau; } }
+      g += `<polyline points="${pts}" fill="none" stroke="var(--p-mel)" stroke-width="2.2" stroke-linejoin="round"/>`;
+      if (pk > 0.02) g += `<text x="${Math.max(ox + 60, Math.min(W - ox - 60, X(pkTau)))}" y="${Math.max(y0 + 10, Y(pk) - 8)}" text-anchor="middle" class="lv">bosse : ${f(pk)}</text>`;
+      else g += `<text x="${W / 2}" y="${Y(0) - 14}" text-anchor="middle" class="lv">sorti de la fenêtre : reconstruction ≈ 0</text>`;
+      g += `<text x="${ox}" y="${H - 6}" class="ax">il y a ${TH} pas</text><text x="${W - ox}" y="${H - 6}" text-anchor="end" class="ax">maintenant</text>`;
+      const lg = $('lg') as unknown as SVGSVGElement;
+      lg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      lg.innerHTML = g;
+
+      // --- EMA : valeur au cours du temps depuis l'événement ---
+      const rm = 104, qw = W - ox - rm, el = 0, eh = 0.32;
+      const XE = (k: number) => ox + (k / 160) * qw, YE = (v: number) => y0 + (1 - (Math.min(eh, v) - el) / (eh - el)) * ph;
+      let e = `<line x1="${ox}" y1="${YE(0)}" x2="${ox + qw}" y2="${YE(0)}" stroke="var(--border)"/>`;
+      e += `<line x1="${XE(dt)}" y1="${y0}" x2="${XE(dt)}" y2="${YE(0)}" stroke="var(--hl-stroke)" stroke-width="1.4" stroke-dasharray="4 3"/>`;
+      const dash = ['', '5 3', '1.5 3'];
+      const labs = TS.map((T, i) => {
+        let p = '';
+        for (let k = 0; k <= 160; k++) p += `${XE(k).toFixed(1)},${YE(EM[i][END + k]).toFixed(1)} `;
+        e += `<polyline points="${p}" fill="none" stroke="var(--text-2)" stroke-width="1.8" stroke-dasharray="${dash[i]}"/>`;
+        const v = EM[i][t];
+        e += `<circle cx="${XE(dt)}" cy="${YE(v)}" r="3.2" fill="var(--text)"/>`;
+        return { y: YE(EM[i][END + 160]), t: `T=${T} : ${f(v, 3)}` };
+      }).sort((a, b) => a.y - b.y);
+      // étiquettes au bout des courbes, écartées de 14 px en remontant depuis la plus basse
+      for (let i = labs.length - 2; i >= 0; i--) if (labs[i + 1].y - labs[i].y < 14) labs[i].y = labs[i + 1].y - 14;
+      labs.forEach((l) => (e += `<text x="${ox + qw + 6}" y="${(l.y + 4).toFixed(1)}" class="ax">${l.t}</text>`));
+      e += `<text x="${ox}" y="${H - 6}" class="ax">événement</text><text x="${ox + qw}" y="${H - 6}" text-anchor="end" class="ax">160 pas après</text>`;
+      const em = $('em') as unknown as SVGSVGElement;
+      em.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      em.innerHTML = e;
+    }
+    draw();
+  });
+</script>
+
+<style is:global>
+  .lpw .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .lpw .seg button { font-size: 13px; padding: 4px 10px; }
+  .lpw .lpp { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .lpw .ft { font-size: 13px; font-weight: 500; margin: 6px 0 2px; }
+  .lpw .ft span { font-weight: 400; color: var(--text-2); }
+  .lpw svg { display: block; width: 100%; height: auto; }
+  .lpw svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .lpw svg text.lv { font: 600 11.5px var(--font); fill: var(--text); }
+  @media (max-width: 640px) { .lpw .lpp { grid-template-columns: 1fr; } }
+</style>

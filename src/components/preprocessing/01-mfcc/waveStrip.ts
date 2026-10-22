@@ -25,3 +25,20 @@ export function drawWaveStrip(svg: SVGSVGElement, x: Float32Array, t0Ms: number,
   svg.setAttribute('viewBox', `0 0 ${W} ${top + h + 4}`);
   svg.innerHTML = g;
 }
+
+// Clic ou glissé sur le signal : place la trame (son centre suit le pointeur), calée sur le pas du curseur caché `input`.
+export function pickOnWave(svg: SVGSVGElement, lenMs: () => number, input: HTMLInputElement, onChange: () => void) {
+  svg.style.cursor = 'ew-resize';
+  svg.style.touchAction = 'pan-y';
+  const pick = (e: PointerEvent) => {
+    const r = svg.getBoundingClientRect();
+    const t = ((((e.clientX - r.left) / r.width) * 640 - 8) / 624) * (N / SR) * 1000 - lenMs() / 2;
+    const step = +input.step || 1;
+    const v = Math.max(0, Math.min(+input.max, Math.round(t / step) * step));
+    if (v === +input.value) return;
+    input.value = String(v);
+    onChange();
+  };
+  svg.addEventListener('pointerdown', (e) => { svg.setPointerCapture(e.pointerId); pick(e); });
+  svg.addEventListener('pointermove', (e) => { if (svg.hasPointerCapture(e.pointerId)) pick(e); });
+}

@@ -5,7 +5,9 @@
 <div class="widget sview pp" data-widget="sview">
   <div class="row"><span>Longueur de trame :</span><span class="seg" data-ref="len"></span><span class="sp">Échelle :</span><span class="seg" data-ref="scale"></span></div>
   <div class="row"><span>Fenêtre :</span><span class="seg" data-ref="win"></span><label class="pre"><input type="checkbox" data-ref="pre" /> Pré-accentuation (0,97)</label></div>
-  <label class="posl"><span>Position de la trame</span><input type="range" data-ref="pos" min="0" max="500" step="5" value="100" /><b data-ref="pos-out"></b></label>
+  <input type="range" data-ref="pos" min="0" max="500" step="5" value="100" hidden />
+  <div class="ft">Signal <span>(clique ou glisse sur le signal pour placer la trame)</span></div>
+  <svg data-ref="wave" width="100%" role="img" aria-label="Signal d'origine x entier, avec la trame choisie surlignée"></svg>
   <svg data-ref="frame" width="100%" role="img" aria-label="Trame brute, fenêtre et trame fenêtrée"></svg>
   <div class="ft">Son spectre de puissance</div>
   <svg data-ref="spec" width="100%" role="img" aria-label="Spectre de puissance de la trame"></svg>
@@ -24,6 +26,7 @@
 
 <script>
   import { SR, N, SEGMENTS, makeSignal } from './signal';
+  import { drawWaveStrip, pickOnWave } from './waveStrip';
   import { nextPow2, windowOf, preemphasis, powerSpectrum, WINDOW_LABELS, type WindowName } from './dsp';
 
   document.querySelectorAll<HTMLElement>('[data-widget="sview"]').forEach((root) => {
@@ -157,7 +160,7 @@
       const L = Math.round((lenMs * SR) / 1000);
       const t0 = +inp('pos').value;
       const s0 = Math.round((t0 * SR) / 1000);
-      $('pos-out').textContent = `${t0} ms`;
+      drawWaveStrip($('wave') as unknown as SVGSVGElement, raw, t0, lenMs);
       $('note').textContent = NOTES[lenMs];
 
       const frame = Array.from(x.slice(s0, s0 + L));
@@ -236,6 +239,7 @@
       publish();
     });
     inp('pos').addEventListener('input', () => { draw(); publish(); });
+    pickOnWave($('wave') as unknown as SVGSVGElement, () => lenMs, inp('pos'), () => { draw(); publish(); });
     window.addEventListener('mfcc:frame', (ev) => {
       const d = (ev as CustomEvent<FS & { src: unknown }>).detail;
       if (d.src === root) return;
@@ -256,8 +260,6 @@
   .sview .seg button { font-size: 13px; padding: 4px 12px; }
   .sview .sp { margin-left: 16px; }
   .sview .pre { margin-left: 16px; cursor: pointer; }
-  .sview .posl { display: grid; grid-template-columns: 160px 1fr 60px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); margin: 8px 0; }
-  .sview .posl b { text-align: right; color: var(--text); font-weight: 500; }
   .sview .ft { font-size: 13px; font-weight: 500; margin: 10px 0 2px; }
   .sview .ft span { font-weight: 400; color: var(--text-2); }
   .sview .sgt { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--border); }

@@ -11,10 +11,6 @@ const top = 30, rowH = 56;
 // bande de la seule différence
 o += `<rect x="${cx(KEY) - sq / 2 - 5}" y="${top - 8}" width="${sq + 10}" height="${rowH + sq + 16}" rx="9" fill="var(--hl-stroke)" fill-opacity="0.12" stroke="var(--hl-stroke)" stroke-opacity="0.6" stroke-dasharray="4 3"/>`;
 o += `<text x="${cx(KEY)}" y="${top - 14}" text-anchor="middle" class="hk">seule différence</text>`;
-// accolade au-dessus des actions identiques qui suivent
-const bx1 = cx(KEY + 1) - sq / 2, bx2 = cx(T - 1) + sq / 2, byb = top - 10;
-o += `<path d="M ${bx1} ${byb + 5} L ${bx1} ${byb} L ${bx2} ${byb} L ${bx2} ${byb + 5}" fill="none" stroke="var(--text-2)" stroke-width="1"/>`;
-o += `<text x="${(bx1 + bx2) / 2}" y="${byb - 5}" text-anchor="middle" class="hs">identiques dans les deux épisodes</text>`;
 [[ep1, '+1', 'épisode 1'], [ep2, '0', 'épisode 2']].forEach(([acts, rew, name], row) => {
   const y = top + row * rowH;
   o += `<text x="${x0 - 12}" y="${y + sq / 2 + 4}" text-anchor="end" class="hn">${name}</text>`;

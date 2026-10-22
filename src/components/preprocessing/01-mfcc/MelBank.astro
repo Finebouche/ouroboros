@@ -5,10 +5,11 @@
   <div class="row"><span>Espacement des filtres :</span><span class="seg" data-ref="space"></span></div>
   <div class="row"><span>Nombre de filtres M :</span><span class="seg" data-ref="m"></span></div>
   <div class="sl">
-    <label class="posl"><span>Position de la trame (25 ms)</span><input type="range" data-ref="pos" min="0" max="575" step="5" value="100" /><b data-ref="pos-out"></b></label>
+    <input type="range" data-ref="pos" min="0" max="575" step="5" value="100" hidden />
     <label class="posl"><span>Filtre mis en évidence</span><input type="range" data-ref="sel" min="1" max="40" step="1" value="12" /><b data-ref="sel-out"></b></label>
   </div>
 
+  <div class="ft">Signal <span>(clique ou glisse sur le signal pour placer la trame de 25 ms)</span></div>
   <svg data-ref="wave" width="100%" role="img" aria-label="Signal d'origine x entier, avec la trame choisie surlignée"></svg>
 
   <div class="ft">1. Les filtres sur le spectre de la trame</div>
@@ -26,7 +27,7 @@
 
 <script>
   import { SR, makeSignal } from './signal';
-  import { drawWaveStrip } from './waveStrip';
+  import { drawWaveStrip, pickOnWave } from './waveStrip';
   import { windowOf, powerSpectrum } from './dsp';
 
   document.querySelectorAll<HTMLElement>('[data-widget="melbank"]').forEach((root) => {
@@ -60,7 +61,6 @@
       const mark = (key: string, v: string) => $(key).querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.v === v));
       mark('space', mode); mark('m', String(M));
       const t0 = +inp('pos').value;
-      $('pos-out').textContent = `${t0} ms`;
       drawWaveStrip($('wave') as unknown as SVGSVGElement, x, t0);
       const sel = Math.min(+inp('sel').value, M) - 1;
       $('sel-out').textContent = `n° ${sel + 1} sur ${M}`;
@@ -126,7 +126,7 @@
       let b3 = `<line x1="${ox}" y1="${by0 + bhh}" x2="${W - 8}" y2="${by0 + bhh}" stroke="var(--border)"/>`;
       E.forEach((e, i) => {
         const h = (e / emax) * bhh;
-        b3 += `<rect x="${(ox + i * bw + 0.5).toFixed(1)}" y="${(by0 + bhh - h).toFixed(1)}" width="${Math.max(1, bw - 1).toFixed(1)}" height="${h.toFixed(1)}" rx="1" fill="${i === sel ? 'var(--hl-stroke)' : 'var(--p-mel)'}"/>`;
+        b3 += `<rect x="${(ox + i * bw + 0.5).toFixed(1)}" y="${(by0 + bhh - h).toFixed(1)}" width="${Math.max(1, bw - 1).toFixed(1)}" height="${h.toFixed(1)}" rx="1" fill="${i === sel ? 'var(--hl-stroke)' : 'var(--p-mel)'}"${i === sel ? ' stroke="var(--hl-text)" stroke-width="1.2"' : ' fill-opacity="0.4"'}/>`;
       });
       b3 += `<text x="${ox}" y="${bh + 2}" class="ax">filtre 1</text><text x="${W - 8}" y="${bh + 2}" text-anchor="end" class="ax">filtre ${M}</text>`;
       const c3 = $('bars') as unknown as SVGSVGElement;
@@ -140,6 +140,7 @@
     }
 
     inp('pos').addEventListener('input', draw);
+    pickOnWave($('wave') as unknown as SVGSVGElement, () => 25, inp('pos'), draw);
     inp('sel').addEventListener('input', draw);
     draw();
   });
@@ -149,9 +150,8 @@
   .melb .row { margin-bottom: 6px; }
   .melb .seg { display: inline-flex; gap: 6px; flex-wrap: wrap; }
   .melb .seg button { font-size: 13px; padding: 4px 12px; }
-  .melb .sl { display: grid; gap: 6px 24px; }
-  .melb .posl { display: grid; grid-template-columns: 200px 1fr 90px; align-items: center; gap: 12px; font-size: 14px; color: var(--text-2); margin: 6px 0; }
-  .melb .posl b { text-align: right; color: var(--text); font-weight: 500; }
+  .melb .sl { display: grid; grid-template-columns: minmax(0, 50%); gap: 6px 24px; }
+  @media (max-width: 600px) { .melb .sl { grid-template-columns: minmax(0, 1fr); } }
   .melb .ft { font-size: 13px; font-weight: 500; margin: 12px 0 2px; }
   .melb svg text.ax { font: 11px var(--font); fill: var(--text-2); }
   .melb .kpis small { font-size: 13px; color: var(--text-2); font-weight: 400; }

@@ -1,0 +1,34 @@
+---
+// Chapitre 2 : les cinq premiers polynômes de Legendre décalés, dessinés sur la fenêtre des θ derniers pas
+// (à gauche : il y a θ pas ; à droite : maintenant). Même convention que les autres figures du chapitre.
+import { legendre } from './lmu';
+const NP = 5, pw = 112, gap = 14, x00 = 6, top = 22, ph = 64, mid = top + ph / 2;
+const names = ['moyenne', 'tendance', 'courbure', 'ordre 3', 'ordre 4'];
+const sub = '₀₁₂₃₄';
+let g = '';
+for (let i = 0; i < NP; i++) {
+  const x0 = x00 + i * (pw + gap);
+  g += `<text x="${x0 + pw / 2}" y="14" text-anchor="middle" class="lt">P̃${sub[i]} · ${names[i]}</text>`;
+  g += `<line x1="${x0}" y1="${mid}" x2="${x0 + pw}" y2="${mid}" stroke="var(--border)" stroke-dasharray="2 3"/>`;
+  g += `<line x1="${x0}" y1="${top}" x2="${x0}" y2="${top + ph}" stroke="var(--border)"/><line x1="${x0 + pw}" y1="${top}" x2="${x0 + pw}" y2="${top + ph}" stroke="var(--border)"/>`;
+  let pts = '';
+  for (let k = 0; k <= 60; k++) {
+    const r = 1 - k / 60; // de gauche (il y a θ pas, r = 1) à droite (maintenant, r = 0)
+    pts += `${(x0 + (k / 60) * pw).toFixed(1)},${(mid - legendre(i, r) * (ph / 2 - 3)).toFixed(1)} `;
+  }
+  g += `<polyline points="${pts}" fill="none" stroke="var(--p-mel)" stroke-width="2" stroke-linejoin="round"/>`;
+  g += `<text x="${x0}" y="${top + ph + 14}" class="ls">−θ</text><text x="${x0 + pw}" y="${top + ph + 14}" text-anchor="end" class="ls">maintenant</text>`;
+}
+const W = x00 + NP * pw + (NP - 1) * gap + 6;
+---
+<figure class="lgb">
+  <svg viewBox={`0 0 ${W} ${top + ph + 20}`} role="img" aria-label="Les cinq premiers polynômes de Legendre décalés sur la fenêtre : constante, droite, parabole, puis des ondulations de plus en plus fines" set:html={g} />
+  <figcaption>Chaque coefficient m<sub>i</sub> dit combien de la forme P̃<sub>i</sub> il y a dans la fenêtre. Les formes valent entre −1 et +1 ; plus l'ordre monte, plus elles ondulent.</figcaption>
+</figure>
+
+<style is:global>
+  .lgb { margin: 1.5rem 0; }
+  .lgb svg { width: 100%; height: auto; display: block; }
+  .lgb svg text.lt { font: 600 11.5px var(--font); fill: var(--text); }
+  .lgb svg text.ls { font: 10.5px var(--font); fill: var(--text-2); }
+</style>

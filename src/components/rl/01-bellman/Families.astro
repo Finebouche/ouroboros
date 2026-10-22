@@ -18,10 +18,10 @@ const glyph = (g: Glyph) => {
   return o + '</svg>';
 };
 const rows: { fam: string; ex: string; how: string; glyph: Glyph; credit: string; data: string }[] = [
-  { fam: 'Contrôle Monte-Carlo', ex: 'contrôle Monte-Carlo ε-greedy', how: 'évaluer Q par des retours complets, puis jouer l\'action de plus grande valeur', glyph: 'all', credit: 'retour complet', data: 'en ligne' },
+  { fam: 'Contrôle Monte-Carlo', ex: 'contrôle Monte-Carlo ε-greedy', how: 'évaluer Q par des retours complets, puis jouer l\'action de plus grande valeur Q', glyph: 'all', credit: 'retour complet', data: 'en ligne' },
   { fam: 'Contrôle TD', ex: 'SARSA, Q-learning, DQN', how: 'cible de Bellman à chaque pas ; Q-learning et DQN visent directement l\'optimum (max)', glyph: 'step', credit: 'Bellman', data: 'en ligne' },
   { fam: 'Itération de valeur approchée', ex: 'FQI', how: 'équation d\'optimalité (max), par régression sur un lot', glyph: 'step', credit: 'Bellman', data: 'hors ligne' },
-  { fam: 'Itération de politique approchée', ex: 'LSPI', how: 'évaluer (LSTD), puis prendre l\'action de plus grande valeur', glyph: 'step', credit: 'Bellman', data: 'hors ligne' },
+  { fam: 'Itération de politique approchée', ex: 'LSPI', how: 'évaluer (LSTD), puis prendre l\'action de plus grande valeur Q', glyph: 'step', credit: 'Bellman', data: 'hors ligne' },
   { fam: 'Gradient de politique', ex: 'REINFORCE, acteur-critique (A2C), NAC, TRPO, PPO', how: 'ajuster directement la politique dans le sens qui augmente le retour moyen ; un critique note les actions (sauf REINFORCE)', glyph: 'mix', credit: 'du retour complet (REINFORCE) au mélange selon λ', data: 'en ligne' },
   { fam: 'Stratégies d\'évolution', ex: 'OpenAI-ES, CMA-ES', how: 'boîte noire : perturber la politique au hasard, garder les directions qui donnent le meilleur retour', glyph: 'group', credit: 'retour d\'épisode, sans crédit par action', data: 'en ligne' },
   { fam: 'Avec un modèle', ex: 'itération de valeur, Dyna, MCTS (AlphaZero), MuZero', how: 'connaître ou apprendre P et r, puis planifier : simuler la suite avant d\'agir', glyph: 'none', credit: 'selon la méthode de planification', data: 'modèle connu ou appris' },

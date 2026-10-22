@@ -1,32 +1,68 @@
 ---
-import Base from '../layouts/Base.astro';
-import { COURSES, courseIds, chaptersOf } from '../lib/courses';
+import Base from "../layouts/Base.astro";
+import { COURSES, courseIds, chaptersOf } from "../lib/courses";
 
 const courses = await Promise.all(
-  courseIds.map(async (id) => {
-    const chapters = await chaptersOf(id);
-    return { id, ...COURSES[id], total: chapters.length, done: chapters.filter((c) => c.data.status === 'termine').length, review: chapters.filter((c) => c.data.status === 'en-relecture').length, draft: chapters.filter((c) => c.data.status === 'premier-jet').length };
-  }),
+    courseIds.map(async (id) => {
+        const chapters = await chaptersOf(id);
+        return {
+            id,
+            ...COURSES[id],
+            total: chapters.length,
+            done: chapters.filter((c) => c.data.status === "termine").length,
+            review: chapters.filter((c) => c.data.status === "en-relecture")
+                .length,
+            draft: chapters.filter((c) => c.data.status === "premier-jet")
+                .length,
+        };
+    }),
 );
 ---
+
 <Base title="Mes cours">
-  <h1>Ouroboros</h1>
-  <p class="lead">Mes cours : des fiches de révision visuelles et interactives.</p>
-  <ul class="courses">
-    {courses.map((c) => (
-      <li>
-        <a class="ct" href={`/${c.id}/`}>{c.title}</a>
-        <div class="sum">{c.tagline}</div>
-        <div class="meta">{c.total} {c.unit.toLowerCase()}{c.total > 1 ? 's' : ''} · {c.done} terminé{c.done > 1 ? 's' : ''}{c.review > 0 && ` · ${c.review} en relecture`}{c.draft > 0 && ` · ${c.draft} en premier jet`}</div>
-      </li>
-    ))}
-  </ul>
+    <h1>Ouroboros</h1>
+    <p class="lead">Cours visuels et interactifs.</p>
+    <ul class="courses">
+        {courses.map((c) => (
+            <li>
+                <a class="ct" href={`/${c.id}/`}>
+                    {c.title}
+                </a>
+                <div class="sum">{c.tagline}</div>
+                <div class="meta">
+                    {c.total} {c.unit.toLowerCase()}
+                    {c.total > 1 ? "s" : ""} · {c.done} terminé
+                    {c.done > 1 ? "s" : ""}
+                    {c.review > 0 && ` · ${c.review} en relecture`}
+                    {c.draft > 0 && ` · ${c.draft} en premier jet`}
+                </div>
+            </li>
+        ))}
+    </ul>
 </Base>
 <style>
-  .lead { color: var(--text-2); }
-  .courses { list-style: none; padding: 0; }
-  .courses li { border-bottom: 1px solid var(--border); padding: 1rem 0; }
-  .ct { font-size: 20px; font-weight: 500; }
-  .sum { color: var(--text-2); margin-top: 0.2rem; }
-  .meta { color: var(--text-2); font-size: 14px; margin-top: 0.3rem; }
+    .lead {
+        color: var(--text-2);
+    }
+    .courses {
+        list-style: none;
+        padding: 0;
+    }
+    .courses li {
+        border-bottom: 1px solid var(--border);
+        padding: 1rem 0;
+    }
+    .ct {
+        font-size: 20px;
+        font-weight: 500;
+    }
+    .sum {
+        color: var(--text-2);
+        margin-top: 0.2rem;
+    }
+    .meta {
+        color: var(--text-2);
+        font-size: 14px;
+        margin-top: 0.3rem;
+    }
 </style>
