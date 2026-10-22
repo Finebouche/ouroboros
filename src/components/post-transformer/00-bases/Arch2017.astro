@@ -1,0 +1,98 @@
+---
+// Cours Post-Transformer, chapitre 0 : le transformer de 2017 (traduction, encodeur-décodeur) et le décodeur d'aujourd'hui, côte à côte.
+// Schémas simplifiés dessinés pour le cours (pas une reproduction de la figure de l'article). Cinq badges numérotés marquent les différences ;
+// la liste qui suit la figure dans le chapitre les explique. Gris par défaut, badges ambre (couleur de mise en évidence du cours).
+type Box = { x: number; y: number; w: number; h: number; t: string; s?: string };
+const box = (b: Box) =>
+  `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="6" class="bx"/>` +
+  (b.s
+    ? `<text x="${b.x + b.w / 2}" y="${b.y + b.h / 2 - 1}" text-anchor="middle" class="t">${b.t}</text><text x="${b.x + b.w / 2}" y="${b.y + b.h / 2 + 11}" text-anchor="middle" class="s">${b.s}</text>`
+    : `<text x="${b.x + b.w / 2}" y="${b.y + b.h / 2 + 4}" text-anchor="middle" class="t">${b.t}</text>`);
+let MK = 'a17a';
+const arrow = (x: number, y1: number, y2: number) => `<path d="M${x} ${y1}V${y2}" class="ar" marker-end="url(#${MK})"/>`;
+const badge = (n: number, x: number, y: number) => `<circle cx="${x}" cy="${y}" r="8.5" class="bd"/><text x="${x}" y="${y + 4}" text-anchor="middle" class="bn">${n}</text>`;
+const plus = (cx: number, cy: number) => `<circle cx="${cx}" cy="${cy}" r="9" class="bx"/><text x="${cx}" y="${cy + 4}" text-anchor="middle" class="t">+</text>`;
+
+// ---------- 2017 : encodeur (à gauche) et décodeur (à droite) ----------
+const EX = 10, DX = 176, CW = 124;
+let a = '';
+a += `<rect x="4" y="240" width="136" height="134" rx="9" class="ct"/><text x="12" y="234" class="s">Encodeur</text>`;
+a += `<rect x="170" y="180" width="136" height="194" rx="9" class="ct"/><text x="178" y="174" class="s">Décodeur</text>`;
+const enc: Box[] = [
+  { x: EX, y: 392, w: CW, h: 30, t: 'Embedding', s: '+ positions sinusoïdales' },
+  { x: EX, y: 336, w: CW, h: 26, t: 'Attention' },
+  { x: EX, y: 310, w: CW, h: 18, t: 'Add & Norm' },
+  { x: EX, y: 276, w: CW, h: 26, t: 'MLP', s: 'ReLU' },
+  { x: EX, y: 250, w: CW, h: 18, t: 'Add & Norm' },
+];
+const dec: Box[] = [
+  { x: DX, y: 392, w: CW, h: 30, t: 'Embedding', s: '+ positions sinusoïdales' },
+  { x: DX, y: 336, w: CW, h: 26, t: 'Attention masquée' },
+  { x: DX, y: 310, w: CW, h: 18, t: 'Add & Norm' },
+  { x: DX, y: 276, w: CW, h: 26, t: 'Attention croisée' },
+  { x: DX, y: 250, w: CW, h: 18, t: 'Add & Norm' },
+  { x: DX, y: 216, w: CW, h: 26, t: 'MLP', s: 'ReLU' },
+  { x: DX, y: 190, w: CW, h: 18, t: 'Add & Norm' },
+  { x: DX, y: 132, w: CW, h: 28, t: 'Linear + softmax' },
+];
+[enc, dec].forEach((col) => col.forEach((b) => (a += box(b))));
+// flèches verticales entre boîtes d'une même colonne
+a += arrow(72, 392, 362) + arrow(72, 336, 328) + arrow(72, 310, 302) + arrow(72, 276, 268);
+a += arrow(238, 392, 362) + arrow(238, 336, 328) + arrow(238, 310, 302) + arrow(238, 276, 268) + arrow(238, 250, 242) + arrow(238, 216, 208) + arrow(238, 190, 160);
+a += `<path d="M72 250V224H156V289H176" class="ar" marker-end="url(#${MK})"/>`;
+a += `<text x="238" y="120" text-anchor="middle" class="s">probabilités du mot suivant</text>`;
+a += `<text x="72" y="438" text-anchor="middle" class="s">phrase à traduire</text><text x="238" y="438" text-anchor="middle" class="s">traduction déjà produite</text>`;
+a += badge(1, 140, 240) + badge(2, 300, 319) + badge(3, 134, 407) + badge(4, 300, 229) + badge(5, 300, 349);
+const old = a;
+
+// ---------- aujourd'hui : décodeur seul ----------
+MK = 'a17b';
+const MX = 80, MW = 150, MCX = MX + MW / 2;
+let m = '';
+m += `<rect x="46" y="118" width="218" height="256" rx="9" class="ct"/><text x="258" y="134" text-anchor="end" class="s">× L couches</text>`;
+const mod: Box[] = [
+  { x: MX, y: 34, w: MW, h: 28, t: 'Tête de sortie' },
+  { x: MX, y: 80, w: MW, h: 22, t: 'RMSNorm' },
+  { x: MX, y: 164, w: MW, h: 30, t: 'MLP', s: 'SwiGLU' },
+  { x: MX, y: 212, w: MW, h: 22, t: 'RMSNorm' },
+  { x: MX, y: 286, w: MW, h: 36, t: 'Attention', s: 'RoPE sur q, k · GQA' },
+  { x: MX, y: 340, w: MW, h: 22, t: 'RMSNorm' },
+  { x: MX, y: 392, w: MW, h: 30, t: 'Embedding', s: 'sans position ajoutée' },
+];
+mod.forEach((b) => (m += box(b)));
+m += plus(MCX, 140) + plus(MCX, 262);
+m += arrow(MCX, 392, 362) + arrow(MCX, 340, 322) + arrow(MCX, 286, 271) + arrow(MCX, 253, 234) + arrow(MCX, 212, 194) + arrow(MCX, 164, 149) + arrow(MCX, 131, 102) + arrow(MCX, 80, 62) + arrow(MCX, 34, 22);
+m += `<path d="M${MCX} 376H62V262H${MCX - 9}" class="ar" marker-end="url(#${MK})"/><path d="M${MCX} 250H62V140H${MCX - 9}" class="ar" marker-end="url(#${MK})"/>`;
+m += `<text x="${MCX}" y="16" text-anchor="middle" class="s">probabilités du mot suivant</text>`;
+m += `<text x="${MCX}" y="438" text-anchor="middle" class="s">texte déjà produit</text>`;
+m += badge(1, 56, 118) + badge(2, 232, 351) + badge(3, 232, 296) + badge(4, 232, 179) + badge(5, 232, 316);
+const neu = m;
+const defs = (id: string) => `<defs><marker id="${id}" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M2 1L8 5L2 9" fill="none" stroke="var(--text-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>`;
+---
+<figure class="a17">
+  <div class="a17p">
+    <div class="a17h"><b>2017</b><span>traduction : encodeur et décodeur</span></div>
+    <svg viewBox="0 0 310 446" role="img" aria-label="Transformer de 2017 : un encodeur et un décodeur reliés par une attention croisée, normalisation après chaque sous-couche" set:html={defs('a17a') + old} />
+  </div>
+  <div class="a17p">
+    <div class="a17h"><b>Aujourd'hui</b><span>modèle de langage : décodeur seul</span></div>
+    <svg viewBox="0 0 310 446" role="img" aria-label="Transformer décodeur actuel : normalisation avant chaque sous-couche, RoPE et attention groupée dans l'attention, MLP à porte" set:html={defs('a17b') + neu} />
+  </div>
+</figure>
+
+<style is:global>
+  .a17 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .a17 .a17p { min-width: 0; }
+  .a17 .a17h { margin-bottom: 4px; }
+  .a17 .a17h b { font-size: 15px; font-weight: 600; margin-right: 8px; }
+  .a17 .a17h span { font-size: 12.5px; color: var(--text-2); }
+  .a17 svg { width: 100%; max-width: 330px; height: auto; display: block; margin: 0 auto; }
+  .a17 svg .bx { fill: color-mix(in srgb, var(--text-2) 10%, transparent); stroke: var(--text-2); stroke-opacity: 0.55; stroke-width: 1; }
+  .a17 svg .ct { fill: none; stroke: var(--text-2); stroke-opacity: 0.45; stroke-dasharray: 4 3; }
+  .a17 svg .ar { fill: none; stroke: var(--text-2); stroke-width: 1.3; }
+  .a17 svg .t { font: 600 11.5px var(--font); fill: var(--text); }
+  .a17 svg .s { font: 10px var(--font); fill: var(--text-2); }
+  .a17 svg .bd { fill: var(--hl-stroke); }
+  .a17 svg .bn { font: 700 10.5px var(--font); fill: var(--bg); }
+  @media (max-width: 680px) { .a17 { grid-template-columns: 1fr; } }
+</style>

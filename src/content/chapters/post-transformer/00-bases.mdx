@@ -18,6 +18,8 @@ import SlidingWindow from '@/components/post-transformer/00-bases/SlidingWindow.
 import MultiHead from '@/components/post-transformer/00-bases/MultiHead.astro';
 import ReachCone from '@/components/post-transformer/ReachCone.astro';
 import RoPEClock from '@/components/post-transformer/00-bases/RoPEClock.astro';
+import PositionTable from '@/components/post-transformer/00-bases/PositionTable.astro';
+import Arch2017 from '@/components/post-transformer/00-bases/Arch2017.astro';
 
 <ArchMarker label="Vue d'ensemble : un transformer décodeur, un bloc répété L fois" />
 
@@ -406,26 +408,61 @@ $$
 - Chaque position a son propre vecteur appris, ajouté à l'embedding du token.
 - La limite est **dure** : la table n'a que $L_{\max}$ lignes, il n'existe pas de vecteur pour la position $L_{\max} + 1$.
 
+### Positions sinusoïdales
+
+Le transformer de 2017 ajoutait aussi un vecteur de position à l'embedding, mais **fixe** : des sinus et des cosinus de fréquences différentes, sans table apprise (BERT, lui, apprend sa table, jusqu'à 512 positions).
+
+$$
+p_{i,2k} = \sin\!\big(i / 10\,000^{2k/d}\big), \qquad p_{i,2k+1} = \cos\!\big(i / 10\,000^{2k/d}\big)
+$$
+
+Ce vecteur est ajouté comme l'autre : le score $q_i \cdot k_j$ reste une fonction de $i$ et de $j$ séparément, pas seulement de leur écart (comparaison dans le widget ci-dessous).
+
 <ArchMarker parts="qkv" label="RoPE : q et k tournent d'un angle proportionnel à leur position" />
 
 ### RoPE : faire tourner q et k
 
 Au lieu d'ajouter un vecteur, on **fait tourner** $q$ et $k$, par paires de dimensions, d'un angle proportionnel à la position du token. Chaque paire tourne à sa propre vitesse.
 
+$$
+q_i \cdot k_j \;\longrightarrow\; \sum_m \big(R(i\,\theta_m)\, q^{(m)}\big) \cdot \big(R(j\,\theta_m)\, k^{(m)}\big) \;=\; \sum_m q^{(m)} \cdot R\big((j - i)\,\theta_m\big)\, k^{(m)}
+$$
+
+- $q^{(m)}$, $k^{(m)}$ : la $m$-ième paire de dimensions de $q$ et de $k$ (un vecteur à 2 composantes).
+- $\theta_m$ : l'**angle de rotation par position** de la paire $m$ (fixe, non appris). Une paire tourne de $i\,\theta_m$ à la position $i$. Dans le widget, $\theta_m$ vaut 1, 0,215 et 0,0464 pour les trois paires ; dans les vrais modèles, $\theta_m = 10\,000^{-2m/d}$.
+- $R(\alpha)$ : la rotation d'angle $\alpha$.
+
 <RoPEClock />
 
-$$
-q_i \cdot k_j \;\longrightarrow\; \big(R(i\,\theta)\, q\big) \cdot \big(R(j\,\theta)\, k\big) \;=\; q \cdot R\big((j - i)\,\theta\big)\, k
-$$
-
-- $R(\alpha)$ : une rotation d'angle $\alpha$, appliquée à chaque paire de dimensions avec sa propre vitesse $\theta_m$ (dans les vrais modèles, $\theta_m = 10\,000^{-2m/d}$).
-- Le score ne dépend que de l'**écart** $i - j$ : décaler toute la phrase ne change rien. Essaie les boutons « + 5 » et « − 5 ».
+- Le score ne dépend que de l'**écart** $i - j$ : décaler toute la phrase ne change rien. Dans le widget, déplace le début de la phrase : à gauche (RoPE), les scores de tous les couples de mots restent identiques (« noir » regarde « chat » de la même façon en position 3 ou en position 20) ; à droite, avec des positions **sinusoïdales** ajoutées à l'embedding, ils changent.
+- Le modèle n'a donc à apprendre qu'une fois la relation « adjectif juste avant son nom » ; elle vaut ensuite partout dans le texte.
+- Dans le widget, les $q$ et $k$ de chaque mot (RoPE), ou les embeddings, $W_Q$ et $W_K$ (positions sinusoïdales), sont tirés au hasard et non entraînés : il montre le mécanisme, pas un résultat d'entraînement.
 - Rien n'est appris ni stocké par position : techniquement, on peut calculer n'importe quelle position.
+
+### Les trois côte à côte
+
+<PositionTable />
 
 ### Pourquoi on ne dépasse pas facilement la longueur d'entraînement
 
 - Les paires lentes n'ont jamais fait un tour complet pendant l'entraînement : au-delà de la longueur d'entraînement, elles prennent des angles **jamais vus**, et le modèle se dégrade (case grisée du widget, paire lente en pointillés).
 - **Interpolation des positions** : on divise les positions par un facteur pour que les angles restent dans la zone apprise, puis on réentraîne un peu. YaRN raffine l'idée en traitant différemment les paires rapides et lentes.
+
+## 7. Le transformer de 2017 et celui d'aujourd'hui
+
+La figure de l'article d'origine décrit un modèle de traduction. Les modèles de langage actuels en gardent le bloc (attention, MLP, résidus), avec cinq changements.
+
+<Arch2017 />
+
+1. **Décodeur seul** : plus d'encodeur ni d'attention croisée ; le modèle prédit le token suivant.
+2. **Norme avant la sous-couche** (*pre-norm*) : on normalise l'entrée de chaque sous-couche, pas sa sortie ($\mathrm{LayerNorm}(x + \mathrm{Sublayer}(x))$ en 2017). Avec la norme avant, les gradients restent bien conditionnés à l'initialisation et la phase de chauffe du pas d'apprentissage peut être supprimée, avec des résultats comparables (Xiong et al.). La norme est **RMSNorm** : une LayerNorm sans recentrage, moins coûteuse (Zhang et Sennrich).
+3. **Position dans l'attention** : RoPE fait tourner $q$ et $k$ (section 6), au lieu d'ajouter un encodage sinusoïdal à l'entrée.
+4. **MLP à porte** : SwiGLU remplace ReLU (Shazeer).
+5. **Attention groupée** : plusieurs têtes de requête partagent $K$ et $V$ (GQA, section 3), ce qui réduit le KV cache.
+
+LLaMA réunit la norme avant en RMSNorm, SwiGLU et RoPE à la place des positions absolues.
+
+<Refs items={[["Attention Is All You Need", "Vaswani et al.", 2017, "1706.03762"], ["On Layer Normalization in the Transformer Architecture", "Xiong et al.", 2020, "2002.04745"], ["Root Mean Square Layer Normalization", "Zhang & Sennrich", 2019, "1910.07467"], ["GLU Variants Improve Transformer", "Shazeer", 2020, "2002.05202"], ["LLaMA: Open and Efficient Foundation Language Models", "Touvron et al.", 2023, "2302.13971"]]} />
 
 <div class="retain">
 
@@ -435,10 +472,11 @@ $$
 - Positions apprises : $x_i = e_{\text{token}_i} + p_i$ ; limite dure à $L_{\max}$.
 - RoPE : on fait tourner $q$ et $k$ d'un angle $\propto$ position ; le score ne dépend que de l'écart $i - j$.
 - Au-delà de la longueur d'entraînement, les paires lentes prennent des angles jamais vus ; l'interpolation les ramène dans la zone apprise.
+- Par rapport à 2017 : décodeur seul, norme avant la sous-couche (RMSNorm), RoPE, MLP SwiGLU, attention groupée.
 
 </div>
 
-<Refs items={[["Attention Is All You Need", "Vaswani et al.", 2017, "1706.03762"], ["RoFormer: Enhanced Transformer with Rotary Position Embedding", "Su et al.", 2021, "2104.09864"], ["Extending Context Window of Large Language Models via Positional Interpolation", "Chen et al.", 2023, "2306.15595"], ["YaRN", "Peng et al.", 2023, "2309.00071"], ["Transformer Language Models without Positional Encodings Still Learn Positional Information", "Haviv et al.", 2022, "2203.16634"]]} />
+<Refs items={[["Attention Is All You Need", "Vaswani et al.", 2017, "1706.03762"], ["RoFormer: Enhanced Transformer with Rotary Position Embedding", "Su et al.", 2021, "2104.09864"], ["Extending Context Window of Large Language Models via Positional Interpolation", "Chen et al.", 2023, "2306.15595"], ["YaRN", "Peng et al.", 2023, "2309.00071"], ["Transformer Language Models without Positional Encodings Still Learn Positional Information", "Haviv et al.", 2022, "2203.16634"], ["BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding", "Devlin et al.", 2018, "1810.04805"]]} />
 
 <Quiz>
 

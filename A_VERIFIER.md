@@ -3,6 +3,7 @@
 Affirmations écrites dans les cours mais pas encore vérifiées dans une source. Un agent qui vérifie un point le retire de cette liste (et corrige le cours si besoin) ; un agent qui écrit une affirmation non vérifiée l'ajoute ici.
 
 ## Post-Transformer
+- **Chapitre 0, section 7 (transformer de 2017 et d'aujourd'hui)** : lus dans les sources (Vaswani : LayerNorm(x + Sublayer(x)), ReLU, encodage sinusoïdal, attention croisée ; Xiong : résumé sur Pre-LN et la chauffe ; Zhang & Sennrich : résumé sur RMSNorm ; LLaMA §2.2 : norme avant, SwiGLU, RoPE ; GQA : résumé). Non lus : que SwiGLU figure bien parmi les variantes de Shazeer 2020 (le résumé ne le nomme pas) ; « décodeur seul » pour les modèles actuels (connaissance générale, LLaMA n'est pas décrit comme tel dans les passages lus).
 
 - **Chapitre 2** : DOI du LSTM (Hochreiter & Schmidhuber, 1997, `10.1162/neco.1997.9.8.1735`) : le site de l'éditeur bloque l'accès. Dans le tableau xLSTM, « le mLSTM n'a pas de mélange de mémoire » vient de l'article, pas de la page arXiv.
 - **Chapitre 3** : variante de Blelloch (travail en $O(T)$, profondeur doublée) ; formule de normalisation de l'attention linéaire d'origine ($\phi(q_t) \cdot z_t$) ; usage de matrices diagonales ou structurées dans les modèles récents.

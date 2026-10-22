@@ -1,0 +1,120 @@
+---
+// ARCHIVE (labo) : essai écarté le 21 octobre 2026 (matrice des scores), l'utilisateur préférait les trois cercles. Chapitre 0 : RoPE. Pour UNE paire de dimensions, q (violet) et k (vert) sont tournés d'un angle proportionnel à leur position : à gauche, les deux
+// vecteurs et l'angle qui les sépare ; à droite, la matrice des scores q_i · k_j pour toutes les positions : le score est constant le long de chaque
+// diagonale (même écart j − i). Hachures : écarts jamais vus à l'entraînement (plus de LT − 1 positions d'écart, pour une paire qui n'a pas fait un tour complet).
+// Normes fixées à 1 : score = cos(angle entre q et k). Pas de faux résultat : tout est calculé par la formule.
+---
+<div class="widget ropescores" data-widget="ropescores">
+  <div class="row"><span>Paire de dimensions :</span><span class="seg" data-ref="pair"></span><span class="shift" title="Décaler les deux positions de 5 : le score ne change pas"><button data-ref="minus">− 5</button><button data-ref="plus">+ 5</button></span><label class="pi" title="Interpolation des positions : on comprime les positions pour rester dans la zone apprise"><input type="checkbox" data-ref="pi" /> Interpolation</label></div>
+  <div class="sl">
+    <label class="side"><span>Mot qui regarde (q)</span><input type="range" data-ref="i" min="0" max="23" step="1" value="10" /><b data-ref="i-out"></b></label>
+    <label class="side"><span>Mot regardé (k)</span><input type="range" data-ref="j" min="0" max="23" step="1" value="6" /><b data-ref="j-out"></b></label>
+  </div>
+  <div class="rp">
+    <div><div class="rpt">Les deux vecteurs, après rotation</div><svg data-ref="plane" viewBox="0 0 250 250" role="img" aria-label="Les vecteurs q et k après rotation, et l'angle entre eux"></svg></div>
+    <div><div class="rpt">Score q<sub>i</sub> · k<sub>j</sub> pour tous les couples de positions</div><svg data-ref="grid" viewBox="0 0 330 330" role="img" aria-label="Matrice des scores en fonction de la position de q (lignes) et de k (colonnes)"></svg></div>
+  </div>
+  <div class="kpis">
+    <div><span>Écart j − i</span><b data-ref="k1"></b><i>le score ne dépend que de cet écart</i></div>
+    <div><span>Angle entre q et k</span><b data-ref="k2"></b></div>
+    <div><span>Score q · k</span><b data-ref="k3"></b></div>
+    <div><span>Écart vu à l'entraînement</span><b data-ref="k4"></b><i data-ref="k4s"></i></div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="ropescores"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const inp = (r: string) => $(r) as HTMLInputElement;
+    const plane = $('plane') as unknown as SVGSVGElement, grid = $('grid') as unknown as SVGSVGElement;
+    // trois paires de dimensions : rotation rapide, moyenne, lente (base réduite à 100 pour la lisibilité)
+    const TH = [1, 0.215, 0.0464], NAMES = ['rapide', 'moyenne', 'lente'];
+    const AQ = 0.9, AK = 0.2; // directions de q et de k en position 0 (rad)
+    const LT = 16, N = 24; // positions vues à l'entraînement (0 à 15) ; positions affichées (0 à 23)
+    let pair = 1;
+    NAMES.forEach((n, m) => { const b = document.createElement('button'); b.textContent = `${n} (θ = ${String(TH[m]).replace('.', ',')})`; b.dataset.v = String(m); b.addEventListener('click', () => { pair = m; draw(); }); $('pair').appendChild(b); });
+    const fmt = (v: number, d = 2) => v.toFixed(d).replace('.', ',').replace('-', '−');
+    const sc = () => (inp('pi').checked ? (LT - 1) / (N - 1) : 1);
+    // un écart d est vu à l'entraînement s'il fait au plus LT − 1 positions, ou si la paire a déjà fait un tour complet
+    const seen = (d: number, th: number) => Math.abs(d) * sc() <= LT - 1 + 1e-9 || (LT - 1) * th >= 2 * Math.PI;
+
+    function draw() {
+      const i = +inp('i').value, j = +inp('j').value, th = TH[pair], s = sc();
+      $('pair').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +(b as HTMLElement).dataset.v! === pair));
+      $('i-out').textContent = String(i); $('j-out').textContent = String(j);
+      ($('minus') as HTMLButtonElement).disabled = Math.min(i, j) < 5;
+      ($('plus') as HTMLButtonElement).disabled = Math.max(i, j) + 5 > N - 1;
+      const aq = AQ + i * s * th, ak = AK + j * s * th;
+      const score = Math.cos(aq - ak);
+
+      // --- plan : q et k après rotation ---
+      const cx = 125, cy = 125, R = 100;
+      const pt = (a: number, r: number): [number, number] => [cx + r * Math.cos(a), cy - r * Math.sin(a)];
+      let g = `<defs><marker id="ropescores-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5"/></marker></defs>`;
+      g += `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="var(--border)"/><circle cx="${cx}" cy="${cy}" r="2" fill="var(--text-2)"/>`;
+      const arrow = (a: number, col: string, dash = '') => { const [x, y] = pt(a, R * 0.86); return `<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="${col}" stroke-width="${dash ? 1.4 : 2.8}"${dash ? ` stroke-dasharray="${dash}" opacity="0.5"` : ' marker-end="url(#ropescores-arrow)"'}/>`; };
+      g += arrow(AQ, 'var(--c-q)', '4 3') + arrow(AK, 'var(--c-k)', '4 3'); // positions 0 : ce que seraient q et k sans rotation
+      // arc entre k et q, par le plus court chemin
+      let da = aq - ak; da = ((da + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+      const r2 = 34, [x1, y1] = pt(ak, r2), [x2, y2] = pt(ak + da, r2);
+      g += `<path d="M${x1.toFixed(1)} ${y1.toFixed(1)} A${r2} ${r2} 0 0 ${da > 0 ? 0 : 1} ${x2.toFixed(1)} ${y2.toFixed(1)}" fill="none" stroke="var(--hl-stroke)" stroke-width="2"/>`;
+      const [lx, ly] = pt(ak + da / 2, r2 + 14);
+      g += `<text x="${lx.toFixed(1)}" y="${(ly + 4).toFixed(1)}" text-anchor="middle" class="rl2" style="fill:var(--hl-text)">${fmt(Math.abs(da) * 180 / Math.PI, 0)}°</text>`;
+      g += arrow(ak, 'var(--c-k)') + arrow(aq, 'var(--c-q)');
+      const [qx, qy] = pt(aq, R * 0.86 + 12), [kx, ky] = pt(ak, R * 0.86 + 12);
+      g += `<text x="${qx.toFixed(1)}" y="${(qy + 4).toFixed(1)}" text-anchor="middle" class="rl2" style="fill:var(--c-q);font-weight:600">q</text><text x="${kx.toFixed(1)}" y="${(ky + 4).toFixed(1)}" text-anchor="middle" class="rl2" style="fill:var(--c-k);font-weight:600">k</text>`;
+      g += `<text x="125" y="246" text-anchor="middle" class="rl2">pointillés : sans rotation (position 0)</text>`;
+      plane.innerHTML = g;
+
+      // --- matrice des scores : ligne i (q), colonne j (k) ---
+      const cs = 11, ox = 36, oy = 22;
+      let h = `<defs><pattern id="ropescores-hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="5" stroke="var(--text-2)" stroke-width="1.2" stroke-opacity="0.55"/></pattern></defs>`;
+      for (let a = 0; a < N; a++) for (let b = 0; b < N; b++) {
+        const v = Math.cos(AQ - AK + (a - b) * s * th), op = 0.04 + 0.78 * ((v + 1) / 2);
+        h += `<rect x="${ox + b * cs}" y="${oy + a * cs}" width="${cs - 1}" height="${cs - 1}" fill="var(--text-2)" fill-opacity="${op.toFixed(2)}"/>`;
+        if (!seen(a - b, th)) h += `<rect x="${ox + b * cs}" y="${oy + a * cs}" width="${cs - 1}" height="${cs - 1}" fill="url(#ropescores-hatch)"/>`;
+      }
+      // diagonale du couple choisi : même écart, même score
+      const d0 = i - j, bStart = Math.max(0, -d0), bEnd = Math.min(N - 1, N - 1 - d0);
+      h += `<line x1="${ox + bStart * cs}" y1="${oy + (bStart + d0) * cs}" x2="${ox + (bEnd + 1) * cs}" y2="${oy + (bEnd + d0 + 1) * cs}" stroke="var(--hl-stroke)" stroke-width="1.6" stroke-dasharray="4 3"/>`;
+      h += `<rect x="${ox + j * cs - 1}" y="${oy + i * cs - 1}" width="${cs + 1}" height="${cs + 1}" fill="none" stroke="var(--text)" stroke-width="2"/>`;
+      for (const t of [0, 8, 16, 23]) h += `<text x="${ox + t * cs + cs / 2}" y="${oy - 6}" text-anchor="middle" class="rl2">${t}</text><text x="${ox - 6}" y="${oy + t * cs + cs / 2 + 4}" text-anchor="end" class="rl2">${t}</text>`;
+      h += `<text x="${ox + N * cs / 2}" y="${oy - 14}" text-anchor="middle" class="rl2">position j du mot regardé (k)</text>`;
+      h += `<text x="10" y="${oy + N * cs / 2}" transform="rotate(-90 10 ${oy + N * cs / 2})" text-anchor="middle" class="rl2">position i du mot qui regarde (q)</text>`;
+      // échelle des couleurs
+      const gy = oy + N * cs + 14;
+      h += `<defs><linearGradient id="ropescores-sc"><stop offset="0" stop-color="var(--text-2)" stop-opacity="0.04"/><stop offset="1" stop-color="var(--text-2)" stop-opacity="0.82"/></linearGradient></defs><rect x="${ox}" y="${gy}" width="90" height="8" fill="url(#ropescores-sc)" stroke="var(--border)"/><text x="${ox - 4}" y="${gy + 8}" text-anchor="end" class="rl2">−1</text><text x="${ox + 94}" y="${gy + 8}" class="rl2">+1 : score</text>`;
+      grid.innerHTML = h;
+
+      const ok = seen(i - j, th);
+      $('k1').textContent = String(j - i);
+      $('k2').textContent = `${fmt(Math.abs(da) * 180 / Math.PI, 0)}°`;
+      $('k3').textContent = fmt(score);
+      $('k4').textContent = ok ? 'oui' : 'non';
+      $('k4').className = ok ? '' : 'r';
+      $('k4s').textContent = ok ? `écart de ${Math.abs(i - j)} positions` : `écart de ${Math.abs(i - j)} positions, au-delà de ${LT - 1}`;
+    }
+    const shift = (d: number) => { inp('i').value = String(+inp('i').value + d); inp('j').value = String(+inp('j').value + d); draw(); };
+    $('plus').addEventListener('click', () => shift(5));
+    $('minus').addEventListener('click', () => shift(-5));
+    ['i', 'j'].forEach((r) => inp(r).addEventListener('input', draw));
+    inp('pi').addEventListener('change', draw);
+    draw();
+  });
+</script>
+
+<style is:global>
+  .ropescores .row { gap: 8px 14px; }
+  .ropescores .shift { display: inline-flex; gap: 6px; margin-left: auto; }
+  .ropescores .shift button { min-width: 48px; }
+  .ropescores .shift button:disabled { opacity: 0.4; cursor: default; box-shadow: none; }
+  .ropescores .pi { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--text-2); cursor: pointer; white-space: nowrap; }
+  .ropescores .sl { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 24px; margin-bottom: 6px; }
+  .widget.ropescores .sl label.side:has(> input[type="range"]) { grid-template-columns: 11em minmax(0, 1fr) 2.2em; }
+  .ropescores .rp { display: grid; grid-template-columns: minmax(0, 250px) minmax(0, 1fr); gap: 16px; align-items: start; }
+  .ropescores .rpt { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+  .ropescores .rp svg { width: 100%; height: auto; display: block; margin: 0; }
+  .ropescores .rp > div:last-child svg { max-width: 360px; }
+  .ropescores svg text.rl2 { font: 11px var(--font); fill: var(--text-2); }
+  @media (max-width: 700px) { .ropescores .sl, .ropescores .rp { grid-template-columns: 1fr; } }
+</style>

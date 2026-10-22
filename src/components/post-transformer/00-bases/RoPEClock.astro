@@ -1,100 +1,166 @@
 ---
 // Chapitre 0 : RoPE — chaque paire de dimensions de q et de k tourne d'un angle proportionnel à sa position.
+// Exemple : une phrase de 7 mots dont on décale le début. q et k de chaque mot (RoPE) ou embedding de chaque mot (positions sinusoïdales)
+// sont tirés au hasard, non entraînés : le widget montre le mécanisme, pas un résultat d'entraînement.
+const WORDS = ['le', 'chat', 'noir', 'dort', 'sur', 'un', 'tapis'];
 ---
 <div class="widget rope" data-widget="rope">
+  <div class="rrow"><span><b style="color:var(--c-q)">q</b> : mot qui regarde</span><span class="seg" data-ref="wq">{WORDS.map((w, n) => <button data-v={n}>{w}</button>)}</span></div>
+  <div class="rrow"><span><b style="color:var(--c-k)">k</b> : mot regardé</span><span class="seg" data-ref="wk">{WORDS.map((w, n) => <button data-v={n}>{w}</button>)}</span></div>
   <div class="sl">
-    <label><span>Mot qui regarde (q)</span><input type="range" data-ref="i" min="0" max="31" step="1" value="10" /><b data-ref="i-out"></b></label>
-    <label><span>Mot regardé (k)</span><input type="range" data-ref="j" min="0" max="31" step="1" value="6" /><b data-ref="j-out"></b></label>
-    <span class="shift" title="Décaler les deux positions de 5 : le score ne change pas">
-      <button data-ref="minus">− 5</button>
-      <button data-ref="plus">+ 5</button>
-    </span>
+    <label><span>Début de la phrase (position)</span><input type="range" data-ref="off" min="0" max="24" step="1" value="6" /><b data-ref="off-out"></b></label>
     <label class="pi" title="Interpolation des positions : on comprime les positions d'un facteur 2 pour rester dans la zone apprise"><input type="checkbox" data-ref="pi" /> Interpolation (÷ 2)</label>
   </div>
   <svg data-ref="svg" width="100%" viewBox="0 0 660 250" role="img" aria-label="Rotation de q et k selon leur position, pour trois paires de dimensions"></svg>
+  <div class="rgs">
+    <div><div class="rpt">RoPE : scores q · k</div><svg data-ref="grid" class="rgrid" viewBox="0 0 410 352" role="img" aria-label="Scores avec RoPE entre chaque mot qui regarde (lignes) et chaque mot regardé (colonnes)"></svg></div>
+    <div><div class="rpt">Positions sinusoïdales : scores q · k</div><svg data-ref="grid2" class="rgrid" viewBox="0 0 410 352" role="img" aria-label="Scores avec positions sinusoïdales entre chaque mot qui regarde (lignes) et chaque mot regardé (colonnes)"></svg></div>
+  </div>
+  <p class="note">RoPE : q et k de chaque mot sont tirés au hasard (non entraînés), seule la rotation vient de la position. Positions sinusoïdales : embedding de chaque mot, W<sub>Q</sub> et W<sub>K</sub> tirés au hasard aussi ; le vecteur de position est ajouté à l'embedding avant W<sub>Q</sub> et W<sub>K</sub>. Décale la phrase : les scores de gauche ne bougent pas, ceux de droite changent.</p>
   <div class="kpis">
-    <div><span>Écart de position i − j</span><b data-ref="k1"></b><i>le score ne dépend que de cet écart</i></div>
-    <div><span>Score q · k</span><b data-ref="k2"></b></div>
-    <div><span>Paire lente</span><b data-ref="k3"></b><i data-ref="k3s"></i></div>
+    <div><span>Écart de position i − j</span><b data-ref="k1"></b><i data-ref="k1s"></i></div>
+    <div><span>Score q · k</span><b data-ref="k2"></b><i data-ref="k2s"></i></div>
+    <div><span>Même couple si la phrase commence à 0</span><b data-ref="k5"></b><i data-ref="k5s"></i></div>
+    <div><span>Paire lente (RoPE)</span><b data-ref="k3"></b><i data-ref="k3s"></i></div>
   </div>
 </div>
 
-<script>
-  document.querySelectorAll<HTMLElement>('[data-widget="rope"]').forEach((root) => {
-    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
-    const inp = (r: string) => $(r) as HTMLInputElement;
-    const svg = $('svg') as unknown as SVGSVGElement;
+<script define:vars={{ WORDS }}>
+  document.querySelectorAll('[data-widget="rope"]').forEach((root) => {
+    const $ = (r) => root.querySelector(`[data-ref="${r}"]`);
+    const inp = (r) => $(r);
+    const svg = $('svg');
+    const grid = $('grid'), grid2 = $('grid2');
+    const NW = WORDS.length;
+    let sd = 7; const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+    const gs = () => Math.sqrt(-2 * Math.log(rnd() + 1e-9)) * Math.cos(2 * Math.PI * rnd());
     // trois paires de dimensions : rotation rapide, moyenne, lente (base réduite à 100 pour la lisibilité)
     const TH = [1, 0.215, 0.0464];
     const NAMES = ['paire rapide', 'paire moyenne', 'paire lente'];
-    const QN = [1, 0.9, 1.1], KN = [1, 1.15, 0.85];
-    const PHQ = 0.3, PHK = 0;
-    const LT = 16, MAXP = 31;
+    // RoPE : pour chaque mot, norme et phase de q et de k sur chaque paire (tirées au hasard, non entraînées)
+    const QP = WORDS.map(() => TH.map(() => ({ n: 0.7 + 0.5 * rnd(), ph: 2 * Math.PI * rnd() })));
+    const KP = WORDS.map(() => TH.map(() => ({ n: 0.7 + 0.5 * rnd(), ph: 2 * Math.PI * rnd() })));
+    // positions sinusoïdales (Vaswani et al. 2017) : p_k = sin ou cos de pos / 10000^(2i/d) ; embeddings et W_Q, W_K tirés au hasard (non entraînés)
+    const DM = 32, DH = 16;
+    const EM = WORDS.map(() => Array.from({ length: DM }, gs));
+    const WQ = Array.from({ length: DH }, () => Array.from({ length: DM }, () => gs() / Math.sqrt(DM)));
+    const WK = Array.from({ length: DH }, () => Array.from({ length: DM }, () => gs() / Math.sqrt(DM)));
+    const pe = (p) => Array.from({ length: DM }, (_, k) => { const f = 1 / Math.pow(10000, (2 * Math.floor(k / 2)) / DM); return k % 2 ? Math.cos(p * f) : Math.sin(p * f); });
+    const mv = (W, x) => W.map((r) => r.reduce((t, w, k) => t + w * x[k], 0));
+    const LT = 16, MAXP = 31, OFFMAX = 24;
+    let wq = 2, wk = 1;
+
+    const seg = (ref, get, set) => $(ref).querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { set(b.dataset.v); draw(); }));
+    seg('wq', () => wq, (v) => (wq = +v));
+    seg('wk', () => wk, (v) => (wk = +v));
 
     function draw() {
-      let i = +inp('i').value, j = +inp('j').value;
-      const pi = inp('pi').checked;
+      const off = +inp('off').value, pi = inp('pi').checked;
       const sc = pi ? (LT - 1) / MAXP : 1; // interpolation : on comprime les positions dans la zone apprise
-      const pq = i * sc, pk = j * sc;
-      $('i-out').textContent = String(i);
-      $('j-out').textContent = String(j);
-      ($('minus') as HTMLButtonElement).disabled = Math.min(i, j) < 5;
-      ($('plus') as HTMLButtonElement).disabled = Math.max(i, j) + 5 > MAXP;
+      $('off-out').textContent = String(off);
+      for (const [ref, v] of [['wq', wq], ['wk', wk]]) $(ref).querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.v === String(v)));
 
-      const R = 72;
-      let g = `<defs><marker id="rope-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5"/></marker></defs>`;
-      let score = 0;
-      const outZone = !pi && Math.max(i, j) > LT - 1;
-      TH.forEach((th, m) => {
-        const cx = 110 + m * 220, cy = 112;
-        const aq = PHQ + pq * th, ak = PHK + pk * th;
-        score += QN[m] * KN[m] * Math.cos(aq - ak);
-        const pt = (a: number, r: number) => `${(cx + r * Math.cos(a)).toFixed(1)},${(cy - r * Math.sin(a)).toFixed(1)}`;
-        if (m === 2) {
-          // zone d'angles vue à l'entraînement pour la paire lente (positions 0 à 15)
-          const a0 = 0, a1 = PHQ + (LT - 1) * th;
-          g += `<path d="M${cx},${cy} L${pt(a0, R)} A${R},${R} 0 0 0 ${pt(a1, R)} Z" fill="var(--c-reach-soft)" opacity="0.8"/>`;
-          g += `<text x="${cx}" y="${cy + R + 22}" text-anchor="middle" class="ts">zone vue à l'entraînement</text>`;
+      // score du mot a (q) et du mot b (k) quand la phrase commence à la position o
+      const qs = new Map(), ks = new Map();
+      const vq = (a, p) => { const key = a * 100 + p; if (!qs.has(key)) qs.set(key, mv(WQ, EM[a].map((v, k) => v + pe(p * sc)[k]))); return qs.get(key); };
+      const vk = (b, p) => { const key = b * 100 + p; if (!ks.has(key)) ks.set(key, mv(WK, EM[b].map((v, k) => v + pe(p * sc)[k]))); return ks.get(key); };
+      const contrib = (a, b, o) => TH.map((th, m) => QP[a][m].n * KP[b][m].n * Math.cos(QP[a][m].ph + (o + a) * sc * th - KP[b][m].ph - (o + b) * sc * th));
+      const score = (a, b, o, isRope) => isRope ? contrib(a, b, o).reduce((t, c) => t + c, 0) : vq(a, o + a).reduce((t, v, k) => t + v * vk(b, o + b)[k], 0) / Math.sqrt(DH);
+      const mxs = [true, false].map((r) => { let mx = 0; for (let o = 0; o <= OFFMAX; o++) for (let a = 0; a < NW; a++) for (let b = 0; b < NW; b++) mx = Math.max(mx, Math.abs(score(a, b, o, r))); return mx; });
+      const pq = (off + wq) * sc, pk = (off + wk) * sc;
+      const outZone = !pi && off + Math.max(wq, wk) > LT - 1;
+
+      // cercles (RoPE seulement) : q et k de la paire m, tournés par leur position
+      {
+        const R = 72;
+        let g = `<defs><marker id="rope-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5"/></marker></defs>`;
+        TH.forEach((th, m) => {
+          const cx = 110 + m * 220, cy = 112;
+          const q = QP[wq][m], k = KP[wk][m];
+          const aq = q.ph + pq * th, ak = k.ph + pk * th;
+          const pt = (a, r) => [cx + r * Math.cos(a), cy - r * Math.sin(a)];
+          const xy = (p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`;
+          g += `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="var(--border)"/>`;
+          if (m === 2) {
+            // angles atteints par les positions 0 à 15 (zone vue à l'entraînement), un arc par vecteur
+            for (const [ph, col] of [[q.ph, 'var(--c-q)'], [k.ph, 'var(--c-k)']]) {
+              g += `<path d="M${xy(pt(ph, R + 6))} A${R + 6},${R + 6} 0 0 0 ${xy(pt(ph + (LT - 1) * th, R + 6))}" fill="none" stroke="${col}" stroke-width="4" stroke-linecap="round" opacity="0.4"/>`;
+            }
+          }
+          const dash = m === 2 && outZone ? ' stroke-dasharray="5 3"' : '';
+          const ek = pt(ak, R * k.n * 0.8), eq = pt(aq, R * q.n * 0.8);
+          g += `<line x1="${cx}" y1="${cy}" x2="${ek[0].toFixed(1)}" y2="${ek[1].toFixed(1)}" stroke="var(--c-k)" stroke-width="2.5" marker-end="url(#rope-arrow)"${dash}/>`;
+          g += `<line x1="${cx}" y1="${cy}" x2="${eq[0].toFixed(1)}" y2="${eq[1].toFixed(1)}" stroke="var(--c-q)" stroke-width="2.5" marker-end="url(#rope-arrow)"${dash}/>`;
+          g += `<text x="${cx}" y="18" text-anchor="middle" class="tt">${NAMES[m]}</text>`;
+          g += `<text x="${cx}" y="34" text-anchor="middle" class="ts">θ = ${th} par position</text>`;
+          g += `<text x="${cx}" y="${cy + R + 22}" text-anchor="middle" class="ts">contribution : ${(q.n * k.n * Math.cos(aq - ak)).toFixed(2)}</text>`;
+          if (m === 2) g += `<text x="${cx}" y="${cy + R + 38}" text-anchor="middle" class="ts">arcs : angles des positions 0 à ${LT - 1}</text>`;
+        });
+        g += `<text x="12" y="244" class="ts"><tspan style="fill:var(--c-q)">— q</tspan> (« ${WORDS[wq]} », position ${off + wq}) tourne de θ × position, <tspan style="fill:var(--c-k)">— k</tspan> (« ${WORDS[wk]} », position ${off + wk}) aussi</text>`;
+        svg.innerHTML = g;
+      }
+
+      // matrices des scores : ligne a (q), colonne b (k)
+      const cw = 46, ch = 40, ox = 84, oy = 46;
+      const drawM = (el, isRope, mx, id) => {
+        let h = `<defs><pattern id="rope-hatch${id}" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="5" stroke="var(--text-2)" stroke-width="1.2" stroke-opacity="0.45"/></pattern></defs>`;
+        for (let a = 0; a < NW; a++) for (let b = 0; b < NW; b++) {
+          const v = score(a, b, off, isRope), x = ox + b * cw, y = oy + a * ch;
+          h += `<rect x="${x}" y="${y}" width="${cw - 2}" height="${ch - 2}" rx="3" fill="var(--text-2)" fill-opacity="${(0.05 + 0.5 * ((v / (mx || 1) + 1) / 2)).toFixed(2)}"/>`;
+          if (!pi && off + Math.max(a, b) > LT - 1) h += `<rect x="${x}" y="${y}" width="${cw - 2}" height="${ch - 2}" rx="3" fill="url(#rope-hatch${id})"/>`;
+          h += `<text x="${x + (cw - 2) / 2}" y="${y + ch / 2 + 3}" text-anchor="middle" class="tn">${v.toFixed(2).replace('-', '−')}</text>`;
         }
-        g += `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="var(--border)"/>`;
-        const dash = m === 2 && outZone ? ' stroke-dasharray="5 3"' : '';
-        g += `<line x1="${cx}" y1="${cy}" x2="${pt(ak, R * KN[m] * 0.8).split(',')[0]}" y2="${pt(ak, R * KN[m] * 0.8).split(',')[1]}" stroke="var(--c-k)" stroke-width="2.5" marker-end="url(#rope-arrow)"${dash}/>`;
-        g += `<line x1="${cx}" y1="${cy}" x2="${pt(aq, R * QN[m] * 0.8).split(',')[0]}" y2="${pt(aq, R * QN[m] * 0.8).split(',')[1]}" stroke="var(--c-q)" stroke-width="2.5" marker-end="url(#rope-arrow)"${dash}/>`;
-        g += `<text x="${cx}" y="18" text-anchor="middle" class="tt">${NAMES[m]}</text>`;
-        g += `<text x="${cx}" y="34" text-anchor="middle" class="ts">θ = ${th} par position</text>`;
-        g += `<text x="${cx}" y="${cy + R + (m === 2 ? 40 : 22)}" text-anchor="middle" class="ts">contribution : ${(QN[m] * KN[m] * Math.cos(aq - ak)).toFixed(2)}</text>`;
-      });
-      g += `<text x="12" y="244" class="ts"><tspan style="fill:var(--c-q)">— q</tspan> tourne de θ × i, <tspan style="fill:var(--c-k)">— k</tspan> tourne de θ × j</text>`;
-      svg.innerHTML = g;
-      $('k1').textContent = String(i - j);
-      $('k2').textContent = score.toFixed(2);
+        // diagonale de l'écart choisi (a − b constant) et case choisie
+        const d0 = wq - wk, a0 = Math.max(0, d0), a1 = Math.min(NW - 1, NW - 1 + d0);
+        h += `<line x1="${ox + (a0 - d0) * cw}" y1="${oy + a0 * ch}" x2="${ox + (a1 - d0 + 1) * cw - 2}" y2="${oy + (a1 + 1) * ch - 2}" stroke="var(--hl-stroke)" stroke-width="1.6" stroke-dasharray="4 3"/>`;
+        h += `<rect x="${ox + wk * cw - 1}" y="${oy + wq * ch - 1}" width="${cw}" height="${ch}" rx="4" fill="none" stroke="var(--text)" stroke-width="2"/>`;
+        WORDS.forEach((w, n) => {
+          h += `<text x="${ox + n * cw + (cw - 2) / 2}" y="${oy - 20}" text-anchor="middle" class="tw${n === wk ? ' on' : ''}">${w}</text><text x="${ox + n * cw + (cw - 2) / 2}" y="${oy - 6}" text-anchor="middle" class="ts">${off + n}</text>`;
+          h += `<text x="${ox - 30}" y="${oy + n * ch + ch / 2 + 1}" text-anchor="end" class="tw${n === wq ? ' on' : ''}">${w}</text><text x="${ox - 8}" y="${oy + n * ch + ch / 2 + 1}" text-anchor="end" class="ts">${off + n}</text>`;
+        });
+        h += `<text x="${ox + (NW * cw) / 2}" y="12" text-anchor="middle" class="ts">k : mot regardé (position)</text>`;
+        h += `<text x="10" y="${oy + (NW * ch) / 2}" transform="rotate(-90 10 ${oy + (NW * ch) / 2})" text-anchor="middle" class="ts">q : mot qui regarde</text>`;
+        if (!pi) h += `<text x="10" y="${oy + NW * ch + 16}" class="ts">hachures : une position dépasse ${LT - 1}, jamais vue</text>`;
+        el.innerHTML = h;
+      };
+      drawM(grid, true, mxs[0], 'R');
+      drawM(grid2, false, mxs[1], 'S');
+
+      const f = (v) => v.toFixed(2).replace('-', '−');
+      const sR = score(wq, wk, off, true), sS = score(wq, wk, off, false), r0 = score(wq, wk, 0, true), s0 = score(wq, wk, 0, false);
+      $('k1').textContent = String(wq - wk).replace('-', '−');
+      $('k1s').textContent = 'RoPE : le score ne dépend que de cet écart';
+      $('k2').textContent = `${f(sR)} · ${f(sS)}`;
+      $('k2s').textContent = `« ${WORDS[wq]} » → « ${WORDS[wk]} » : RoPE · sinusoïdal`;
+      $('k5').textContent = `${f(r0)} · ${f(s0)}`;
+      $('k5s').textContent = `RoPE ${Math.abs(sR - r0) < 1e-9 ? 'identique' : 'différent'} · sinusoïdal ${Math.abs(sS - s0) < 1e-9 ? 'identique' : `différent (${f(sS - s0)})`}`;
       $('k3').textContent = outZone ? 'hors zone' : 'dans la zone';
       $('k3').className = outZone ? 'r' : '';
       $('k3s').textContent = outZone ? 'angle jamais vu à l\'entraînement (16 positions)' : 'angle déjà vu à l\'entraînement (16 positions)';
     }
 
-    const shift = (d: number) => {
-      inp('i').value = String(+inp('i').value + d);
-      inp('j').value = String(+inp('j').value + d);
-      draw();
-    };
-    $('plus').addEventListener('click', () => shift(5));
-    $('minus').addEventListener('click', () => shift(-5));
-    ['i', 'j'].forEach((r) => inp(r).addEventListener('input', draw));
+    inp('off').addEventListener('input', draw);
     inp('pi').addEventListener('change', draw);
     draw();
   });
 </script>
 
 <style is:global>
-  .rope .sl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto; gap: 6px 20px; align-items: center; margin-bottom: 8px; }
+  .rope .rrow { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; font-size: 14px; color: var(--text-2); margin-bottom: 8px; }
+  .rope .rrow > span:first-child { min-width: 11em; }
+  .rope .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .rope .seg button { font-size: 13px; padding: 4px 12px; }
+  .rope .sl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 20px; align-items: center; margin-bottom: 8px; }
   .rope .sl label { display: grid; grid-template-columns: auto 1fr 28px; align-items: center; gap: 10px; font-size: 14px; color: var(--text-2); }
   .rope .sl b { text-align: right; color: var(--text); font-weight: 500; }
-  .rope .shift button { min-width: 48px; }
-  .rope .shift button:disabled { opacity: 0.4; cursor: default; }
-  .rope .shift { display: flex; gap: 6px; }
   .rope .pi { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--text-2); cursor: pointer; white-space: nowrap; }
+  .rope .rpt { font-size: 13px; font-weight: 600; margin: 10px 0 2px; }
+  .rope .rgs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .rope svg.rgrid { width: 100%; max-width: 420px; margin: 0 auto; display: block; }
   .rope svg text.tt { font: 500 13px var(--font); fill: var(--text); }
   .rope svg text.ts { font: 12px var(--font); fill: var(--text-2); }
-  @media (max-width: 700px) { .rope .sl { grid-template-columns: 1fr 1fr; } }
+  .rope svg text.tn { font: 11.5px var(--font); fill: var(--text); }
+  .rope svg text.tw { font: 13px var(--font); fill: var(--text-2); }
+  .rope svg text.tw.on { fill: var(--text); font-weight: 600; }
+  @media (max-width: 700px) { .rope .rgs { grid-template-columns: 1fr; } .rope .sl { grid-template-columns: 1fr; } .rope .rrow > span:first-child { min-width: 0; } }
 </style>
