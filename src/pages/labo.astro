@@ -43,6 +43,7 @@ const palettes = [
   { c: 'MFCC (preprocessing)', s: [['--p-wave', 'signal'], ['--p-frame-a', 'trame'], ['--p-frame-b', 'trame voisine'], ['--p-mel', 'échelle de Mel']] },
   { c: 'Reservoir computing', s: [['--r-res', 'états du réservoir'], ['--r-out', 'lecture entraînée'], ['--text-2', 'entrée, tirage figé'], ['--text', 'cible (pointillé)']] },
   { c: 'RL', s: [['--a-es', 'Monte-Carlo, retour complet'], ['--a-fqi', 'Bellman, TD, Q-learning'], ['--a-act', 'action'], ['--hl-stroke', 'récompense'], ['--h-py', 'piège, glissade, falaise'], ['--a-lspi', 'SARSA']] },
+  { c: 'Robotique', s: [['--rb-q', 'articulations, configuration q'], ['--rb-sol', 'solution calculée (chemin, trajectoire, prédiction)'], ['--rb-search', 'exploration (nœuds visités, arbre, itérations)'], ['--rb-force', 'forces, couples'], ['--hl-stroke', 'cible'], ['--text-2', 'corps du robot, obstacles'], ['--h-py', 'collision, échec']] },
   { c: 'RL, chapitre 3 seulement', s: [['--c-neutral', 'glouton'], ['--a-bc', 'ε-greedy'], ['--a-fqi', 'softmax'], ['--a-ppo', 'optimiste'], ['--a-lspi', 'UCB'], ['--a-nac', 'bonus de nouveauté']] },
 ];
 ---

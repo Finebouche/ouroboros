@@ -9,6 +9,8 @@ import Quiz from '@/components/shared/Quiz.astro';
 import Refs from '@/components/shared/Refs.astro';
 import EsnSchema from '@/components/rc/01-esn/EsnSchema.astro';
 import EsnWidget from '@/components/rc/01-esn/EsnWidget.astro';
+import CoverWidget from '@/components/rc/01-esn/CoverWidget.astro';
+import JlWidget from '@/components/rc/01-esn/JlWidget.astro';
 
 <EsnSchema />
 
@@ -63,6 +65,46 @@ Avec ces réglages (60 neurones, entrée faible), vérifiés sur deux tirages du
 - **Beaucoup de fonctions non linéaires du passé** : chaque neurone calcule une fonction différente de l'histoire de l'entrée. La lecture n'a qu'à les combiner linéairement, comme une méthode à noyaux combine des caractéristiques fixes (chapitre 7).
 - **Le prix** : $W$ n'est pas optimisé pour la tâche, donc il faut souvent beaucoup de neurones. En échange, l'entraînement se réduit à un système linéaire, et le réservoir peut être n'importe quel système dynamique, y compris physique (chapitre 9).
 
+## 5. Pourquoi projeter au hasard dans un grand espace
+
+Deux résultats sur les projections aléatoires éclairent le choix d'un réservoir grand et tiré au hasard. On les voit ici sur un réservoir **statique** : $\varphi(u) = \tanh(W_{in}\,u + b)$, sans récurrence.
+
+### Cover : l'expansion rend la séparation possible
+
+Vingt points du plan, deux classes. En XOR, aucune droite ne les sépare. Envoyés dans $\mathbb{R}^N$ par $N$ neurones $\tanh$, une lecture linéaire y parvient dès que $N$ est assez grand.
+
+<CoverWidget />
+
+**Théorème de comptage** (Cover, 1965) : pour $P$ points en position générale de $\mathbb{R}^N$, le nombre d'étiquetages en deux classes (dichotomies) séparables par un hyperplan passant par l'origine vaut
+
+$$
+C(P,N) = 2\sum_{j=0}^{N-1} \binom{P-1}{j}
+$$
+
+- $P \le N$ : $C = 2^P$, tous les étiquetages sont séparables.
+- $P = 2N$ : $C = 2^{P-1}$, la moitié. C'est la capacité de la lecture ; au-delà, la part séparable tombe vers 0. Avec une constante dans la lecture (hyperplan affine, section 1), remplacer $N$ par $N+1$.
+- Courbe du widget : $C(P,N)/2^P$, probabilité de séparer des étiquettes tirées au hasard.
+- Hypothèses : points en position générale dans l'espace d'arrivée, et transformation **non linéaire** (une application linéaire de $\mathbb{R}^2$ garde les points dans un plan : XOR reste inséparable). Le théorème ne dit ni quelle dimension demande une tâche donnée, ni si la lecture généralisera : avec $P \le N$ elle ajuste aussi des étiquettes aléatoires, d'où la régularisation $\lambda$.
+
+Avec ces réglages ($P = 20$, gain 2, 60 tirages, étiquettes au hasard), la part séparée mesurée va de 0,07 à 0,22 pour $N = 8$ (formule 0,18), de 0,30 à 0,53 pour $N = 10$ (0,50), de 0,65 à 0,80 pour $N = 12$ (0,82), de 0,87 à 0,97 pour $N = 14$ (0,97), selon les graines de points et de projection ; la projection fixe du widget donne les valeurs basses. L'accord avec la formule est approximatif : la mesure est un minorant de la séparabilité réelle (l'algorithme peut manquer une séparation), et le widget ne vérifie pas la position générale. Pour XOR : aucun tirage séparé à $N = 2$, de 8 à 18 sur 60 à $N = 4$, 59 ou 60 sur 60 à $N = 8$.
+
+### Johnson-Lindenstrauss : la projection conserve les distances
+
+Cover agrandit l'espace. Johnson et Lindenstrauss (1984) montrent qu'une projection aléatoire peut aussi le **réduire** sans déformer la géométrie des points.
+
+<JlWidget />
+
+**Lemme** (Dasgupta et Gupta, 2003) : pour $P$ points de $\mathbb{R}^d$ et $0 < \varepsilon < 1$, si $k \ge 4\ln P\,/\,(\varepsilon^2/2 - \varepsilon^3/3)$, une projection aléatoire conserve toutes les distances au carré à un facteur $1 \pm \varepsilon$ près, pour toutes les paires simultanément avec probabilité au moins $1/P$ (une constante plus grande donne une forte probabilité). Leur énoncé projette sur un sous-espace aléatoire ; la forme gaussienne $f(u) = \tfrac{1}{\sqrt{k}}\,G\,u$ du widget en est une variante classique. Le $k$ nécessaire croît comme $\varepsilon^{-2}\ln P$ et **ne dépend pas de $d$**. Cet ordre est optimal (Larsen et Nelson, 2016) pour $\varepsilon$ pas trop petit et $d$ assez grand.
+
+Avec ces réglages ($P = 40$, $d = 200$), en moyenne sur 8 tirages de $G$ (le widget en montre un) : la distorsion mesurée passe de 2 à 4 pour $k = 5$ à 0,2 à 0,3 pour $k = 400$, en gros en $1/\sqrt{k}$. La borne n'a de sens qu'à partir de $k = 89$ et reste au-dessus de la distorsion mesurée (0,79 contre 0,47 à $k = 100$) : valide mais pas serrée. Elle est probabiliste : dépassée 4 fois sur 300 tirages ($k = 100, 200, 400$).
+
+### Ce que chacun justifie pour un réservoir
+
+- **Cover : expansion non linéaire.** Démontré pour des points en position générale. Appliqué à un réservoir, c'est une **analogie** : la position générale n'est pas établie pour les états d'un réservoir récurrent.
+- **Johnson-Lindenstrauss : géométrie conservée.** Démontré pour une projection gaussienne de $P$ points fixés. Un réservoir **linéaire** à poids gaussiens en est une : tirer $W_{in}$ au hasard n'abîme pas la géométrie de l'entrée, avec $N \gtrsim \varepsilon^{-2}\ln P$ quel que soit $d$. Cette lecture du réservoir est une analogie, pas un énoncé cité.
+- **Complémentaires, pas équivalents.** JL ne sépare rien : des classes mêlées le restent après une projection linéaire. Expansion non linéaire pour séparer, géométrie conservée pour ne pas détruire ce qui est séparable (rapprochement non sourcé).
+- **Limite.** Ces résultats portent sur des points fixes. Un réservoir est **dynamique** : son état résume tout le passé de l'entrée. La mémoire est ce qu'ils ne disent pas (chapitre 3).
+
 <div class="retain">
 
 **À retenir**
@@ -71,10 +113,12 @@ Avec ces réglages (60 neurones, entrée faible), vérifiés sur deux tirages du
 - Entraînement : régression ridge sur les états collectés, $W_{out} = Y X^{\top}(XX^{\top} + \lambda I)^{-1}$, après un transitoire.
 - Les états ne dépendent que de l'entrée : une nouvelle tâche ne demande qu'une nouvelle lecture.
 - Le rayon spectral $\rho$ règle la mémoire : trop petit, l'état oublie vite ; au-delà de 1, l'état risque de ne plus dépendre seulement de l'entrée.
+- Cover : $P$ points en position générale de $\mathbb{R}^N$ ont $C(P,N)$ étiquetages séparables, tous si $P \le N$, la moitié à $P = 2N$.
+- Johnson-Lindenstrauss : une projection aléatoire vers $k \gtrsim \varepsilon^{-2}\ln P$ dimensions conserve les distances, sans rien séparer de plus.
 
 </div>
 
-<Refs items={[["The “echo state” approach to analysing and training recurrent neural networks (GMD Report 148, version corrigée de 2010)", "Jaeger", 2001, "https://www.ai.rug.nl/minds/uploads/EchoStatesTechRep.pdf"], ["Real-Time Computing Without Stable States: A New Framework for Neural Computation Based on Perturbations (Neural Computation 14, 2531–2560)", "Maass, Natschläger & Markram", 2002, "10.1162/089976602760407955"], ["Harnessing Nonlinearity: Predicting Chaotic Systems and Saving Energy in Wireless Communication (Science 304, 78–80)", "Jaeger & Haas", 2004, "10.1126/science.1091277"], ["Reservoir computing approaches to recurrent neural network training (Computer Science Review 3, 127–149)", "Lukoševičius & Jaeger", 2009, "10.1016/j.cosrev.2009.03.005"], ["A Practical Guide to Applying Echo State Networks", "Lukoševičius", 2012, "10.1007/978-3-642-35289-8_36"]]} />
+<Refs items={[["The “echo state” approach to analysing and training recurrent neural networks (GMD Report 148, version corrigée de 2010)", "Jaeger", 2001, "https://www.ai.rug.nl/minds/uploads/EchoStatesTechRep.pdf"], ["Real-Time Computing Without Stable States: A New Framework for Neural Computation Based on Perturbations (Neural Computation 14, 2531–2560)", "Maass, Natschläger & Markram", 2002, "10.1162/089976602760407955"], ["Harnessing Nonlinearity: Predicting Chaotic Systems and Saving Energy in Wireless Communication (Science 304, 78–80)", "Jaeger & Haas", 2004, "10.1126/science.1091277"], ["Reservoir computing approaches to recurrent neural network training (Computer Science Review 3, 127–149)", "Lukoševičius & Jaeger", 2009, "10.1016/j.cosrev.2009.03.005"], ["A Practical Guide to Applying Echo State Networks", "Lukoševičius", 2012, "10.1007/978-3-642-35289-8_36"], ["Geometrical and Statistical Properties of Systems of Linear Inequalities with Applications in Pattern Recognition (IEEE Trans. Electronic Computers EC-14, 326–334)", "Cover", 1965, "10.1109/PGEC.1965.264137"], ["Extensions of Lipschitz mappings into a Hilbert space (Contemporary Mathematics 26, AMS, 189–206)", "Johnson & Lindenstrauss", 1984, "10.1090/conm/026/737400"], ["An elementary proof of a theorem of Johnson and Lindenstrauss (Random Structures & Algorithms 22, 60–65)", "Dasgupta & Gupta", 2003, "10.1002/rsa.10073"], ["Optimality of the Johnson-Lindenstrauss Lemma", "Larsen & Nelson", 2016, "1609.02094"]]} />
 
 <Quiz>
 
@@ -107,6 +151,22 @@ La trace d'une entrée passée dans l'état décroît en gros comme $\rho^k$ : $
 <Reveal>
 
 Les états $x(n)$ ne dépendent que de l'entrée et des poids figés, pas de la tâche ni de $W_{out}$. Seule la régression ridge change, avec la nouvelle cible $Y$.
+
+</Reveal>
+
+**Q5.** Avec $P = 20$ points en position générale, à partir de quel $N$ tous les étiquetages sont-ils séparables, et à quel $N$ la moitié ?
+
+<Reveal>
+
+Tous dès que $P \le N$, soit $N = 20$. La moitié à $P = 2N$, soit $N = 10$ (courbe du widget : 50 %).
+
+</Reveal>
+
+**Q6.** Une projection de Johnson-Lindenstrauss de XOR vers $\mathbb{R}^k$ le rend-elle séparable ? Que faut-il en plus ?
+
+<Reveal>
+
+Non : elle conserve les distances, donc les classes restent mêlées. Il faut une transformation non linéaire vers une dimension plus grande (Cover), comme les neurones $\tanh$ du widget.
 
 </Reveal>
 

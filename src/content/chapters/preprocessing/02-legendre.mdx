@@ -45,7 +45,7 @@ $$
 
 ## 2. Mettre à jour sans relire la fenêtre
 
-Recalculer les moyennes pondérées sur toute la fenêtre à chaque pas coûterait $\theta \times n$ opérations. La LMU fait suivre les coefficients par un **système linéaire** fixe, dérivé dans l'article pour que $m$ reste égal aux coefficients de Legendre de la fenêtre qui glisse :
+Recalculer les moyennes pondérées sur toute la fenêtre à chaque pas coûterait $\theta \times n$ opérations. La LMU fait suivre les coefficients par un **système linéaire** fixe. Il est dérivé dans l'article à partir des approximants de Padé d'un retard pur de $\theta$ ($e^{-\theta s}$), et son état est la projection de la fenêtre glissante sur les polynômes de Legendre décalés :
 
 $$
 \theta\, \dot m = A\, m + B\, u, \qquad A_{ij} = (2i+1) \begin{cases} -1 & i < j \\ (-1)^{i-j+1} & i \ge j \end{cases}, \qquad B_i = (2i+1)(-1)^i
@@ -82,7 +82,7 @@ La mémoire de Legendre convient donc quand il faut se rappeler **quoi et quand*
 **Limites**
 
 - Rien n'est retenu au-delà de $\theta$ pas.
-- Avec peu de coefficients, la reconstruction est lissée : deux événements plus proches qu'environ $2\theta/n$ pas se confondent (avec $n = 8$ et $\theta = 100$, deux impulsions à 25 pas d'écart donnent une seule bosse, à 30 pas deux).
+- Avec peu de coefficients, la reconstruction est lissée : deux événements plus proches qu'environ $2\theta/n$ pas se confondent (avec $n = 8$ et $\theta = 100$, deux impulsions à 25 pas d'écart donnent une seule bosse, à 30 pas deux). L'article donne une erreur de reconstruction en $O(\theta\omega/n)$, où $\omega$ est la fréquence du signal.
 - Le système est entièrement linéaire : il résume le passé, il ne le transforme pas.
 
 <div class="retain">

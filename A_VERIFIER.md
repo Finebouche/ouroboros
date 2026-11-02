@@ -2,32 +2,50 @@
 
 Affirmations écrites dans les cours mais pas encore vérifiées dans une source. Un agent qui vérifie un point le retire de cette liste (et corrige le cours si besoin) ; un agent qui écrit une affirmation non vérifiée l'ajoute ici.
 
-## Post-Transformer
-- **Chapitre 0, section 7 (transformer de 2017 et d'aujourd'hui)** : lus dans les sources (Vaswani : LayerNorm(x + Sublayer(x)), ReLU, encodage sinusoïdal, attention croisée ; Xiong : résumé sur Pre-LN et la chauffe ; Zhang & Sennrich : résumé sur RMSNorm ; LLaMA §2.2 : norme avant, SwiGLU, RoPE ; GQA : résumé). Non lus : que SwiGLU figure bien parmi les variantes de Shazeer 2020 (le résumé ne le nomme pas) ; « décodeur seul » pour les modèles actuels (connaissance générale, LLaMA n'est pas décrit comme tel dans les passages lus).
+Dernière vérification complète : 24 octobre 2026. Tout le reste de l'ancienne liste a été vérifié dans les articles (texte intégral, résumé ou fiche de modèle) et le cours corrigé en conséquence.
 
-- **Chapitre 2** : DOI du LSTM (Hochreiter & Schmidhuber, 1997, `10.1162/neco.1997.9.8.1735`) : le site de l'éditeur bloque l'accès. Dans le tableau xLSTM, « le mLSTM n'a pas de mélange de mémoire » vient de l'article, pas de la page arXiv.
-- **Chapitre 3** : variante de Blelloch (travail en $O(T)$, profondeur doublée) ; formule de normalisation de l'attention linéaire d'origine ($\phi(q_t) \cdot z_t$) ; usage de matrices diagonales ou structurées dans les modèles récents.
-- **Chapitre 4 (plan)** : architectures et chiffres venant d'un post non référencé : Mamba-3, RWKV-7, BDH, variantes MAC / MAG de Titans, rattachement de BDH à l'attention linéaire.
-- **Chapitre 5 (plan)** : ratios couches linéaires / softmax annoncés (3:1 Qwen3-Next et Kimi Linear, 7:1 MiniMax, environ 7:1 Jamba).
-- **Chapitre 1 (plan, FlashAttention)** : apports de FlashAttention-2 et -3.
+## Post-Transformer
+
+- **Chapitre 5 (plan)** : Jamba 2 et LFM2.5 ne sont vus que sur des sites tiers, pas dans une source primaire (le plan le dit).
 
 ## RL
 
-- **Chapitre 1** : correspondances du tableau `Evaluation` (LSTD → LSPI, FQE → FQI, SARSA(λ), MCTS dans la famille Monte-Carlo, critique de NAC et rôle de λ) ; noms des familles « itération de valeur / de politique approchée » ; exemples DQN, A2C, TRPO, CMA-ES, Dyna, MCTS / AlphaZero, MuZero.
-- **Chapitre 2** : conditions de convergence de SARSA ; terme « triade mortelle » (édition 2018 de Sutton & Barto, peut-être absent de la version de 2015 citée).
-- **Chapitre 3, tableau des stratégies (section 2)** : colonne « où on la trouve » de mémoire : softmax comme politique du gradient de politique à actions discrètes, Thompson sampling en publicité et recommandation (Chapelle & Li 2011, non relu) ; regret en ln t d'UCB1 d'après le titre et le résumé d'Auer et al.
-- **Chapitre 3, tableau « Quelle exploration dans quel algorithme »** : ε décroissant au début de l'entraînement de DQN, bonus d'entropie de A2C et PPO, UCT dans MCTS, bruit gaussien sur les paramètres d'OpenAI-ES, rôle du bonus de nouveauté : affirmations de mémoire, sources primaires non relues (Mnih et al. 2015 et 2016, Schulman et al. 2017, Kocsis & Szepesvári 2006, Salimans et al. 2017).
-- **Chapitre 3** : forme du bonus UCB $c\sqrt{\ln t / N}$ avec $c = 2$ (celle de Sutton & Barto ; l'UCB1 d'Auer et al. a une autre constante) ; description des méthodes citées (pseudo-comptes de Bellemare et al., ICM de Pathak et al., RND de Burda et al., Thompson sampling) : seuls titres, auteurs et années ont été vérifiés, pas le contenu des articles.
-- **Chapitre 4, section LSPI et figure FQI / DQN / LSPI** : seul le résumé de Lagoudakis et Parr a été lu (Q linéaire, itération de politique approchée, hors politique, construit sur LSTD). Cité de mémoire : le nom LSTDQ de l'étape d'évaluation, la forme de $A$ et $b$, le même lot réutilisé à chaque itération, l'absence de garantie générale de convergence, le coût cubique en nombre de caractéristiques. Chiffres du widget vérifiés par simulation (caractéristiques « une par couple », λ = 10⁻³ ajouté par moi pour garantir l'inversibilité).
-- **Chapitre 4** : convergence de FQI « pour certaines familles de régresseurs » (Ernst et al.) ; Q-learning comme version une transition à la fois de la cible de FQI.
+- **Chapitre 1, tableau `Evaluation`** : critique de NAC décrit comme une « régression linéaire » d'après le résumé de Peters et Schaal (2008) ; l'article (Neurocomputing 71) n'a pas pu être lu.
 
 ## Reservoir computing
 
-- **Chapitre 1** : « proposée indépendamment » (ESN et LSM) vient de la mémoire du sujet, pas d'une relecture des articles ; la décroissance en $\rho^k$ de la trace d'une entrée passée est une approximation linéaire (petite entrée). Les comportements du widget sont vérifiés par simulation (graines 7 et 11).
-- **Chapitre 5** : le contenu des articles cités est résumé d'après leurs résumés (Pascanu et Jaeger, Strock et al.) ou de mémoire (Seung : attracteur en ligne pour la position des yeux ; Sussillo et Barak : minimisation de la vitesse au carré). Chiffres du widget vérifiés par simulation.
-- **Chapitre 6** : conditions générales de May et Leonard ($\alpha < 1 < \beta$, $\alpha + \beta > 2$ pour le cycle, $< 2$ pour la coexistence) citées de mémoire, seulement vérifiées numériquement pour $\alpha = 0{,}8$ ou $0{,}5$ et $\beta = 1{,}3$ ; rôle des sous-espaces invariants dans la robustesse des cycles (Guckenheimer et Holmes) cité de mémoire ; temps de séjour en $\ln(1/\varepsilon)$ seulement constaté numériquement sur trois valeurs. Bick et Rabinovich, Afraimovich et al., Rabinovich et al. 2001 : résumés lus, pas les articles.
-- **Chapitres 2, 3, 4, 7, 8, 9 (plans)** : aucune référence vérifiée ; résultats annoncés de mémoire (condition suffisante par la valeur singulière, capacité mémoire bornée par $N$, approximation universelle, NG-RC, réservoir à un nœud et retard).
+- **Chapitre 1, section 5 (Cover et Johnson-Lindenstrauss)** :
+  - La position générale des états d'un réservoir n'est pas établie ; le rapprochement « Cover et JL complémentaires » n'a pas de source (dit dans le texte).
+  - Énoncé de Dasgupta et Gupta (probabilité au moins $1/P$, sous-espace aléatoire) repris d'une relecture, pas lu dans l'article (10.1002/rsa.10073).
+  - Conditions de Larsen et Nelson (ε pas trop petit, $d$ assez grand) reprises d'une relecture, pas lues dans arXiv 1609.02094.
+  - DOI 10.1090/conm/026/737400 et pagination 189–206 de Johnson et Lindenstrauss : vérifiés par recherche en ligne, article non relu.
+  - Widget Cover : la séparabilité est mesurée par Ho-Kashyap, donc un minorant.
+- **Chapitre 3 (plan)** : le rapport de Jaeger (2002) sur la capacité mémoire n'a pas pu être lu (PDF à police non extractible) ; la borne par $N$ est appuyée sur Dambre et al. (2012).
+- **Chapitre 5** : la fonction $q(x) = \tfrac12 \lVert \dot x \rVert^2$ de Sussillo et Barak est confirmée par des extraits de l'article cités par un moteur de recherche, pas par une lecture directe du PDF.
+- **Chapitre 6** : temps de séjour en $(1/\lambda)\ln(1/\varepsilon)$ attribué à Stone et Holmes (1990) d'après plusieurs sources secondaires concordantes (le résumé de l'article ne donne pas la formule) ; il est aussi constaté dans le widget.
+- **Chapitre 10, banc de poissons (tableau `BancModes`, widget `Banc`)** :
+  - Pitcher (1983) et Delcourt et Poncin (2012) non lus : la définition shoal / school vient de Miller et Gerlai (2012) et de Vicsek et Zafeiris (2012).
+  - Pitcher et Wyche (1983), Magurran et Pitcher (1987), Hall et al. (1986), Similä et Ugarte (1993) : résumés seulement. Le résumé de Pitcher et Wyche ne cite pas la fontaine (des sources secondaires la leur attribuent).
+  - Rotation interne d'une boule d'appât : non documentée (dessin). Rayon de la vacuole : aucune valeur publiée (choix de dessin).
+  - Coin (V) d'un banc entier et banc entier en file indienne : non trouvés ; le V est une stylisation, la seule forme documentée est la rangée de thons en parabole ou en ligne (Lutcavage et Kraus 1995). Sens de la parabole non vérifié.
+  - Tunstrøm et al. (2013) : transition polaire ↔ moulin sans passer par l'essaim, lue dans le texte, figure 5 non vue. Couzin et al. (2002) : normalisation de $r_{ic}$ dans $m_{\text{group}}$ non lisible dans le texte extrait.
+  - Moulin à 30 poissons : rare chez le méné jaune (3 % du temps, Tunstrøm et al. 2013) ; le dessiner est une stylisation.
+  - « Explication probable » de l'extinction des mélanges sans horloge commune (directions non partagées) : non vérifiée ; seul le décompte (83 mélanges sur 135 sans horloge, aucun avec) est simulé.
+  - Frontière entre banc lâche et essaim : aucune source ne la fixe, ni ne décrit la forme globale d'un essaim (choix de dessin).
+  - Effet fontaine : dans le dessin, le prédateur va à peu près à la vitesse des proies au sol (il arrive de face) ; Bartashevich et al. (2024) donnent un rapport d'environ 1,85.
+
+## Robotique
+
+- **Chapitre unique « vue d'ensemble »** :
+  - Chiffres repris des anciens chapitres sans être refaits : RRT 197 contre RRT-Connect 77 itérations (graines 1 à 100), 198 contre 140 segments testés ; CEM 9 pas au départ puis 500 après 8 itérations ; amortissement électrique 57 fois le frottement visqueux sur un MX-64 (paramètres M1 de BAM) ; 3,27 m/s² de bascule dans QpContacts ; pink et mink 7 itérations pour 2,6e-6 m, placo 6.
+  - Microban (26 et 25 coordonnées, 19 articulations) : valable pour le fichier lu le 29 octobre 2026, ces dépôts changent vite.
+  - Colonne « organisation » du tableau d'outils (PTC, Rhoban, Farama Foundation, DLR-RM, mujocolab…) reprise des anciens chapitres ; LAAS-CNRS retiré pour Pinocchio (non confirmé).
+  - Résultats d'essais retirés du chapitre mais exécutés lors de la première rédaction : MuJoCo 3.17 (bille de 1 kg, enfoncement 0,37 mm, force normale 9,81 N) ; pink 4.4.0 et mink 1.3.0 (mêmes itérés, 7 itérations, 2,6e-6 m), placo 0.10.2 (6 itérations) ; Gymnasium 1.4 CartPole (retour 500, tronqué) ; Crocoddyl 3.2.1 (pendule, `SolverBoxFDDP` 45 itérations, MPC 30 itérations par pas) ; BAM, amortissement électrique 57 fois le frottement visqueux (MX-64, paramètres M1).
+  - Dijkstra 1959 (10.1007/BF01386390) repris des anciens chapitres, identifiant non recontrôlé.
+  - Rapport $1/(2\lambda)$ pour le gain maximal du moindres carrés amorti : repris, non recontrôlé.
+  - Exemples non exécutés : TSID, Stable Baselines3, mjlab, identification réelle avec BAM, onshape-to-robot (clés d'API requises).
+  - Les 28 références viennent des anciens chapitres, identifiants non recontrôlés.
 
 ## HPC et Preprocessing
 
-- **Preprocessing, chapitre 2 (mémoire de Legendre)** : vérifiés dans keras-lmu et par simulation (matrices A et B, discrétisation, reconstruction, état de départ, formule intégrale des coefficients, chiffres des widgets). Non vérifié : la formule intégrale $m_i = \frac{2i+1}{\theta}\int u\,\tilde P_i$ n'est pas relue dans l'article (contrôlée numériquement : écart de 0,002 pour un signal lent) ; « dérivé dans l'article pour que $m$ reste égal aux coefficients de Legendre de la fenêtre » vient du résumé de l'article.
+- Rien de signalé pour l'instant.

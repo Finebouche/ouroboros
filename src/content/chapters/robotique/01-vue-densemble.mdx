@@ -1,0 +1,233 @@
+---
+num: 1
+title: "La boîte à outils du robot : vue d'ensemble"
+summary: "Sept familles d'outils, du fichier de description au contrôle du corps entier : l'idée de chacune, un widget qui montre le mécanisme, les bibliothèques (Pinocchio, MuJoCo, pink, mink, placo, RRT, Gymnasium, BAM, TSID, Crocoddyl)."
+status: premier-jet
+---
+import Reveal from '@/components/shared/Reveal.astro';
+import Quiz from '@/components/shared/Quiz.astro';
+import Refs from '@/components/shared/Refs.astro';
+import Familles from '@/components/robotique/01-vue-densemble/Familles.astro';
+import Outils from '@/components/robotique/01-vue-densemble/Outils.astro';
+import Propagation from '@/components/robotique/01-robot-cao/Propagation.astro';
+import JacobienneBras from '@/components/robotique/02-modelisation/JacobienneBras.astro';
+import PasAmorti from '@/components/robotique/03-cinematique-inverse/PasAmorti.astro';
+import RrtConnect from '@/components/robotique/04-planification/RrtConnect.astro';
+import Cem from '@/components/robotique/05-apprentissage/Cem.astro';
+import Excitation from '@/components/robotique/06-identification/Excitation.astro';
+import QpContacts from '@/components/robotique/07-corps-complet/QpContacts.astro';
+
+<Familles />
+
+| Symbole | Sens |
+|---|---|
+| $q$, $\dot q$, $\ddot q$ | configuration (angles articulaires, plus la pose de la base si elle est flottante), vitesses, accélérations |
+| ${}^{A}T_{B} \in SE(3)$ | pose du repère $B$ dans le repère $A$ |
+| $x$, $x^\star$, $e = x^\star - x$ | pose d'une tâche, sa cible, l'erreur |
+| $J(q)$ | jacobienne : $\dot x = J(q)\,\dot q$ |
+| $\tau$, $F$, $f$, $\mu$ | couples articulaires, effort sur la pince, force de contact, coefficient de frottement |
+| $M(q)$, $b(q, \dot q)$ | matrice de masse, effets non linéaires : $M\ddot q + b = \tau + J^\top f$ |
+| $\mathcal{C}$, $\mathcal{C}_{\text{libre}}$ | espace des configurations, partie sans collision |
+| $q_D$, $q_B$ | configurations de départ et de but |
+| $g(n)$, $h(n)$, $f(n)$ | A* : coût depuis le départ du nœud $n$, heuristique, priorité $g + h$ (ne pas confondre avec la gravité $g$ ni avec une force $f$) |
+| $m$, $c$ | masse totale, centre de masse (CoM) |
+| $s, a, r, \pi, \gamma$ | apprentissage : notations du cours RL |
+| $\theta$ | paramètres à identifier |
+
+## 1. Décrire le robot
+
+<Propagation />
+
+Un robot est un arbre cinématique (*kinematic tree*) : des **corps** (*links*) reliés par des **articulations** (*joints*), chaque corps ayant un seul parent. Une articulation rotoïde ou prismatique a 1 degré de liberté, une fixe 0, une libre 6. La pose d'un corps est le produit des poses locales le long de l'arbre, ${}^{0}T_{k} = {}^{0}T_{\text{parent}(k)}\,{}^{\text{parent}(k)}T_{k}(q_k)$ : tourner $q_k$ ne déplace que le sous-arbre de $k$. C'est la **cinématique directe** (*forward kinematics*).
+
+- Chaque corps a 10 paramètres inertiels (masse, centre de masse, tenseur d'inertie), calculés par la CAO.
+- Base libre : $q$ compte 7 coordonnées (quaternion), $\dot q$ en compte 6..
+- URDF (ROS) : corps et joints séparés, l'`<origin>` d'un joint place l'enfant dans le parent. MJCF (MuJoCo) : corps imbriqués.
+
+<Outils f="cao" />
+
+## 2. Modéliser : cinématique et dynamique
+
+<JacobienneBras />
+
+La **jacobienne** (*Jacobian*) relie les vitesses articulaires à celle de la pince, $\dot x = J(q)\,\dot q$ ; sa colonne $i$ est la vitesse due à l'articulation $i$ seule. Quand les colonnes s'alignent, $J$ perd un rang : c'est une **singularité** (ici $\det J = l_1 l_2 \sin q_2$, bras tendu ou replié), et une direction de vitesse devient inaccessible. La même matrice transmet les efforts : $\tau = J^\top F$ en statique.
+
+Avec les masses, l'**équation du mouvement** (*equation of motion*) donne les couples pour un mouvement :
+
+$$
+M(q)\,\ddot q + b(q, \dot q) = \tau + J^\top f .
+$$
+
+Trois algorithmes récursifs la calculent sans la développer : RNEA (dynamique inverse, $\ddot q \to \tau$), CRBA (matrice de masse $M$), ABA (dynamique directe, $\tau \to \ddot q$). Un simulateur y ajoute l'intégration en temps et les contacts : MuJoCo les rend mous, par un problème d'optimisation convexe (Todorov, 2014).
+
+<Outils f="modelisation" />
+
+## 3. Cinématique inverse
+
+<PasAmorti />
+
+La **cinématique inverse** (*inverse kinematics*, IK) cherche $q$ tel que $x(q) = x^\star$. En numérique, on linéarise, on résout, on recommence : $J\,\Delta q \approx e$, $q \leftarrow q + \Delta q$, avec $e = x^\star - x(q)$. Près d'une singularité, $\Delta q = J^{+} e$ explose. Les **moindres carrés amortis** (*damped least squares* ; Wampler 1986, Nakamura et Hanafusa 1986) pénalisent la taille du pas :
+
+$$
+\Delta q = J^\top (J J^\top + \lambda^2 I)^{-1} e = \sum_i \frac{\sigma_i}{\sigma_i^2 + \lambda^2}\,(u_i^\top e)\, v_i, \qquad \text{gain} \le \frac{1}{2\lambda}.
+$$
+
+Le prix : l'erreur n'est multipliée que par $\lambda^2/(\sigma_i^2 + \lambda^2)$ par pas dans la direction $i$, lent là où $\sigma_i < \lambda$. Avec ces réglages (cible « au bord », $\lambda = 0{,}5$), $\sigma_{\min} \approx 0{,}09$ : facteur ≈ 0,966 par pas, 93 pas pour passer sous 1 mm (au-delà des 40 pas du widget), contre 12 sur la cible « facile ».
+
+- Deux tâches : une somme pondérée (compromis) ou une priorité stricte (la seconde dans le noyau de $J_1$).
+- Butées et vitesses maximales : des bornes sur $\Delta q$, donc un programme quadratique (QP) à chaque pas, plutôt qu'un écrêtage de $q$.
+
+<Outils f="ik" />
+
+## 4. Planifier un chemin
+
+<RrtConnect />
+
+Une posture est un point de l'**espace des configurations** (*configuration space*) $\mathcal{C}$, et chaque obstacle du monde y devient un **C-obstacle**, de forme souvent inattendue : on le calcule rarement (Lozano-Pérez, 1983), on teste des postures une à une (cinématique directe, puis distance aux obstacles). Planifier, c'est relier $q_D$ à $q_B$ dans $\mathcal{C}_{\text{libre}}$.
+
+- **Dijkstra** (1959), **A\*** (Hart, Nilsson, Raphael 1968) : recherche dans une grille. Dijkstra développe le nœud de plus petit coût $g(n)$ ; A\* trie par $f(n) = g(n) + h(n)$, et rend un chemin optimal si l'heuristique est admissible ($h \le$ coût restant réel). Une grille à $k$ points par axe en dimension $n$ a $k^n$ nœuds.
+- **RRT** (*Rapidly-exploring Random Tree*) : tirer $q_{\text{rand}}$, avancer d'un pas $\delta$ depuis le nœud le plus proche, garder le point si le segment est libre. Complet en probabilité, pas optimal (RRT\*, Karaman et Frazzoli 2011, l'est asymptotiquement).
+- **RRT-Connect** (Kuffner et LaValle, 2000) : deux arbres, depuis $q_D$ et depuis $q_B$, et un CONNECT glouton qui répète le pas vers l'autre arbre tant qu'il avance.
+
+Avec ces réglages (graines 1 à 100, toutes réussies), RRT fait 197 itérations en moyenne, RRT-Connect 77. Mais une itération de RRT-Connect teste plusieurs segments : en segments testés, l'écart est de 198 contre 140, et le test de collision est le coût dominant.
+
+<Outils f="planification" />
+
+## 5. Apprendre en simulation
+
+<Cem />
+
+Au lieu d'écrire le contrôleur, on le cherche par essais. L'algorithme ne voit qu'une boucle : `reset()` renvoie $s_0$, `step(a)` renvoie $(s', r, \text{terminated}, \text{truncated}, \text{info})$. **Terminé** : état terminal, valeur nulle. **Tronqué** : coupure extérieure (limite de temps), l'état a une suite, donc on amorce : $y = r + \gamma\,(1 - \text{terminated})\,V(s')$, jamais $(1 - \text{done})$. Pour un robot, la récompense est une somme pondérée de termes (suivi, énergie, douceur, survie).
+
+La **méthode de l'entropie croisée** (*cross-entropy method*, CEM) est la recherche de politique la plus simple : tirer des politiques autour d'une moyenne, garder les meilleures (élites), recentrer, sans gradient (de Boer et al., 2005). Avec ces réglages, la politique moyenne part de 9 pas et tient les 500 pas après 8 itérations (1 280 épisodes).
+
+- **PPO** (sur la politique) : un lot frais, quelques passes de gradient sur un objectif coupé, puis le lot est jeté. Simple et parallélisable : l'algorithme des simulateurs sur GPU.
+- **SAC** (hors politique) : une mémoire de relecture réutilise chaque transition, utile quand la simulation est chère.
+- Un environnement vectorisé avance des milliers de copies à la fois ; la **randomisation de domaine** (masses, frottements, latence, bruit) tire un robot différent à chaque épisode pour que la politique tienne sur le robot réel.
+
+<Outils f="apprentissage" />
+
+## 6. Identifier
+
+<Excitation />
+
+La CAO ne donne ni le frottement, ni les constantes du moteur, ni l'inertie du rotor, ni le retard de commande. **Identifier** (*system identification*), c'est estimer ces paramètres $\theta$ sur le vrai robot : exciter, enregistrer, ajuster, valider sur des essais non vus.
+
+Si le modèle est linéaire en $\theta$, par exemple $\tau = I\ddot q + mgl\,\sin q + K_v\dot q + K_c\,\mathrm{sign}\,\dot q = Y\theta$, les moindres carrés suffisent : $\hat\theta = \arg\min \lVert Y\theta - \tau \rVert^2$. Tout dépend de l'**excitation** : avec un seul sinus, les colonnes $\ddot q$ et $\sin q$ de $Y$ sont presque proportionnelles, et les mesures ne fixent qu'une combinaison de $I$ et $mgl$. Avec trois sinus, $I$ est à 1,3 % près et $mgl$ à 0,17 % (avec ces réglages).
+
+- Un servo en position n'est pas une source de couple : $\tau_m = \frac{k_t}{R}U - \frac{k_t^2}{R}\dot q$ (moteur à courant continu), sous la loi de son firmware. L'amortissement électrique $k_t^2/R$ s'ajoute au frottement visqueux.
+- Sans capteur de couple, ou avec des paramètres non linéaires (Stribeck, retard), on minimise l'**erreur de sortie** (*output error*) : on simule la boucle fermée avec les consignes enregistrées, on compare les positions, et on cherche $\theta$ sans gradient (BAM : CMA-ES).
+- Un effet absent du modèle est compensé par de faux paramètres ; une bonne prédiction ne prouve pas des paramètres justes.
+
+<Outils f="identification" />
+
+## 7. Dynamique du corps complet
+
+<QpContacts />
+
+Un humanoïde a une **base flottante** : sa pose fait partie de $q$, mais aucun moteur ne l'actionne. Les 6 premières lignes de l'équation du mouvement n'ont pas de $\tau$ : $M\ddot q + b = S^\top \tau + J_c^\top f$, avec $S$ la matrice qui sélectionne les articulations actionnées. Conséquence, seules les forces de contact déplacent le centre de masse (CoM) :
+
+$$
+m\,\ddot c = \sum_i f_i + m\,g, \qquad \lVert f_t \rVert \le \mu\, f_n .
+$$
+
+Le sol pousse sans tirer, et ne retient le pied que dans le **cône de frottement** (*friction cone*), que les QP remplacent par une pyramide. Accélérer le CoM recule le **centre de pression** (CoP), qui doit rester sous le pied. Avec les réglages du widget, selon $\mu$, le pied glisse à $\ddot c_x = \mu g$ ou bascule à $\ddot c_x = 3{,}27$ m/s² (le premier atteint) ; au-delà, le QP rend un compromis, sans sortir des cônes.
+
+- **TSID** (*Task Space Inverse Dynamics*, Del Prete et al. 2015) : à chaque pas de commande, un QP sur $(\ddot q, f)$ suit des tâches définies par des accélérations désirées (PD), sous la dynamique et les contacts, puis en déduit $\tau$. Pas d'horizon.
+- **Crocoddyl** (Mastalli et al. 2020) : la **commande optimale** (*optimal control*) choisit toute la suite des commandes sur un horizon de $N$ pas. DDP (*differential dynamic programming*, Mayne 1966) applique Bellman au second ordre autour de la trajectoire courante ; FDDP accepte une trajectoire initiale qui viole la dynamique et referme les trous. En commande prédictive (MPC), on résout de nouveau à chaque pas et on n'applique que $u_0$.
+
+<Outils f="corps" />
+
+<div class="retain">
+
+**À retenir**
+
+- Un robot est un arbre : les poses se composent le long des corps, et tourner une articulation ne déplace que son sous-arbre. L'URDF ou le MJCF décrit cet arbre ; la CAO fournit les inerties.
+- $\dot x = J\,\dot q$ : les singularités sont les poses où $J$ perd un rang. Les moindres carrés amortis bornent le gain de la cinématique inverse à $1/(2\lambda)$, au prix d'une convergence lente où $\sigma < \lambda$.
+- Planifier = relier deux points de $\mathcal{C}_{\text{libre}}$ : grille (Dijkstra, A\*) en petite dimension, échantillonnage (RRT, RRT-Connect) au-delà. Comparer les planificateurs en segments testés, pas en itérations.
+- Apprendre : terminé ≠ tronqué, et le score d'une politique sur le robot nominal ne dit pas sa marge. Identifier : $\tau = Y\theta$ exige des colonnes de $Y$ indépendantes ; sinon, erreur de sortie par simulation.
+- Corps complet : seules les forces de contact déplacent le CoM, dans leur cône de frottement. TSID résout un QP instantané ; Crocoddyl optimise un horizon.
+
+</div>
+
+<Refs items={[
+  ["Modern Robotics: Mechanics, Planning, and Control", "Lynch, Park", 2017, "10.1017/9781316661239"],
+  ["Rigid Body Dynamics Algorithms", "Featherstone", 2008, "10.1007/978-1-4899-7560-7"],
+  ["The Pinocchio C++ library: A fast and flexible implementation of rigid body dynamics algorithms and their analytical derivatives", "Carpentier et al.", 2019, "10.1109/SII.2019.8700380"],
+  ["Convex and analytically-invertible dynamics with contacts and constraints: Theory and implementation in MuJoCo", "Todorov", 2014, "10.1109/ICRA.2014.6907751"],
+  ["onshape-to-robot (dépôt)", "Passault, Rhoban", 2019, "https://github.com/Rhoban/onshape-to-robot"],
+  ["Microban: A Compact, Fully 3D-Printable Open-Source Humanoid Robot (v1.0.0)", "Duclusaud", 2026, "10.5281/zenodo.20784789"],
+  ["Manipulator Inverse Kinematic Solutions Based on Vector Formulations and Damped Least-Squares Methods", "Wampler", 1986, "10.1109/TSMC.1986.289285"],
+  ["Inverse Kinematic Solutions With Singularity Robustness for Robot Manipulator Control", "Nakamura, Hanafusa", 1986, "10.1115/1.3143764"],
+  ["Pink: Python inverse kinematics based on Pinocchio (v4.4.0)", "Caron et al.", 2026, "https://github.com/pink-kinematics/pink"],
+  ["Mink: Python inverse kinematics based on MuJoCo (v1.3.0)", "Zakka", 2026, "https://github.com/kevinzakka/mink"],
+  ["PlaCo: a QP-based robot planning and control framework", "Duclusaud, Passault, Padois, Ly", 2025, "2511.06141"],
+  ["Spatial Planning: A Configuration Space Approach", "Lozano-Pérez", 1983, "10.1109/TC.1983.1676196"],
+  ["A note on two problems in connexion with graphs", "Dijkstra", 1959, "10.1007/BF01386390"],
+  ["A Formal Basis for the Heuristic Determination of Minimum Cost Paths", "Hart, Nilsson, Raphael", 1968, "10.1109/TSSC.1968.300136"],
+  ["RRT-connect: An efficient approach to single-query path planning", "Kuffner, LaValle", 2000, "10.1109/ROBOT.2000.844730"],
+  ["Sampling-based algorithms for optimal motion planning", "Karaman, Frazzoli", 2011, "10.1177/0278364911406761"],
+  ["Gymnasium: A Standard Interface for Reinforcement Learning Environments", "Towers et al.", 2024, "2407.17032"],
+  ["Time Limits in Reinforcement Learning", "Pardo, Tavakoli, Levdik, Kormushev", 2018, "1712.00378"],
+  ["A Tutorial on the Cross-Entropy Method", "de Boer, Kroese, Mannor, Rubinstein", 2005, "10.1007/s10479-005-5724-z"],
+  ["Proximal Policy Optimization Algorithms", "Schulman et al.", 2017, "1707.06347"],
+  ["Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor", "Haarnoja, Zhou, Abbeel, Levine", 2018, "1801.01290"],
+  ["mjlab: A Lightweight Framework for GPU-Accelerated Robot Learning", "Zakka et al.", 2026, "2601.22074"],
+  ["Extended Friction Models for the Physics Simulation of Servo Actuators (ICRA 2025)", "Duclusaud, Passault, Padois, Ly", 2025, "10.1109/ICRA55743.2025.11128640"],
+  ["Prioritized motion–force control of constrained fully-actuated robots: “Task Space Inverse Dynamics”", "Del Prete, Nori, Metta, Natale", 2015, "10.1016/j.robot.2014.08.016"],
+  ["Crocoddyl: An Efficient and Versatile Framework for Multi-Contact Optimal Control", "Mastalli et al.", 2020, "10.1109/ICRA40945.2020.9196673"],
+  ["A feasibility-driven approach to control-limited DDP", "Mastalli et al.", 2022, "10.1007/s10514-022-10061-w"],
+  ["A Second-order Gradient Method for Determining Optimal Trajectories of Non-linear Discrete-time Systems", "Mayne", 1966, "10.1080/00207176608921369"]
+]} />
+
+<Quiz>
+
+**Q1.** Dans le widget de la section 1, on tourne le coude. Quels repères bougent, et pourquoi pas les autres ?
+
+<Reveal>
+
+Ceux du sous-arbre du coude : avant-bras, main, outil. Seule ${}^{1}T_{2}$ dépend de $q_2$ ; ${}^{0}T_{1}$ ne change pas, donc le repère de l'épaule reste en place.
+
+</Reveal>
+
+**Q2.** Bras tendu ($q_2 = 0$), pourquoi la pince ne peut-elle pas se rapprocher de l'épaule, quelles que soient les vitesses articulaires ?
+
+<Reveal>
+
+Les deux colonnes de $J$ sont perpendiculaires à la même droite (épaule–pince et coude–pince sont confondues) : elles sont parallèles, et toute vitesse de la pince est perpendiculaire au bras. $\det J = l_1 l_2 \sin 0 = 0$, l'ellipse s'écrase en segment.
+
+</Reveal>
+
+**Q3.** Cible « au bord », $\lambda = 0{,}5$, $\sigma_{\min} \approx 0{,}09$ : de quel facteur l'erreur est-elle multipliée à chaque pas ?
+
+<Reveal>
+
+$\lambda^2 / (\sigma_{\min}^2 + \lambda^2) = 0{,}25 / 0{,}2581 \approx 0{,}97$ : la direction où $\sigma < \lambda$ converge lentement (93 pas pour passer sous 1 mm). Sur « facile », $\sigma_{\min} \approx 0{,}42$ donne 0,59.
+
+</Reveal>
+
+**Q4.** Pourquoi comparer RRT et RRT-Connect au seul nombre d'itérations avantage-t-il RRT-Connect ?
+
+<Reveal>
+
+Une itération de RRT teste un ou deux segments ; une itération de RRT-Connect en teste un, plus un par pas de CONNECT. Le test de collision est le coût dominant : en segments testés, l'écart est plus faible (198 contre 140).
+
+</Reveal>
+
+**Q5.** Pourquoi une excitation à un seul sinus ne sépare-t-elle pas $I$ et $mgl$ ?
+
+<Reveal>
+
+Avec $q = A \sin \omega t$, $\ddot q = -\omega^2 q$ et $\sin q \approx q$ : les colonnes $\ddot q$ et $\sin q$ de $Y$ sont presque proportionnelles. Les mesures ne fixent que $mgl - \omega^2 I$ ; le bruit déplace $I$ et $mgl$ le long de cette combinaison. Trois sinus de fréquences différentes cassent la proportionnalité.
+
+</Reveal>
+
+**Q6.** Avec $\mu = 0{,}3$ et une accélération demandée de 6 m/s², le QP obtient $a_x = 3{,}20$ m/s², plus que $\mu g = 2{,}94$. Comment ?
+
+<Reveal>
+
+$\mu g$ suppose $a_z = 0$. Le frottement disponible vaut $\mu \sum n_i = \mu\, m\,(g + a_z)$ : en acceptant $a_z = 0{,}84$ m/s², une erreur sur la composante verticale de la tâche CoM, le QP appuie plus fort sur le sol et gagne du frottement.
+
+</Reveal>
+
+</Quiz>

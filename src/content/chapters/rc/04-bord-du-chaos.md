@@ -11,3 +11,7 @@ status: plan
 - Exposant de Lyapunov d'un réservoir piloté par une entrée
 - L'hypothèse du « bord du chaos » et ses limites : le meilleur réglage dépend de la tâche
 - Widget : une perturbation minuscule de l'état, suivie au fil des pas, de part et d'autre de la frontière
+
+## Sources (vérifiées)
+
+- Lukoševičius & Jaeger (2009), section 6 : le « bord du chaos » est souvent présenté comme le régime de plus grande capacité de calcul, « mais pas sans contestation »

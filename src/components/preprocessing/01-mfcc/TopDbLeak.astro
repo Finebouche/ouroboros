@@ -1,0 +1,154 @@
+---
+// Chapitre MFCC, section 5 (logarithme) : le plancher relatif de librosa (power_to_db, top_db = 80) est pris par rapport au maximum de TOUTE la matrice,
+// donc au maximum du futur. Chant synthétique : silence très bas (0–100 ms), voyelle « a », bruit « s », voyelle « i » (les segments de signal.ts, remis dans cet ordre,
+// silence atténué). On choisit le point de prédiction p ; on compare la dernière trame connue calculée sur le chant entier et sur le chant coupé en p.
+// dB = 10 log10(max(E, 1e-10)) (plancher absolu de −100 dB), énergies de Mel de trames de 25 ms toutes les 10 ms.
+---
+<div class="widget tdl pp" data-widget="tdl">
+  <div class="row"><span>Plancher :</span><span class="seg" data-ref="mode"></span></div>
+  <div class="ft">Le chant <span>(clique ou glisse pour placer le point de prédiction : le reste est le futur)</span></div>
+  <svg data-ref="strip" width="100%" role="img" aria-label="Chant avec le point de prédiction ; la suite est le futur, inconnu à ce moment"></svg>
+  <div class="ft">La dernière trame connue, en dB : deux calculs <span data-ref="ft2"></span></div>
+  <svg data-ref="cur" width="100%" role="img" aria-label="Les 40 bandes de Mel de la dernière trame connue, calculées sur le chant entier et sur le chant coupé au point de prédiction"></svg>
+  <div class="ft">Valeurs modifiées par le plancher, dans le passé <span>(une colonne par trame, une ligne par bande ; ambre : valeur différente selon le calcul)</span></div>
+  <svg data-ref="map" width="100%" role="img" aria-label="Carte des valeurs en dB qui changent quand on retire la suite du chant"></svg>
+  <div class="kpis">
+    <div><span>Maximum</span><b data-ref="k1"></b><i data-ref="k1s"></i></div>
+    <div><span>Plancher</span><b data-ref="k2"></b><i data-ref="k2s"></i></div>
+    <div><span>Trames passées modifiées</span><b data-ref="k3"></b></div>
+    <div><span>Valeurs modifiées</span><b data-ref="k4"></b></div>
+  </div>
+  <p class="note">Chant synthétique : le signal du chapitre remis dans l'ordre silence, voyelle « a », bruit « s », voyelle « i », avec un silence très bas. Énergies de Mel de trames de 25 ms toutes les 10 ms, 40 bandes.</p>
+</div>
+
+<script>
+  import { SR, N, makeSignal, SEGMENTS } from './signal';
+  import { melEnergiesAt } from './mel';
+
+  document.querySelectorAll<HTMLElement>('[data-widget="tdl"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    // chant : silence (0,1 s, très bas) puis voyelle « a », « s », voyelle « i »
+    const x0 = makeSignal(), cut = Math.round(0.5 * SR), x = new Float32Array(N);
+    x.set(x0.slice(cut).map((v) => v * 0.08), 0);
+    x.set(x0.slice(0, cut), N - cut);
+    const M = 40, HOP = 10, FL = 25, TOT = 600, F = Math.floor((TOT - FL) / HOP) + 1;
+    const db = Array.from({ length: F }, (_, f) => melEnergiesAt(x, f * HOP, M).map((e) => 10 * Math.log10(Math.max(e, 1e-10))));
+    const ABS = -100, TOP = 80; // plancher absolu (amin = 1e-10) et top_db par défaut
+    const maxAll = Math.max(...db.flat());
+    const prefMax: number[] = []; db.forEach((r, f) => prefMax.push(Math.max(f ? prefMax[f - 1] : -Infinity, ...r)));
+    const segs = [{ from: 0, to: 0.1, label: 'silence' }, { from: 0.1, to: 0.3, label: 'voyelle « a »' }, { from: 0.3, to: 0.4, label: 'bruit « s »' }, { from: 0.4, to: 0.6, label: 'voyelle « i »' }];
+    void SEGMENTS;
+    const f1 = (v: number) => v.toFixed(1).replace('.', ',').replace('-', '−');
+    let relative = true, p = 90; // point de prédiction en ms
+
+    [['rel', 'Relatif (top_db = 80, par défaut)'], ['fix', 'Fixe (top_db = None)']].forEach(([v, label]) => {
+      const b = document.createElement('button'); b.textContent = label; b.dataset.v = v;
+      b.addEventListener('click', () => { relative = v === 'rel'; draw(); });
+      $('mode').appendChild(b);
+    });
+
+    const W = 640, ox = 8, wpx = W - 16;
+    const XT = (ms: number) => ox + (ms / TOT) * wpx;
+
+    function draw() {
+      $('mode').querySelectorAll('button').forEach((b) => b.classList.toggle('active', (b.dataset.v === 'rel') === relative));
+      const fp = Math.max(0, Math.floor((p - FL) / HOP)); // dernière trame entièrement connue
+      const lastEnd = fp * HOP + FL;
+      const floorAll = relative ? maxAll - TOP : ABS, floorCut = relative ? prefMax[fp] - TOP : ABS;
+      const vAll = (f: number, m: number) => Math.max(db[f][m], floorAll), vCut = (f: number, m: number) => Math.max(db[f][m], floorCut);
+
+      // --- le chant, avec le point de prédiction ---
+      const sh = 76, cy = 40, amp = 24;
+      let s = '';
+      segs.forEach((sg, i) => {
+        if (i) s += `<line x1="${XT(sg.from * 1000)}" y1="16" x2="${XT(sg.from * 1000)}" y2="${sh - 8}" stroke="var(--border)" stroke-dasharray="3 3"/>`;
+        s += `<text x="${(XT(sg.from * 1000) + XT(sg.to * 1000)) / 2}" y="11" text-anchor="middle" class="ax">${sg.label}</text>`;
+      });
+      let d = '', dfut = '';
+      for (let px = 0; px < wpx; px++) {
+        const a = Math.floor((px / wpx) * N), b = Math.max(a + 1, Math.floor(((px + 1) / wpx) * N));
+        let mn = 1, mx = -1;
+        for (let i = a; i < b; i++) { if (x[i] < mn) mn = x[i]; if (x[i] > mx) mx = x[i]; }
+        const seg = `M${ox + px + 0.5} ${cy - mx * amp}V${cy - mn * amp}`;
+        if ((px / wpx) * TOT <= lastEnd) d += seg; else dfut += seg;
+      }
+      s += `<rect x="${XT(lastEnd)}" y="14" width="${XT(TOT) - XT(lastEnd)}" height="${sh - 22}" fill="var(--text-2)" fill-opacity="0.08"/>`;
+      s += `<path d="${dfut}" stroke="var(--p-wave)" stroke-width="1" stroke-opacity="0.3" fill="none"/>`;
+      s += `<path d="${d}" stroke="var(--p-wave)" stroke-width="1" fill="none"/>`;
+      s += `<line x1="${XT(lastEnd)}" y1="14" x2="${XT(lastEnd)}" y2="${sh - 8}" stroke="var(--hl-stroke)" stroke-width="2"/>`;
+      const left = lastEnd > 200;
+      s += `<text x="${XT(lastEnd) + (left ? -6 : 6)}" y="${sh - 2}" text-anchor="${left ? 'end' : 'start'}" class="ax" style="fill:var(--hl-text);font-weight:600">point de prédiction : ${lastEnd} ms</text>`;
+      if (lastEnd < TOT - 80) s += `<text x="${left ? (XT(lastEnd) + XT(TOT)) / 2 : XT(TOT) - 6}" y="${sh - 2}" text-anchor="${left ? 'middle' : 'end'}" class="ax">futur : inconnu à ce moment</text>`;
+      const strip = $('strip') as unknown as SVGSVGElement;
+      strip.setAttribute('viewBox', `0 0 ${W} ${sh + 2}`);
+      strip.innerHTML = s;
+
+      // --- dernière trame connue : 40 bandes, deux calculs ---
+      const H = 196, oy = 10, ph = H - 36, lo = -142, hi = 40, ax = 36;
+      const XB = (m: number) => ax + (m / (M - 1)) * (W - ax - 8), YB = (v: number) => oy + (1 - (v - lo) / (hi - lo)) * ph;
+      let g = '';
+      [-100, -50, 0].forEach((v) => (g += `<line x1="${ax}" y1="${YB(v)}" x2="${W - 8}" y2="${YB(v)}" stroke="var(--border)" stroke-dasharray="${v ? '2 4' : ''}"/><text x="${ax - 4}" y="${YB(v) + 3.5}" text-anchor="end" class="ax">${v}</text>`));
+      if (relative) {
+        g += `<line x1="${ax}" y1="${YB(floorAll)}" x2="${W - 8}" y2="${YB(floorAll)}" stroke="var(--p-wave)" stroke-width="1.2" stroke-dasharray="5 3"/>`;
+        g += `<line x1="${ax}" y1="${YB(floorCut)}" x2="${W - 8}" y2="${YB(floorCut)}" stroke="var(--p-mel)" stroke-width="1.2" stroke-dasharray="5 3"/>`;
+      } else g += `<line x1="${ax}" y1="${YB(ABS)}" x2="${W - 8}" y2="${YB(ABS)}" stroke="var(--text-2)" stroke-width="1.2" stroke-dasharray="5 3"/>`;
+      const line = (fn: (m: number) => number, col: string, w: number) => `<polyline points="${Array.from({ length: M }, (_, m) => `${XB(m).toFixed(1)},${YB(fn(m)).toFixed(1)}`).join(' ')}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linejoin="round"/>`;
+      g += line((m) => vAll(fp, m), 'var(--p-wave)', 3.2);
+      g += line((m) => vCut(fp, m), 'var(--p-mel)', 1.8);
+      g += `<text x="${ax}" y="${H - 6}" class="ax">bande 1 (graves)</text><text x="${W - 8}" y="${H - 6}" text-anchor="end" class="ax">bande 40 (aigus)</text>`;
+      g += `<text x="${W / 2}" y="${H - 6}" text-anchor="middle" class="ax"><tspan style="fill:var(--p-wave);font-weight:600">— chant entier</tspan>   <tspan style="fill:var(--p-mel);font-weight:600">— chant coupé au point de prédiction</tspan></text>`;
+      const cur = $('cur') as unknown as SVGSVGElement;
+      cur.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      cur.innerHTML = g;
+      $('ft2').textContent = `(trame de ${fp * HOP} à ${lastEnd} ms)`;
+
+      // --- carte des valeurs modifiées, dans le passé ---
+      const rh = 1.5, mh = M * rh + 8, cw = (HOP / TOT) * wpx;
+      let h = '', framesChanged = 0, cells = 0;
+      for (let f = 0; f < F; f++) {
+        let c = 0;
+        for (let m = 0; m < M; m++) {
+          const known = f <= fp, diff = known && Math.abs(vAll(f, m) - vCut(f, m)) > 1e-9;
+          if (diff) { c++; cells++; }
+          h += `<rect x="${(XT(f * HOP)).toFixed(1)}" y="${4 + (M - 1 - m) * rh}" width="${(cw + 0.3).toFixed(1)}" height="${rh + 0.2}" fill="${diff ? 'var(--hl-stroke)' : 'var(--text-2)'}" fill-opacity="${diff ? 0.85 : known ? 0.1 : 0.03}"/>`;
+        }
+        if (c) framesChanged++;
+      }
+      h += `<line x1="${XT(lastEnd)}" y1="2" x2="${XT(lastEnd)}" y2="${mh - 2}" stroke="var(--hl-stroke)" stroke-width="2"/>`;
+      const map = $('map') as unknown as SVGSVGElement;
+      map.setAttribute('viewBox', `0 0 ${W} ${mh}`);
+      map.innerHTML = h;
+
+      $('k1').textContent = `${f1(maxAll)} · ${f1(prefMax[fp])} dB`;
+      $('k1s').textContent = 'chant entier · jusqu\'au point';
+      $('k2').textContent = relative ? `${f1(floorAll)} · ${f1(floorCut)} dB` : `${f1(ABS)} · ${f1(ABS)} dB`;
+      $('k2s').textContent = relative ? 'maximum − 80, calculé sur l\'entier · sur le chant coupé' : 'fixe : le même pour tous les chants';
+      $('k3').innerHTML = `${framesChanged} <small>sur ${fp + 1}</small>`;
+      $('k4').innerHTML = `${cells} <small>sur ${(fp + 1) * M}</small>`;
+    }
+
+    // point de prédiction : clic ou glissé sur le chant
+    const strip = $('strip') as unknown as SVGSVGElement;
+    strip.style.cursor = 'ew-resize';
+    strip.style.touchAction = 'pan-y';
+    const pick = (e: PointerEvent) => {
+      const r = strip.getBoundingClientRect();
+      const t = ((((e.clientX - r.left) / r.width) * W - ox) / wpx) * TOT;
+      const np = Math.max(FL, Math.min(TOT, Math.round(t / 5) * 5));
+      if (np !== p) { p = np; draw(); }
+    };
+    strip.addEventListener('pointerdown', (e) => { strip.setPointerCapture(e.pointerId); pick(e); });
+    strip.addEventListener('pointermove', (e) => { if (strip.hasPointerCapture(e.pointerId)) pick(e); });
+    draw();
+  });
+</script>
+
+<style is:global>
+  .tdl .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .tdl .seg button { font-size: 13px; padding: 4px 12px; }
+  .tdl .ft { font-size: 13px; font-weight: 500; margin: 10px 0 2px; }
+  .tdl .ft span { font-weight: 400; color: var(--text-2); }
+  .tdl svg { display: block; width: 100%; height: auto; }
+  .tdl svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .tdl .kpis small { font-size: 12px; color: var(--text-2); font-weight: 400; }
+</style>

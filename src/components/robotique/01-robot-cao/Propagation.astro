@@ -1,0 +1,184 @@
+---
+// Cours Robotique : propagation des poses le long de l'arbre du bras plan (bras.ts).
+// Trois curseurs (angles des articulations, bornés aux limites ±2,6 rad du URDF) ; les corps et repères du sous-arbre de
+// l'articulation bougée passent en trait foncé, les autres en gris clair. Zone de calcul : ^0T_k comme produit des
+// matrices locales ^{k−1}T_k(q_k) = T_origin R_z(q_k) (décalage p_k), matrices 3×3 de SE(2) recalculées dans le navigateur.
+import katex from 'katex';
+const tx = (t: string) => katex.renderToString(t, { throwOnError: false });
+const F1 = tx('{}^{0}T_{k} = {}^{0}T_{1}\\;{}^{1}T_{2}\\cdots{}^{k-1}T_{k}');
+const F2 = tx('{}^{k-1}T_{k}(q_k) = T_{\\text{origin}}\\,R_z(q_k)');
+const F2m = tx('= \\begin{bmatrix} \\cos q_k & -\\sin q_k & p_k \\\\ \\sin q_k & \\cos q_k & 0 \\\\ 0 & 0 & 1 \\end{bmatrix}');
+const NAMES = ['épaule', 'coude', 'poignet'];
+const Q0 = [30, 45, -60];
+---
+<div class="widget rb-prop" data-widget="rb-prop">
+  <div class="rbp-hd"><b>Tourner une articulation : quels repères suivent ?</b></div>
+  <div class="row"><span class="rbp-seg" data-ref="pre"></span></div>
+  <div class="sliders rbp-sl">
+    {NAMES.map((n, i) => (
+      <label><span>{n}, q<sub>{i + 1}</sub></span><input type="range" data-q={i} min="-149" max="149" step="1" value={Q0[i]} aria-label={`angle ${n} en degrés`} /><b data-ref={`o${i}`}>{String(Q0[i]).replace('-', '−')}°</b></label>
+    ))}
+  </div>
+  <div class="rbp-main">
+    <svg data-ref="svg" viewBox="0 0 440 440" role="img" aria-label="Bras plan avec les repères de ses corps ; ceux qui ont bougé sont en trait épais"></svg>
+    <div class="rbp-side">
+      <div class="kpis">
+        <div><span>outil, x</span><b data-ref="kx">—</b></div>
+        <div><span>outil, y</span><b data-ref="ky">—</b></div>
+        <div><span>orientation de l'outil</span><b data-ref="ka">—</b><i>q₁ + q₂ + q₃</i></div>
+      </div>
+    </div>
+  </div>
+  <div class="rbp-calc">
+    <div class="row"><span>Repère calculé :</span><span class="rbp-seg" data-ref="fr"></span></div>
+    <div class="rbp-fm"><span set:html={F1} /><span set:html={F2} /><span set:html={F2m} /></div>
+    <div class="rbp-prod" data-ref="prod"></div>
+  </div>
+  <p class="note">Dans le plan, une pose a trois nombres (x, y, angle) : la matrice homogène 4 × 4 se réduit à 3 × 3. p<sub>k</sub> vient du <code>&lt;origin&gt;</code> du joint : 0 ; 0,4 ; 0,3 ; 0,2 m. Trait épais et contrasté : le sous-arbre de la dernière articulation bougée.</p>
+</div>
+
+<script>
+  import { BODIES, JOINTS, LEN, Q0, RAD, fk, subtree, fr, type M3 } from './bras';
+
+  const SUP = ['⁰', '¹', '²', '³'];
+  const FRAME = ['{0}', '{1}', '{2}', '{3}', 'outil'];
+  const PRESETS: [string, number[]][] = [['q = (30°, 45°, −60°)', Q0], ['q = 0', [0, 0, 0]], ['q = (90°, −90°, 0°)', [90, -90, 0]]];
+
+  document.querySelectorAll<HTMLElement>('[data-widget="rb-prop"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const ins = [...root.querySelectorAll<HTMLInputElement>('input[data-q]')];
+    const svg = $('svg') as unknown as SVGSVGElement;
+    let sel = 2, moved: number[] = [], lastJ = -1;
+
+    const S = 240, C = 220;
+    const P = (x: number, y: number) => [C + x * S, C - y * S];
+    const ang = (M: M3) => Math.atan2(M[1][0], M[0][0]);
+    const f1 = (v: number) => v.toFixed(1);
+    const deg = (a: number) => `${fr(a, 0)}°`;
+    const lab = (k: number) => (k === 4 ? `<sup>3</sup>T<sub>outil</sub>` : `<sup>${k - 1}</sup>T<sub>${k}</sub>`);
+
+    const q = () => ins.map((i) => +i.value);
+    function draw() {
+      const qd = q(), { T, L } = fk(qd.map((a) => a * RAD));
+      const cls = (k: number) => (moved.length ? (moved.includes(k) ? 'mv' : 'st') : '');
+      // flèche : trait puis pointe triangulaire de même couleur (CSS)
+      const arrow = (x1: number, y1: number, x2: number, y2: number) => {
+        const a = Math.atan2(y2 - y1, x2 - x1), u = 6, w = 3;
+        const bx = x2 - Math.cos(a) * u, by = y2 - Math.sin(a) * u;
+        return `<line x1="${f1(x1)}" y1="${f1(y1)}" x2="${f1(bx)}" y2="${f1(by)}"/><path d="M${f1(x2)},${f1(y2)} L${f1(bx - Math.sin(a) * w)},${f1(by + Math.cos(a) * w)} L${f1(bx + Math.sin(a) * w)},${f1(by - Math.cos(a) * w)} Z"/>`;
+      };
+      let s = '';
+      // repère du monde et échelle
+      s += `<line x1="${C - 216}" y1="${C}" x2="${C + 216}" y2="${C}" class="grid"/><line x1="${C}" y1="${C - 216}" x2="${C}" y2="${C + 216}" class="grid"/>`;
+      s += `<line x1="14" y1="428" x2="${14 + 0.2 * S}" y2="428" class="scale"/><text x="${14 + 0.1 * S}" y="422" text-anchor="middle" class="ax">0,2 m</text>`;
+      // socle
+      s += `<path d="M${C - 13},${C + 3} L${C + 13},${C + 3} L${C + 19},${C + 22} L${C - 19},${C + 22} Z" class="bd"/>`;
+      // corps
+      for (let i = 1; i <= 3; i++) {
+        const [x, y] = P(T[i][0][2], T[i][1][2]), a = ang(T[i]), h = 15;
+        s += `<rect class="bd ${cls(i)}" x="${-0.02 * S}" y="${-h / 2}" width="${(LEN[i] + 0.04) * S}" height="${h}" rx="${h / 2}" transform="translate(${f1(x)},${f1(y)}) rotate(${f1(-a / RAD)})"/>`;
+      }
+      // articulations
+      JOINTS.forEach((j, n) => {
+        const [x, y] = P(T[j.child][0][2], T[j.child][1][2]);
+        if (j.type === 'revolute') s += `<circle cx="${f1(x)}" cy="${f1(y)}" r="6.5" class="jt${n === lastJ ? ' act' : ''}"/>`;
+        else s += `<rect x="${f1(x - 4)}" y="${f1(y - 4)}" width="8" height="8" class="jf ${cls(4)}"/>`;
+      });
+      // repères : axes x et y de 0,1 m ; {0} reste le repère du monde
+      for (let k = 0; k <= 4; k++) {
+        const [x, y] = P(T[k][0][2], T[k][1][2]), a = ang(T[k]), l = 0.1 * S;
+        const c = `fr${k === 0 ? ' f0' : ''} ${k ? cls(k) : ''}${k === sel ? ' sel' : ''}`;
+        s += `<g class="${c}" data-k="${k}">`;
+        s += `<circle cx="${f1(x)}" cy="${f1(y)}" r="13" class="hit"/>`;
+        s += arrow(x, y, x + Math.cos(a) * l, y - Math.sin(a) * l) + arrow(x, y, x - Math.sin(a) * l, y - Math.cos(a) * l);
+        const [lx, ly] = k === 0 ? [x + l + 6, y + 14] : [x - Math.sin(a) * (l + 9) - Math.cos(a) * 4, y - Math.cos(a) * (l + 9) + Math.sin(a) * 4 + 4];
+        s += `<text x="${f1(lx)}" y="${f1(ly)}" text-anchor="middle" class="fl">${FRAME[k]}</text></g>`;
+      }
+      svg.innerHTML = s;
+      svg.querySelectorAll<SVGGElement>('g[data-k]').forEach((g) => {
+        const k = +g.dataset.k!;
+        if (k > 0) g.addEventListener('click', () => { sel = k; draw(); });
+      });
+
+      // indicateurs
+      const t = T[4];
+      $('kx').innerHTML = `${fr(t[0][2])} <small>m</small>`;
+      $('ky').innerHTML = `${fr(t[1][2])} <small>m</small>`;
+      $('ka').textContent = deg(qd[0] + qd[1] + qd[2]);
+      ins.forEach((i, n) => ($(`o${n}`).textContent = deg(+i.value)));
+
+      // produit ^0T_sel = ^0T_1 · ^1T_2 · … ; la matrice locale de l'articulation bougée est en gras
+      const mat = (M: M3, l: string, cap: string, c = '') => `<div class="mx ${c}"><div class="ml">${l}</div><div class="mb">${M.map((r) => r.map((v) => `<span>${fr(v)}</span>`).join('')).join('')}</div><div class="mc">${cap}</div></div>`;
+      let h = '';
+      for (let k = 1; k <= sel; k++) {
+        const j = JOINTS[k - 1];
+        const cap = j.type === 'revolute' ? `${j.name}, q<sub>${k}</sub> = ${deg(qd[k - 1])}` : `${j.name}, fixe`;
+        h += (k > 1 ? '<span class="op">·</span>' : '') + mat(L[k], lab(k), cap, k - 1 === lastJ ? 'chg' : '');
+      }
+      h += `<span class="op">=</span>` + mat(T[sel], `<sup>0</sup>T<sub>${sel === 4 ? 'outil' : sel}</sub>`, `repère ${FRAME[sel]} (${BODIES[sel]})`, 'res');
+      $('prod').innerHTML = h;
+      $('fr').querySelectorAll('button').forEach((b, n) => b.classList.toggle('active', n + 1 === sel));
+    }
+
+    const set = (vals: number[]) => {
+      const old = q(), changed = vals.map((v, n) => (v !== old[n] ? n : -1)).filter((n) => n >= 0);
+      ins.forEach((i, n) => (i.value = String(vals[n])));
+      if (changed.length) { moved = [...new Set(changed.flatMap((n) => subtree(n + 1)))]; lastJ = changed.length === 1 ? changed[0] : -1; }
+      draw();
+    };
+    PRESETS.forEach(([t, v]) => { const b = document.createElement('button'); b.textContent = t; b.addEventListener('click', () => set(v)); $('pre').appendChild(b); });
+    FRAME.slice(1).forEach((t, n) => { const b = document.createElement('button'); b.textContent = t; b.addEventListener('click', () => { sel = n + 1; draw(); }); $('fr').appendChild(b); });
+    ins.forEach((i, n) => i.addEventListener('input', () => { moved = subtree(n + 1); lastJ = n; draw(); }));
+    draw();
+  });
+</script>
+
+<style is:global>
+  .rb-prop .rbp-hd { margin-bottom: 8px; }
+  .rb-prop .rbp-hd b { font-size: 15px; font-weight: 600; color: var(--text); }
+  .rb-prop .rbp-seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .rb-prop .rbp-seg button { font-size: 13px; padding: 4px 11px; }
+  .rb-prop .rbp-sl { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); column-gap: 22px; row-gap: 6px; margin-bottom: 6px; }
+  .rb-prop .rbp-main { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; }
+  .rb-prop .rbp-main svg { flex: 1 1 340px; max-width: 420px; width: 100%; height: auto; display: block; }
+  .rb-prop .rbp-side { flex: 0 1 200px; }
+  .rb-prop .rbp-side .kpis { flex-direction: column; margin-top: 0; }
+  .rb-prop .rbp-side .kpis > div { flex: 0 0 auto; }
+  .rb-prop svg .grid { stroke: var(--border); stroke-dasharray: 2 4; }
+  .rb-prop svg .scale { stroke: var(--text-2); stroke-width: 1.4; }
+  .rb-prop svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .rb-prop svg .bd { fill: var(--surface-2); stroke: var(--text-2); stroke-width: 1.2; }
+  .rb-prop svg .bd.mv { stroke: var(--text); stroke-width: 2.2; }
+  .rb-prop svg .bd.st { opacity: 0.45; }
+  .rb-prop svg .jt { fill: var(--surface); stroke: var(--rb-q); stroke-width: 2; }
+  .rb-prop svg .jt.act { stroke-width: 3.6; fill: color-mix(in srgb, var(--rb-q) 24%, var(--surface)); }
+  .rb-prop svg .jf { fill: var(--surface); stroke: var(--text-2); stroke-width: 1.3; }
+  .rb-prop svg .jf.mv { stroke: var(--text); }
+  .rb-prop svg .fr { cursor: pointer; }
+  .rb-prop svg .fr.f0 { cursor: default; }
+  .rb-prop svg .fr line { stroke: var(--text-2); stroke-width: 1.3; }
+  .rb-prop svg .fr path { fill: var(--text-2); }
+  .rb-prop svg .fr.mv path { fill: var(--text); }
+  .rb-prop svg .fr.f0 line { stroke-dasharray: 3 2; }
+  .rb-prop svg .fr.mv line { stroke: var(--text); stroke-width: 1.8; }
+  .rb-prop svg .fr.st { opacity: 0.45; }
+  .rb-prop svg .fr.sel line { stroke-width: 2.6; }
+  .rb-prop svg .fr .hit { fill: transparent; }
+  .rb-prop svg text.fl { font: 11.5px var(--font); fill: var(--text-2); }
+  .rb-prop svg .fr.mv text.fl { fill: var(--text); }
+  .rb-prop svg .fr.sel text.fl { font-weight: 700; fill: var(--text); }
+  .rb-prop .rbp-calc { background: color-mix(in srgb, var(--text-2) 6%, transparent); border-radius: 8px; padding: 8px 10px 10px; margin-top: 10px; }
+  .rb-prop .rbp-calc .row { margin-bottom: 4px; }
+  .rb-prop .rbp-fm { display: flex; flex-wrap: wrap; gap: 4px 28px; align-items: center; font-size: 0.95rem; overflow-x: auto; overflow-y: hidden; }
+  .rb-prop .rbp-prod { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 6px; margin-top: 6px; }
+  .rb-prop .mx { display: flex; flex-direction: column; align-items: center; }
+  .rb-prop .mx .ml { font-size: 13px; color: var(--text); margin-bottom: 1px; }
+  .rb-prop .mx .mb { display: grid; grid-template-columns: repeat(3, auto); gap: 0 8px; padding: 2px 6px; border-left: 1.5px solid var(--text-2); border-right: 1.5px solid var(--text-2); border-radius: 4px; font: 12px/1.45 var(--mono); color: var(--text-2); text-align: right; }
+  .rb-prop .mx .mc { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+  .rb-prop .mx.chg .mb, .rb-prop .mx.res .mb { color: var(--text); font-weight: 700; border-color: var(--text); }
+  @media (max-width: 480px) {
+    .rb-prop svg text.fl { font-size: 16px; }
+    .rb-prop svg text.ax { font-size: 15px; }
+  }
+  .rb-prop .op { font-size: 15px; color: var(--text-2); padding: 0 1px 14px; }
+</style>

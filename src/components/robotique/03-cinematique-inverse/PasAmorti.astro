@@ -1,0 +1,152 @@
+---
+// Cours Robotique : itérations des moindres carrés amortis sur le bras plan 3R (bras.ts).
+// Quatre cibles (facile, derrière, au bord de la portée, hors d'atteinte) × trois λ ; 40 itérations calculées dans le
+// navigateur au chargement (pas complet, sans butées), affichées une par une sur clic. Rien ne bouge avant un clic.
+// Dessin : pose courante, fantômes des poses précédentes, trace de la main (--rb-search), cible (ambre), prédiction
+// linéaire x + J Δq du pas à venir (--rb-sol). Graphique : ‖e‖ selon k pour les trois λ, le λ choisi en couleur.
+import katex from 'katex';
+const F = katex.renderToString('\\Delta q = J^\\top \\big(J J^\\top + \\lambda^2 I\\big)^{-1} e, \\qquad e = x^\\star - x(q), \\qquad q \\leftarrow q + \\Delta q', { throwOnError: false });
+---
+<div class="widget rb3-dls" data-widget="rb3-dls">
+  <div class="row">
+    <span class="lb">Cible</span><span class="seg" data-ref="cib"></span>
+    <span class="lb">λ</span><span class="seg" data-ref="lam"></span>
+  </div>
+  <div class="row">
+    <button data-ref="next">itération suivante</button><button data-ref="ten">10 itérations</button>
+    <span class="sp"></span><button data-ref="reset">réinitialiser</button>
+  </div>
+  <div class="hd"><b>Que fait λ au pas de Newton ?</b><span class="pill"><span>erreur ‖e‖</span><b data-ref="pe"></b></span></div>
+  <div class="gr">
+    <div>
+      <div class="keys"><span><i class="kt"></i>cible</span><span><i class="kp"></i>prédiction x + JΔq</span><span><i class="ks"></i>main, itération par itération</span></div>
+      <svg data-ref="arm" role="img" aria-label="Bras plan à trois articulations, cible, trace de la main et prédiction linéaire du pas suivant"></svg>
+    </div>
+    <div>
+      <div class="keys"><span>‖e‖ selon l'itération k, pour les trois λ</span></div>
+      <svg data-ref="plot" role="img" aria-label="Erreur de la main en fonction de l'itération, échelle logarithmique, pour λ = 0, 0,05 et 0,5"></svg>
+    </div>
+  </div>
+  <div class="calc"><div class="fm" set:html={F} /><div class="num" data-ref="num"></div></div>
+  <div class="kpis">
+    <div><span>itération k</span><b data-ref="kk"></b></div>
+    <div><span>pas ‖Δq‖</span><b data-ref="kd"></b></div>
+    <div><span>σ<sub>min</sub>(J)</span><b data-ref="ks"></b></div>
+  </div>
+  <p class="note">Départ q = (0,4 ; 0,8 ; 0,8) rad, pas complet, sans butées. Cercle pointillé : portée. ‖Δq‖ en rouge au-delà de π rad.</p>
+</div>
+
+<script>
+  import { runDls, tip, REACH, type V2 } from './bras';
+  import { view, socle, bras, cible, trace, fr, vec } from './dessin';
+
+  const TARGETS: { n: string; t: V2 }[] = [
+    { n: 'facile', t: [0.6, 0.5] }, { n: 'derrière', t: [-0.7, -0.4] }, { n: 'au bord', t: [0.2, 1.17] }, { n: "hors d'atteinte", t: [1.4, 0.6] },
+  ];
+  const LAMS = [0, 0.05, 0.5], LAB = ['0', '0,05', '0,5'], K = 40;
+  const mm = (e: number) => (e >= 1 ? `${fr(e, 2)} m` : e >= 1e-3 ? `${fr(e * 1000, 1)} mm` : e >= 1e-6 ? `${fr(e * 1000, 3)} mm` : '< 0,001 mm');
+
+  document.querySelectorAll<HTMLElement>('[data-widget="rb3-dls"]').forEach((root) => {
+    const $ = <E extends Element = HTMLElement>(r: string) => root.querySelector<E>(`[data-ref="${r}"]`)!;
+    const runs = TARGETS.map((T) => LAMS.map((l) => runDls(T.t, l, K)));
+    let ti = 0, li = 1, k = 0;
+    const seg = (el: HTMLElement, names: string[], set: (i: number) => void) => names.map((n, i) => {
+      const b = document.createElement('button'); b.textContent = n; b.addEventListener('click', () => { set(i); draw(); }); el.appendChild(b); return b;
+    });
+    const bT = seg($('cib'), TARGETS.map((T) => T.n), (i) => (ti = i));
+    const bL = seg($('lam'), LAB, (i) => (li = i));
+    const run = () => runs[ti][li];
+    const last = () => run().length - 1;
+    $('next').addEventListener('click', () => { k = Math.min(k + 1, last()); draw(); });
+    $('ten').addEventListener('click', () => { k = Math.min(k + 10, last()); draw(); });
+    $('reset').addEventListener('click', () => { k = 0; draw(); });
+
+    const { m, W, H } = view([-1.3, 1.6, -1.3, 1.3], 110);
+    function drawArm() {
+      const S = run(), st = S[k], t = TARGETS[ti].t;
+      let o = `<circle cx="${m.X(0)}" cy="${m.Y(0)}" r="${REACH * m.s}" fill="none" stroke="var(--text-2)" stroke-opacity="0.55" stroke-dasharray="3 5"/>`;
+      o += `<text x="${m.X(-0.86)}" y="${m.Y(-0.98)}" text-anchor="end" class="lb">portée</text>`;
+      o += socle(m);
+      for (let j = Math.max(0, k - 6); j < k; j++) o += bras(S[j].q, m, 'fantome', 0.1 + 0.035 * (j - k + 7));
+      o += trace(S.slice(0, k + 1).map((s) => tip(s.q)), m);
+      o += bras(st.q, m) + cible(t, m);
+      if (st.pred) {
+        const p = tip(st.q);
+        o += `<line x1="${m.X(p[0]).toFixed(1)}" y1="${m.Y(p[1]).toFixed(1)}" x2="${m.X(st.pred[0]).toFixed(1)}" y2="${m.Y(st.pred[1]).toFixed(1)}" stroke="var(--rb-sol)" stroke-width="1.4" stroke-dasharray="3 3"/>`;
+        o += `<circle cx="${m.X(st.pred[0]).toFixed(1)}" cy="${m.Y(st.pred[1]).toFixed(1)}" r="5" fill="none" stroke="var(--rb-sol)" stroke-width="2"/>`;
+      }
+      const svg = $<SVGSVGElement>('arm'); svg.setAttribute('viewBox', `0 0 ${W.toFixed(0)} ${H.toFixed(0)}`); svg.innerHTML = o;
+    }
+    // ‖e‖ en échelle logarithmique, de 0,1 mm à 3 m ; sous 0,1 mm, la courbe reste au plancher
+    function drawPlot() {
+      const PW = 330, PH = 286, ox = 46, oy = 10, rm = 62, pw = PW - ox - rm, ph = PH - oy - 34, lo = -4, hi = Math.log10(3);
+      const X = (j: number) => ox + (j / K) * pw, Y = (e: number) => oy + ph - ((Math.min(hi, Math.max(lo, Math.log10(Math.max(e, 1e-12)))) - lo) / (hi - lo)) * ph;
+      let o = '';
+      [[1, '1 m'], [0.1, '10 cm'], [0.01, '1 cm'], [1e-3, '1 mm'], [1e-4, '0,1 mm']].forEach(([v, s]) => (o += `<line x1="${ox}" y1="${Y(v as number)}" x2="${ox + pw}" y2="${Y(v as number)}" stroke="var(--border)" stroke-dasharray="${v === 1e-4 ? '' : '2 4'}"/><text x="${ox - 6}" y="${Y(v as number) + 3.5}" text-anchor="end" class="ax">${s}</text>`));
+      [0, 10, 20, 30, 40].forEach((j) => (o += `<text x="${X(j)}" y="${oy + ph + 15}" text-anchor="middle" class="ax">${j}</text>`));
+      o += `<text x="${ox + pw / 2}" y="${oy + ph + 30}" text-anchor="middle" class="ax">itération k</text>`;
+      o += `<line x1="${X(k)}" y1="${oy}" x2="${X(k)}" y2="${oy + ph}" stroke="var(--text-2)" stroke-opacity="0.5" stroke-dasharray="2 3"/>`;
+      const labs: { t: string; y: number; c: string; w: number }[] = [];
+      [0, 1, 2].forEach((i) => {
+        const S = runs[ti][i], cur = i === li, pts = S.map((s, j) => `${X(j).toFixed(1)},${Y(s.nE).toFixed(1)}`).join(' ');
+        if (!cur) o += `<polyline points="${pts}" fill="none" stroke="var(--text-2)" stroke-width="1.3" stroke-opacity="0.7" ${i === 0 ? 'stroke-dasharray="4 3"' : ''} stroke-linejoin="round"/>`;
+        labs.push({ t: `λ = ${LAB[i]}`, y: Y(S[S.length - 1].nE), c: cur ? 'var(--rb-search)' : 'var(--text-2)', w: cur ? 600 : 400 });
+      });
+      const S = run();
+      o += `<polyline points="${S.map((s, j) => `${X(j).toFixed(1)},${Y(s.nE).toFixed(1)}`).join(' ')}" fill="none" stroke="var(--rb-search)" stroke-width="2.4" stroke-linejoin="round"/>`;
+      o += `<circle cx="${X(k).toFixed(1)}" cy="${Y(S[k].nE).toFixed(1)}" r="4" fill="var(--rb-search)" stroke="var(--surface)" stroke-width="1.5"/>`;
+      labs.sort((a, b) => a.y - b.y);
+      for (let i = 1; i < labs.length; i++) if (labs[i].y - labs[i - 1].y < 15) labs[i].y = labs[i - 1].y + 15;
+      const over = labs[labs.length - 1].y - (oy + ph - 2);
+      if (over > 0) labs.forEach((l) => (l.y -= over));
+      labs.forEach((l) => (o += `<text x="${ox + pw + 8}" y="${(l.y + 4).toFixed(1)}" class="lb" style="fill:${l.c};font-weight:${l.w}">${l.t}</text>`));
+      const svg = $<SVGSVGElement>('plot'); svg.setAttribute('viewBox', `0 0 ${PW} ${PH}`); svg.innerHTML = o;
+    }
+    function draw() {
+      k = Math.min(k, last());
+      bT.forEach((b, i) => b.classList.toggle('active', i === ti));
+      bL.forEach((b, i) => b.classList.toggle('active', i === li));
+      const st = run()[k];
+      drawArm(); drawPlot();
+      $('pe').textContent = mm(st.nE);
+      $('kk').textContent = String(k);
+      $('kd').textContent = !st.dq ? '—' : st.nDq >= 0.1 ? `${fr(st.nDq, 2)} rad` : st.nDq >= 1e-3 ? `${fr(st.nDq, 3)} rad` : '< 0,001 rad';
+      $('kd').classList.toggle('r', st.nDq > Math.PI);
+      $('ks').textContent = fr(st.sig[1], 3);
+      $('num').textContent = st.dq
+        ? `e = ${vec(st.e)} m   →   Δq = ${vec(st.dq)} rad   ;   prédiction x + JΔq = ${vec(st.pred!)} m`
+        : `e = ${vec(st.e)} m   ;   J Jᵀ + λ²I singulière : pas impossible`;
+      ($('next') as HTMLButtonElement).disabled = k >= last();
+      ($('ten') as HTMLButtonElement).disabled = k >= last();
+    }
+    draw();
+  });
+</script>
+
+<style is:global>
+  .rb3-dls .row { margin-bottom: 8px; }
+  .rb3-dls .lb { font-size: 13px; color: var(--text-2); }
+  .rb3-dls .row .lb + .seg { margin-right: 10px; }
+  .rb3-dls .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .rb3-dls button { font-size: 13px; padding: 4px 12px; }
+  .rb3-dls button:disabled { opacity: 0.45; cursor: default; }
+  .rb3-dls .sp { flex: 1; }
+  .rb3-dls .hd { display: flex; justify-content: space-between; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin: 12px 0 4px; }
+  .rb3-dls .hd > b { font-size: 15px; font-weight: 600; color: var(--text); }
+  .rb3-dls .pill { display: inline-flex; align-items: baseline; gap: 8px; background: var(--surface-2); border-radius: 8px; padding: 4px 10px; }
+  .rb3-dls .pill span { font-size: 12px; color: var(--text-2); }
+  .rb3-dls .pill b { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .rb3-dls .gr { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 6px 18px; align-items: start; }
+  .rb3-dls .keys { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 12px; color: var(--text-2); min-height: 18px; }
+  .rb3-dls .keys i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+  .rb3-dls .keys i.kt { background: color-mix(in srgb, var(--hl-stroke) 20%, transparent); border: 2px solid var(--hl-stroke); }
+  .rb3-dls .keys i.kp { border: 2px solid var(--rb-sol); }
+  .rb3-dls .keys i.ks { background: var(--rb-search); width: 7px; height: 7px; }
+  .rb3-dls svg { width: 100%; height: auto; display: block; margin: 2px 0 0; }
+  .rb3-dls svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .rb3-dls svg text.lb { font: 11.5px var(--font); fill: var(--text-2); }
+  .rb3-dls .calc { background: color-mix(in srgb, var(--text-2) 6%, transparent); border-radius: 8px; padding: 8px 12px; margin-top: 10px; }
+  .rb3-dls .calc .fm { font-size: 15px; overflow-x: auto; overflow-y: hidden; }
+  .rb3-dls .calc .num { font-size: 12.5px; color: var(--text); margin-top: 4px; white-space: pre-wrap; font-variant-numeric: tabular-nums; }
+  .rb3-dls .katex svg { width: auto; height: inherit; margin: 0; }
+</style>

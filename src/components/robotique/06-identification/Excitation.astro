@@ -1,0 +1,101 @@
+---
+// Cours Robotique : moindres carrés sur un pendule commandé en couple (données synthétiques, excitation.ts).
+// Trois excitations (boutons). Pour chacune : q(t), le nuage des deux colonnes q̈ et sin q de Y (colinéaires ou non),
+// la formule et l'estimation du premier tirage du bruit, puis l'écart-type relatif de chaque paramètre sur 200 tirages.
+// Tout est calculé à la construction ; les boutons affichent des états précalculés.
+import katex from 'katex';
+import { excitation, THETA, NOISE, DRAWS } from './excitation.ts';
+const tx = (s: string, d = false) => katex.renderToString(s, { throwOnError: false, displayMode: d });
+const fr = (v: number, d: number) => v.toFixed(d).replace('.', '{,}');
+const pct = (r: number) => { const p = r * 100, d = p >= 100 ? 0 : p >= 10 ? 0 : p >= 1 ? 1 : 2; const v = p >= 1000 ? Math.round(p / 1000) * 1000 : p; return v.toFixed(d).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' %'; };
+const F = tx('\\hat\\theta = \\arg\\min_\\theta\\ \\lVert Y\\theta - \\tau \\rVert^2, \\qquad \\theta = (I,\\ mgl,\\ K_v,\\ K_c)', true);
+const C = excitation();
+const NAMES = ['<i>I</i>', '<i>mgl</i>', '<i>K</i><sub>v</sub>', '<i>K</i><sub>c</sub>'];
+const CONDS = JSON.stringify(C.map((c) => c.cond.toFixed(1).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, ' ')));
+const R = C.map((c) => ({
+  label: c.label,
+  cond: c.cond,
+  line: tx(`\\hat\\theta = (${c.first.map((v) => fr(v, 4)).join(' ;\\ ')}) \\quad \\text{pour} \\quad \\theta = (${THETA.map((v) => fr(v, 3)).join(' ;\\ ')})`),
+  rel: c.rel.map(pct),
+  alert: c.rel.map((r) => r > 0.2),
+}));
+// tracés : q(t) (6 s, un point sur quatre) et nuage (sin q, q̈) ; mêmes axes pour les trois excitations
+const W1 = 300, H1 = 170, W2 = 230;
+const plots = C.map((c) => {
+  const ox = 34, oy = 8, pw = W1 - ox - 8, ph = H1 - oy - 30;
+  const X = (k: number) => ox + (k / (c.q.length - 1)) * pw, Y = (v: number) => oy + ph / 2 - (v / 1.4) * (ph / 2);
+  let a = '';
+  [-1, 0, 1].forEach((v) => (a += `<line x1="${ox}" y1="${Y(v)}" x2="${ox + pw}" y2="${Y(v)}" stroke="var(--border)" stroke-dasharray="${v ? '2 4' : ''}"/><text x="${ox - 5}" y="${Y(v) + 4}" text-anchor="end" class="ax">${v === -1 ? '−1' : v}</text>`));
+  [0, 2, 4, 6].forEach((t) => (a += `<text x="${X((t / 6) * (c.q.length - 1))}" y="${oy + ph + 14}" text-anchor="middle" class="ax">${t}</text>`));
+  a += `<text x="${ox + pw}" y="${H1 - 3}" text-anchor="end" class="ax">temps (s)</text><text x="${ox + 4}" y="${oy + 10}" class="ax">q (rad)</text>`;
+  a += `<polyline points="${c.q.filter((_, k) => k % 4 === 0).map((v, j) => `${X(j * 4).toFixed(1)},${Y(v).toFixed(1)}`).join(' ')}" fill="none" stroke="var(--rb-q)" stroke-width="2"/>`;
+  const bx = 30, bw = W2 - bx - 8, XS = (v: number) => bx + bw / 2 + (v / 1.1) * (bw / 2), YS = (v: number) => oy + ph / 2 - (v / 10) * (ph / 2);
+  let b = `<line x1="${bx}" y1="${YS(0)}" x2="${bx + bw}" y2="${YS(0)}" stroke="var(--border)"/><line x1="${XS(0)}" y1="${oy}" x2="${XS(0)}" y2="${oy + ph}" stroke="var(--border)"/>`;
+  [-10, 10].forEach((v) => (b += `<text x="${bx - 5}" y="${YS(v) + 4}" text-anchor="end" class="ax">${v < 0 ? '−10' : '10'}</text>`));
+  [-1, 1].forEach((v) => (b += `<text x="${XS(v)}" y="${oy + ph + 14}" text-anchor="middle" class="ax">${v < 0 ? '−1' : '1'}</text>`));
+  b += `<text x="${bx + bw}" y="${H1 - 3}" text-anchor="end" class="ax">sin q</text><text x="${XS(0) + 5}" y="${oy + 10}" class="ax">q̈ (rad/s²)</text>`;
+  // points du nuage : un seul chemin, un segment nul par point (bouts ronds), un instant sur six
+  let d = '';
+  for (let k = 0; k < c.q.length; k += 6) d += `M${XS(c.sinq[k]).toFixed(1)} ${YS(c.qdd[k]).toFixed(1)}h0`;
+  b += `<path d="${d}" stroke="var(--rb-q)" stroke-opacity="0.5" stroke-width="3.6" stroke-linecap="round" fill="none"/>`;
+  return { a, b };
+});
+---
+<div class="widget rb6-exc" data-widget="rb6-exc" data-cond={CONDS}>
+  <div class="row"><span>Excitation :</span><span class="seg" data-ref="seg">{R.map((r, i) => <button data-i={i} class={i === 1 ? 'active' : ''}>{r.label}</button>)}</span></div>
+  <div class="hd"><b>Les mesures séparent-elles I et mgl ?</b><span class="pill"><span>conditionnement de Y</span><b data-ref="cond">{JSON.parse(CONDS)[1]}</b></span></div>
+  <div class="plots">
+    {plots.map((p, i) => (
+      <div class="pp" data-i={i} hidden={i !== 1}>
+        <div><div class="ft">Essai : position q(t)</div><svg viewBox={`0 0 ${W1} ${H1}`} role="img" aria-label="Position du pendule pendant l'essai" set:html={p.a} /></div>
+        <div><div class="ft">Deux colonnes de Y : q̈ contre sin q</div><svg viewBox={`0 0 ${W2} ${H1}`} role="img" aria-label="Nuage des colonnes q̈ et sin q du régresseur" set:html={p.b} /></div>
+      </div>
+    ))}
+  </div>
+  <div class="calc">
+    <div class="fm" set:html={F} />
+    {R.map((r, i) => <div class="num" data-i={i} hidden={i !== 1} set:html={r.line} />)}
+  </div>
+  <div class="kh">Écart-type de chaque paramètre estimé sur {DRAWS} tirages du bruit, rapporté à sa vraie valeur :</div>
+  {R.map((r, i) => (
+    <div class="kpis" data-i={i} hidden={i !== 1}>
+      {NAMES.map((n, j) => <div><span set:html={n} /><b class={r.alert[j] ? 'r' : ''}>{r.rel[j]}</b></div>)}
+    </div>
+  ))}
+  <p class="note">Données synthétiques : pendule commandé en couple, θ = (0,012 ; 0,75 ; 0,03 ; 0,09), 6 s à 200 Hz, couple mesuré avec un bruit gaussien d'écart-type {String(NOISE).replace('.', ',')} N·m ; q, q̇ et q̈ exacts. Estimation affichée : premier tirage du bruit (graine fixe).</p>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="rb6-exc"]').forEach((root) => {
+    const vals = JSON.parse(root.dataset.cond ?? '[]') as string[];
+    const bts = [...root.querySelectorAll<HTMLButtonElement>('[data-ref="seg"] button')];
+    const show = (i: number) => {
+      bts.forEach((b) => b.classList.toggle('active', +b.dataset.i! === i));
+      root.querySelectorAll<HTMLElement>('.pp, .num, .kpis').forEach((el) => (el.hidden = +el.dataset.i! !== i));
+      root.querySelector<HTMLElement>('[data-ref="cond"]')!.textContent = vals[i] ?? '';
+    };
+    bts.forEach((b) => b.addEventListener('click', () => show(+b.dataset.i!)));
+  });
+</script>
+
+<style is:global>
+  .rb6-exc .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .rb6-exc .seg button { font-size: 13px; padding: 4px 12px; }
+  .rb6-exc .hd { display: flex; justify-content: space-between; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin: 6px 0 4px; }
+  .rb6-exc .hd > b { font-size: 15px; font-weight: 600; color: var(--text); }
+  .rb6-exc .pill { display: inline-flex; align-items: baseline; gap: 8px; background: var(--surface-2); border-radius: 8px; padding: 4px 10px; }
+  .rb6-exc .pill span { font-size: 12.5px; color: var(--text-2); }
+  .rb6-exc .pill b { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .rb6-exc .pp { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 4px 18px; }
+  .rb6-exc .pp[hidden], .rb6-exc [hidden] { display: none; }
+  .rb6-exc .ft { font-size: 12.5px; color: var(--text-2); margin: 4px 0 0; }
+  .rb6-exc svg { width: 100%; height: auto; display: block; }
+  .rb6-exc svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .rb6-exc .calc { background: color-mix(in srgb, var(--text-2) 6%, transparent); border-radius: 8px; padding: 6px 12px; margin-top: 10px; }
+  .rb6-exc .calc .fm { font-size: 0.95rem; overflow-x: auto; overflow-y: hidden; }
+  .rb6-exc .calc .fm .katex-display { margin: 0.4rem 0; }
+  .rb6-exc .kh { font-size: 12.5px; color: var(--text-2); margin: 10px 0 -4px; }
+  .rb6-exc .kpis > div { flex-basis: 110px; }
+  .rb6-exc .calc .num { font-size: 0.95rem; overflow-x: auto; overflow-y: hidden; padding: 2px 0 4px; }
+  @media (max-width: 560px) { .rb6-exc .pp { grid-template-columns: 1fr; } }
+</style>

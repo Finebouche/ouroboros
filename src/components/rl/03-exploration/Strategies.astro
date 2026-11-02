@@ -21,10 +21,10 @@ const rows: { name: string; col: string; rule: string; where: string; pro: strin
     pro: 'chaque essai déçoit, donc tout est essayé, sans réglage', con: 'ne dure qu\'au début ; inutile si les récompenses changent' },
   { name: 'UCB', col: COLORS.ucb, rule: tx('a = \\arg\\max_a Q(a) + c\\sqrt{\\ln t / N(a)}'),
     where: 'Bandits ; MCTS (UCT), à chaque nœud de l\'arbre (section 4).',
-    pro: '<b>optimisme face à l\'incertitude</b> (<i>optimism in the face of uncertainty</i>) : l\'exploration va vers ce qu\'on connaît mal ; regret qui croît comme ' + tx('\\ln t') + ' (Auer et al.)',
+    pro: '<b>optimisme face à l\'incertitude</b> (<i>optimism in the face of uncertainty</i>) : l\'exploration va vers ce qu\'on connaît mal ; regret qui croît comme ' + tx('\\ln t') + ' pour des récompenses dans [0, 1] (UCB1, Auer et al.)',
     con: 'un compteur ' + tx('N(a)') + ' par action : une table' },
   { name: 'Thompson sampling', col: 'var(--text)', rule: 'tirer une moyenne plausible de chaque bras dans sa loi a posteriori, jouer le maximum',
-    where: 'Bandits en ligne (publicité, recommandation).',
+    where: 'Bandits en ligne : publicité, recommandation (exemples du tutoriel de Russo et al.).',
     pro: 'dirigée comme UCB, sans bonus à régler', con: 'demande une loi a posteriori de chaque moyenne (non montré ici)' },
 ];
 ---

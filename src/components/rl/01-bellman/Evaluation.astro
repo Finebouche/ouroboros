@@ -15,11 +15,11 @@ const groups: Row[][] = [
   [
     { glyph: ['step', 'remonte un pas à la fois'], name: 'TD(0)', kind: 'td', eq: ['V(s_t) \\leftarrow V(s_t) + \\alpha\\,\\big(r_{t+1} + \\gamma V(s_{t+1}) - V(s_t)\\big)'], algos: [{ n: 'SARSA' }, { n: 'Q-learning' }, { n: 'DQN' }] },
     { name: 'LSTD', sub: 'lot de transitions, V = wᵀφ', kind: 'td', eq: ['w = A^{-1} b', 'A = \\sum_t \\phi(s_t)\\big(\\phi(s_t) - \\gamma\\,\\phi(s_{t+1})\\big)^\\top', 'b = \\sum_t r_{t+1}\\,\\phi(s_t)'], algos: [{ n: 'LSPI' }] },
-    { name: 'FQE', sub: 'régression', kind: 'td', eq: ['Q_{k+1} = \\arg\\min_Q \\sum_i \\big(Q(s_i, a_i) - y_i\\big)^2', 'y_i = r_i + \\gamma \\sum_{a\'} \\pi(a\' \\mid s\'_i)\\, Q_k(s\'_i, a\')'], algos: [{ n: 'FQI' }] },
+    { name: 'FQE', sub: 'régression', kind: 'td', eq: ['Q_{k+1} = \\arg\\min_Q \\sum_i \\big(Q(s_i, a_i) - y_i\\big)^2', 'y_i = r_i + \\gamma \\sum_{a\'} \\pi(a\' \\mid s\'_i)\\, Q_k(s\'_i, a\')'], algos: [{ n: 'FQI (le max remplace π)' }] },
   ],
   [
     { name: 'TD à n pas, TD(λ)', kind: 'mix', labels: ['λ = 1', 'λ = 0'], eq: ['G_t^{(n)} = r_{t+1} + \\dots + \\gamma^{n-1} r_{t+n} + \\gamma^n V(s_{t+n})', 'V(s_t) \\leftarrow V(s_t) + \\alpha\\,\\big(G_t^{(n)} - V(s_t)\\big)', 'G_t^\\lambda = (1-\\lambda)\\sum_{n \\ge 1} \\lambda^{n-1} G_t^{(n)}'], algos: [{ n: 'SARSA(λ)' }] },
-    { glyph: ['mix', 'via l\'avantage, selon λ'], name: 'Critique (acteur-critique)', sub: 'TD + GAE', kind: 'mix', labels: ['λ = 1', 'λ = 0'], eq: ['\\delta_t = r_{t+1} + \\gamma V(s_{t+1}) - V(s_t)', '\\hat A_t = \\sum_{l \\ge 0} (\\gamma\\lambda)^l\\, \\delta_{t+l}'], algos: [{ n: 'A2C' }, { n: 'NAC' }, { n: 'TRPO' }, { n: 'PPO' }] },
+    { glyph: ['mix', 'via l\'avantage, selon λ'], name: 'Critique (acteur-critique)', sub: 'TD à n pas, GAE (λ)', kind: 'mix', labels: ['λ = 1', 'λ = 0'], eq: ['\\delta_t = r_{t+1} + \\gamma V(s_{t+1}) - V(s_t)', '\\hat A_t = \\sum_{l \\ge 0} (\\gamma\\lambda)^l\\, \\delta_{t+l}'], algos: [{ n: 'A2C (n pas)' }, { n: 'NAC (régression linéaire)' }, { n: 'TRPO' }, { n: 'PPO (GAE)' }] },
   ],
   [
     { glyph: ['group', 'politique entière'], name: 'Pas de valeur', sub: 'politique jugée en entier', kind: 'none', eq: [], note: 'stratégie d\'évolution : juge l\'épisode entier, sans crédit par action', algos: [{ n: 'OpenAI-ES' }, { n: 'CMA-ES' }] },

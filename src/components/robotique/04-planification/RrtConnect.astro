@@ -1,0 +1,183 @@
+---
+// Cours Robotique : RRT et RRT-Connect côte à côte dans l'espace des configurations du bras 2R (mêmes C-obstacles
+// que EspaceC). Les deux planificateurs tournent dans le navigateur (plan.ts) ; à graine égale, ils reçoivent la même suite de q_rand.
+// Boutons : une, dix itérations, jusqu'à la solution ; graine 1 à 5. Une fois un chemin trouvé, le curseur t fait suivre le chemin au bras.
+import katex from 'katex';
+import { cobsPath, QD, QB } from './plan';
+import { cFrame, cEnds, CVIEW, WVIEW, wsScene, handAt } from './draw';
+const tex = (s: string) => katex.renderToString(s, { throwOnError: false });
+const F = tex('\\begin{aligned} &q_{\\text{new}} = q_{\\text{near}} + \\delta\\,\\frac{q_{\\text{rand}} - q_{\\text{near}}}{\\lVert q_{\\text{rand}} - q_{\\text{near}} \\rVert} \\\\ &\\big(\\text{ou } q_{\\text{rand}} \\text{ si } \\lVert q_{\\text{rand}} - q_{\\text{near}} \\rVert \\le \\delta\\big) \\end{aligned}');
+const frame = cFrame(cobsPath()), ends = cEnds(QD, QB);
+const [gx, gy] = handAt(QB);
+const scene = wsScene() + `<circle cx="${gx}" cy="${gy}" r="6" fill="none" stroke="var(--hl-stroke)" stroke-width="2"/>`;
+---
+<div class="widget rrw" data-widget="rrtw">
+  <div class="rrhd"><b>Combien d'itérations pour relier le départ au but, avec un arbre ou deux ?</b></div>
+  <div class="row rrctl">
+    <button data-ref="b1">une itération</button><button data-ref="b10">dix itérations</button><button data-ref="ball">jusqu'à la solution</button>
+    <span class="rrsd"><span>graine</span><span class="rrseg" data-ref="seeds"></span></span><span class="sp"></span><button data-ref="reset">recommencer</button>
+  </div>
+  <div class="rrfm" set:html={F} />
+  <div class="rrgrid">
+    {[['RRT', 'un arbre'], ['RRT-Connect', 'deux arbres ; celui du but en pointillés']].map(([t, s], i) => (
+      <div>
+        <div class="rreh"><b>{t}</b><span>{s}</span></div>
+        <svg data-ref={`c${i}`} viewBox={CVIEW} role="img" aria-label={`${t} dans l'espace des configurations du bras`}>
+          <g set:html={frame} /><g data-ref={`t${i}`}></g><g set:html={ends} /><g data-ref={`h${i}`}></g>
+        </svg>
+        <div class="rref" data-ref={`l${i}`}></div>
+      </div>
+    ))}
+  </div>
+  <div class="kpis">
+    <div><span>Itérations</span><b data-ref="ki"></b><i>RRT · RRT-Connect</i></div>
+    <div><span>Nœuds</span><b data-ref="kn"></b></div>
+    <div><span>Segments testés</span><b data-ref="ks"></b></div>
+    <div><span>Longueur (rad)</span><b data-ref="kl"></b></div>
+  </div>
+  <div class="rrarm">
+    <svg viewBox={WVIEW} role="img" aria-label="Le bras le long du chemin trouvé"><g set:html={scene} /><g data-ref="arm"></g></svg>
+    <div class="rrarmc">
+      <div class="row"><span>Bras le long du chemin de :</span><span class="rrseg" data-ref="pick"></span></div>
+      <label class="side"><span>Position t</span><input type="range" data-ref="t" min="0" max="1" step="0.001" value="0" disabled /><b data-ref="t-out"></b></label>
+      <p class="rrhint" data-ref="hint"></p>
+    </div>
+  </div>
+  <p class="note">δ = 0,2 rad ; segments testés tous les 0,02 rad ; même suite de q<sub>rand</sub> pour les deux méthodes à graine égale. Croix : q<sub>rand</sub> ; carré : q<sub>near</sub> ; rouge pointillé : pas rejeté (collision). RRT seul : 5 % des tirages visent le but. Chemin brut, non lissé ; anneau ambre : main au but.</p>
+</div>
+
+<script>
+  import { Rrt, RrtConnect, QD, QB, pathLen, dist, DELTA, type Q, type Tree, type Ext } from './plan';
+  import { armSvg, cX, cY, fr, handTrace } from './draw';
+  document.querySelectorAll<HTMLElement>('[data-widget="rrtw"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const tIn = $('t') as HTMLInputElement, CAP = 20000;
+    let seed = 1, A: Rrt, B: RrtConnect, pick = -1;
+    const P = (q: Q) => `${cX(q[0]).toFixed(1)},${cY(q[1]).toFixed(1)}`;
+    const lab: Record<Ext, string> = { R: 'atteint', A: 'avancé', T: 'piégé' };
+    const pt = (q: Q) => `(${fr(q[0])} ; ${fr(q[1])})`;
+
+    const seedB = [1, 2, 3, 4, 5].map((s) => { const b = document.createElement('button'); b.textContent = String(s); b.addEventListener('click', () => { seed = s; reset(); }); $('seeds').appendChild(b); return b; });
+    const pickB = ['RRT', 'RRT-Connect'].map((t, i) => { const b = document.createElement('button'); b.textContent = t; b.addEventListener('click', () => { pick = i; drawArm(); drawHl(); }); $('pick').appendChild(b); return b; });
+
+    function tree(T: Tree, dashed: boolean, from = Infinity) {
+      let d = '', dn = '', n = '';
+      for (let i = 1; i < T.q.length; i++) { const s = `M${P(T.q[T.par[i]])}L${P(T.q[i])}`; if (i >= from) dn += s; else d += s; }
+      T.q.forEach((q) => (n += `<circle cx="${cX(q[0]).toFixed(1)}" cy="${cY(q[1]).toFixed(1)}" r="1.4"/>`));
+      const da = dashed ? 'stroke-dasharray="2.5 2"' : '';
+      return `<path d="${d}" fill="none" stroke="var(--rb-search)" stroke-width="1.1" stroke-opacity="0.85" ${da}/>` +
+        (dn ? `<path d="${dn}" fill="none" stroke="var(--rb-search)" stroke-width="2.4" ${da}/>` : '') + `<g fill="var(--rb-search)">${n}</g>`;
+    }
+    const cross = (q: Q) => { const [x, y] = [cX(q[0]), cY(q[1])]; return `<path d="M${x - 4} ${y - 4}L${x + 4} ${y + 4}M${x - 4} ${y + 4}L${x + 4} ${y - 4}" stroke="var(--text)" stroke-width="1.5"/>`; };
+    const ring = (q: Q) => `<rect x="${cX(q[0]) - 4.5}" y="${cY(q[1]) - 4.5}" width="9" height="9" fill="none" stroke="var(--text)" stroke-width="1.3"/>`;
+    const guide = (a: Q, b: Q) => `<line x1="${cX(a[0])}" y1="${cY(a[1])}" x2="${cX(b[0])}" y2="${cY(b[1])}" stroke="var(--text-2)" stroke-width="0.9" stroke-dasharray="1.5 2.5"/>`;
+    const reject = (a: Q, b: Q) => `<line x1="${cX(a[0])}" y1="${cY(a[1])}" x2="${cX(b[0])}" y2="${cY(b[1])}" stroke="var(--h-py)" stroke-width="2.6" stroke-dasharray="2.5 1.5"/>`;
+    const dot = (q: Q, col: string, r = 3.2) => `<circle cx="${cX(q[0])}" cy="${cY(q[1])}" r="${r}" fill="${col}" stroke="var(--surface)" stroke-width="1.2"/>`;
+    const pathSvg = (p: Q[]) => `<polyline points="${p.map(P).join(' ')}" fill="none" stroke="var(--rb-sol)" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>`;
+
+    // position le long du chemin, à la fraction t de sa longueur
+    function along(p: Q[], t: number): Q {
+      let s = t * pathLen(p);
+      for (let k = 1; k < p.length; k++) { const l = dist(p[k - 1], p[k]); if (s <= l || k === p.length - 1) { const u = l ? Math.min(1, s / l) : 0; return [p[k - 1][0] + u * (p[k][0] - p[k - 1][0]), p[k - 1][1] + u * (p[k][1] - p[k - 1][1])]; } s -= l; }
+      return p[0];
+    }
+    const paths = () => [A.path, B.path];
+
+    function drawTrees() {
+      const ev = A.ev, eb = B.ev;
+      let o0 = tree(A.T, false);
+      if (A.path) o0 += pathSvg(A.path);
+      $('t0').innerHTML = o0;
+      let o1 = '';
+      [0, 1].forEach((i) => { const hot = eb && eb.con && 1 - eb.a === i ? eb.con.first : Infinity; o1 += tree(B.T[i], i === 1, hot); });
+      if (B.path) o1 += pathSvg(B.path);
+      $('t1').innerHTML = o1;
+      // lignes d'état
+      if (!ev) $('l0').textContent = "l'arbre ne contient que le départ";
+      else $('l0').textContent = `itération ${A.it} · ${ev.goal ? 'tirage du but (biais 5 %)' : `q_rand = ${pt(ev.qrand)}`}\n` +
+        `‖q_rand − q_near‖ = ${fr(ev.d)} ${ev.d > DELTA ? '> δ' : '≤ δ'} → q_new = ${pt(ev.qnew)}\n` +
+        (!ev.ok ? 'segment en collision : q_new rejeté' : ev.done ? `but à ${fr(ev.dGoal)} ≤ δ, segment libre : chemin trouvé` : 'segment libre : q_new ajouté');
+      if (!eb) $('l1').textContent = 'chaque arbre ne contient que sa racine';
+      else {
+        const na = eb.a === 0 ? 'départ' : 'but', nb = eb.a === 0 ? 'but' : 'départ';
+        $('l1').textContent = `itération ${B.it} · EXTEND(arbre du ${na}, q_rand) : ${lab[eb.ext.res]}\n` +
+          (eb.con ? `CONNECT(arbre du ${nb}, q_new) : ${eb.con.steps} pas, ${lab[eb.con.res]}` : 'pas de CONNECT') + '\n' +
+          (eb.done ? 'arbres reliés : chemin trouvé' : 'échange des rôles');
+      }
+    }
+    // éléments de l'itération en cours, et position du bras dans le carré choisi
+    function drawHl() {
+      let h0 = '', h1 = '';
+      const ev = A.ev;
+      if (ev && !A.path) {
+        const qn = A.T.q[ev.near];
+        h0 += guide(qn, ev.qrand) + cross(ev.qrand) + ring(qn) + (ev.ok ? dot(ev.qnew, 'var(--rb-search)') : reject(qn, ev.qnew));
+      }
+      const eb = B.ev;
+      if (eb && !B.path) {
+        const Ta = B.T[eb.a], Tb = B.T[1 - eb.a], qn = Ta.q[eb.ext.near];
+        h1 += guide(qn, eb.qrand) + cross(eb.qrand) + ring(qn) + (eb.ext.res === 'T' ? reject(qn, eb.ext.qnew) : dot(eb.ext.qnew, 'var(--rb-search)'));
+        if (eb.con && eb.con.res === 'T') h1 += reject(Tb.q[eb.con.last.near], eb.con.last.qnew);
+      }
+      const p = pick >= 0 ? paths()[pick] : null;
+      if (p) { const q = along(p, +tIn.value); if (pick === 0) h0 += dot(q, 'var(--rb-q)', 5); else h1 += dot(q, 'var(--rb-q)', 5); }
+      $('h0').innerHTML = h0; $('h1').innerHTML = h1;
+    }
+    function drawArm() {
+      const ps = paths();
+      if (pick < 0 || !ps[pick]) pick = ps[1] ? 1 : ps[0] ? 0 : -1;
+      pickB.forEach((b, i) => { b.disabled = !ps[i]; b.classList.toggle('active', i === pick); });
+      tIn.disabled = pick < 0;
+      const p = pick >= 0 ? ps[pick]! : null, t = +tIn.value;
+      $('t-out').textContent = fr(t);
+      $('arm').innerHTML = p ? handTrace(p, 'var(--rb-sol)') + armSvg(along(p, t)) : armSvg(QD);
+      $('hint').textContent = p ? 'violet : trajectoire de la main ; le bras ne touche aucun disque' : 'disponible une fois un chemin trouvé';
+    }
+    function kpis() {
+      const two = (a: string, b: string) => `${a} · ${b}`;
+      $('ki').textContent = two(String(A.it), String(B.it));
+      $('kn').textContent = two(String(A.T.q.length), String(B.T[0].q.length + B.T[1].q.length));
+      $('ks').textContent = two(String(A.seg), String(B.seg));
+      $('kl').textContent = two(A.path ? fr(pathLen(A.path)) : '–', B.path ? fr(pathLen(B.path)) : '–');
+      const end = !!(A.path && B.path);
+      [$('b1'), $('b10'), $('ball')].forEach((b) => ((b as HTMLButtonElement).disabled = end));
+      seedB.forEach((b, i) => b.classList.toggle('active', i + 1 === seed));
+    }
+    const draw = () => { drawTrees(); drawArm(); drawHl(); kpis(); };
+    function adv(n: number) { for (let k = 0; k < n; k++) { A.step(); B.step(); } draw(); }
+    function reset() { A = new Rrt(QD, QB, seed); B = new RrtConnect(QD, QB, seed); pick = -1; tIn.value = '0'; draw(); }
+    $('b1').addEventListener('click', () => adv(1));
+    $('b10').addEventListener('click', () => adv(10));
+    $('ball').addEventListener('click', () => { let k = 0; while (!(A.path && B.path) && k++ < CAP) { A.step(); B.step(); } draw(); });
+    $('reset').addEventListener('click', reset);
+    tIn.addEventListener('input', () => { drawArm(); drawHl(); });
+    reset();
+  });
+</script>
+
+<style is:global>
+  .rrw .rrhd { margin-bottom: 8px; }
+  .rrw .rrhd b { font-size: 15px; font-weight: 600; color: var(--text); }
+  .rrw .rrctl { gap: 6px; }
+  .rrw .rrctl .sp { flex: 1; }
+  .rrw .rrctl .rrsd { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; margin-left: 8px; }
+  .rrw .rrctl .rrsd .rrseg { flex-wrap: nowrap; }
+  .rrw button { font-size: 13px; padding: 4px 12px; }
+  .rrw .rrseg { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+  .rrw .rrctl .rrseg button { padding: 4px 9px; }
+  .rrw button:disabled { opacity: 0.45; cursor: default; }
+  .rrw .rrfm { font-size: 0.85rem; overflow-x: auto; overflow-y: hidden; margin: 2px 0 8px; color: var(--text); }
+  .rrw .rrfm .katex { font-size: 1em; }
+  .rrw .rrgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 20px; }
+  .rrw .rreh { font-size: 12.5px; color: var(--text-2); margin-bottom: 2px; }
+  .rrw .rreh b { font-size: 14px; color: var(--text); margin-right: 8px; }
+  .rrw svg { width: 100%; height: auto; display: block; }
+  .rrw svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .rrw svg text.lb { font: 600 11px var(--font); fill: var(--text); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
+  .rrw .rref { font: 10.5px/1.5 var(--mono); color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere; min-height: 4.6em; margin-top: 4px; background: var(--surface-2); border-radius: 6px; padding: 4px 8px; }
+  .rrw .kpis > div { flex: 1 1 120px; grid-template-columns: 1fr; }
+  .rrw .rrarm { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 8px 20px; align-items: center; margin-top: 12px; }
+  .rrw .rrarm .row { margin-bottom: 8px; }
+  .rrw .rrhint { font-size: 12.5px; color: var(--text-2); margin: 8px 0 0; }
+  @media (max-width: 640px) { .rrw .rrgrid { grid-template-columns: 1fr; } .rrw .rrarm { grid-template-columns: 1fr; } .rrw .rrarm svg { max-width: 240px; margin: 0 auto; } }
+</style>

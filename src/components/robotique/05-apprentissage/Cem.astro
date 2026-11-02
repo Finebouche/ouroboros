@@ -1,0 +1,142 @@
+---
+// Cours Robotique : la méthode de l'entropie croisée (CEM) apprend une politique linéaire de CartPole (a = 1 si w · s > 0).
+// Tout est calculé à la construction (cem.ts, graine 4, robot nominal) : à chaque itération, 20 candidats w⁽ⁱ⁾ ~ N(w̄, diag σ²), jugés sur
+// 8 épisodes chacun ; les 4 meilleurs (élites) donnent w̄ et σ de l'itération suivante. Boutons : une itération à la fois, sans lecture
+// automatique. Graphique : durées des candidats (vert = exploration, creux ; élites pleines) et durée de la politique moyenne w̄
+// (violet = solution calculée, mesurée sur les 64 départs). Dessous : les 4 composantes de w, w̄ ± σ avant et après la mise à jour.
+import katex from 'katex';
+import { getData, N_POP, N_EP, N_ELITE, SIGMA_EXTRA } from './cem.ts';
+const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
+const F1 = tx('w^{(i)} \\sim \\mathcal{N}\\big(\\bar w,\\ \\operatorname{diag}\\sigma^2\\big),\\quad i = 1, \\dots, 20');
+const F2 = tx('\\bar w \\leftarrow \\tfrac{1}{4} \\textstyle\\sum_{i\\, \\in\\, \\text{élites}} w^{(i)}');
+const F3 = tx('\\sigma \\leftarrow \\text{écart-type des élites} + 0{,}02');
+const SEED = 4;
+const run = getData().runs[SEED].nom;
+const r3 = (v: number) => Math.round(v * 1000) / 1000;
+const data = {
+  iters: run.iters.map((x) => ({ mu: x.mu.map(r3), sd: x.sd.map(r3), pop: x.pop.map((w) => w.map(r3)), J: x.J, elites: x.elites, muNext: x.muNext.map(r3), sdNext: x.sdNext.map(r3) })),
+  muScore: run.muScore.map((v) => Math.round(v * 10) / 10),
+  cfg: { N_POP, N_EP, N_ELITE, SIGMA_EXTRA },
+};
+---
+<div class="widget rb-cem" data-widget="rb-cem">
+  <div class="ch"><b>Comment apprendre une politique en ne faisant qu'essayer ?</b></div>
+  <div class="row"><span>Itération k :</span><span class="seg" data-ref="it"></span></div>
+  <div class="tags"><span class="g">○ candidats essayés</span><span class="g">● les 4 élites</span><span class="v">— politique moyenne w̄</span></div>
+  <svg data-ref="plot" viewBox="0 0 640 214" role="img" aria-label="Durée moyenne d'un épisode pour chaque candidat et pour la politique moyenne, itération par itération"></svg>
+  <svg data-ref="ws" viewBox="0 0 640 118" role="img" aria-label="Les quatre poids de la politique : candidats, élites, moyenne et écart-type avant et après la mise à jour"></svg>
+  <div class="kpis">
+    <div><span>candidats à 500 pas</span><b data-ref="k2"></b></div>
+    <div><span>épisodes simulés</span><b data-ref="k3"></b></div>
+  </div>
+  <div class="calc">
+    <div class="fm" set:html={F1} />
+    <div class="ln" data-ref="l0"></div>
+    <div class="fm" set:html={F2} />
+    <div class="ln" data-ref="l1"></div>
+    <div class="fm" set:html={F3} />
+    <div class="ln" data-ref="l2"></div>
+  </div>
+  <p class="note">Politique a = 1 si w · s &gt; 0, avec w = (w<sub>1</sub>, w<sub>2</sub>, w<sub>3</sub>, w<sub>4</sub>) appliqué à (q<sub>1</sub>, q̇<sub>1</sub>, q<sub>2</sub>, q̇<sub>2</sub>). Départ w̄ = 0, σ = 1. Chaque candidat est jugé sur la durée moyenne de 8 épisodes (500 pas au plus) ; w̄ est mesurée sur 64 départs. Robot nominal, graine 4.</p>
+  <script type="application/json" data-ref="data" set:html={JSON.stringify(data)} />
+</div>
+
+<script>
+  type Iter = { mu: number[]; sd: number[]; pop: number[][]; J: number[]; elites: number[]; muNext: number[]; sdNext: number[] };
+  type Data = { iters: Iter[]; muScore: number[]; cfg: { N_POP: number; N_EP: number; N_ELITE: number; SIGMA_EXTRA: number } };
+  const fr = (v: number, d = 2) => (Math.abs(v) < 0.5 * 10 ** -d ? 0 : v).toFixed(d).replace('.', ',').replace('-', '−');
+  const SUP = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+  const sup = (n: number) => String(n).split('').map((c) => SUP[+c]).join('');
+  const vec = (v: number[]) => `(${v.map((x) => fr(x)).join(' ; ')})`;
+
+  document.querySelectorAll<HTMLElement>('[data-widget="rb-cem"]').forEach((root) => {
+    const $ = <E extends Element = HTMLElement>(r: string) => root.querySelector<E>(`[data-ref="${r}"]`)!;
+    const D = JSON.parse($('data').textContent!) as Data, NI = D.iters.length;
+    let k = 0;
+
+    // graphique : x = itération (0 à NI), y = durée (0 à 500)
+    const ox = 46, pw = 470, oy = 10, ph = 168;
+    const X = (i: number) => ox + (i / NI) * pw, Y = (v: number) => oy + ph - (v / 500) * ph;
+    function plot() {
+      let o = '';
+      for (const v of [0, 250, 500]) o += `<line x1="${ox}" y1="${Y(v)}" x2="${ox + pw}" y2="${Y(v)}" stroke="var(--border)" ${v ? 'stroke-dasharray="2 4"' : ''}/><text x="${ox - 6}" y="${Y(v) + 3.5}" text-anchor="end" class="ax${v ? '' : ' z'}">${v}</text>`;
+      for (let i = 0; i <= NI; i++) o += `<text x="${X(i)}" y="${oy + ph + 15}" text-anchor="middle" class="ax">${i}</text>`;
+      o += `<text x="${ox + pw / 2}" y="${oy + ph + 31}" text-anchor="middle" class="ax it">itération</text>`;
+      o += `<text x="12" y="${oy + ph / 2}" transform="rotate(-90 12 ${oy + ph / 2})" text-anchor="middle" class="ax yt">durée moyenne (pas)</text>`;
+      o += `<rect x="${X(k) - 14}" y="${oy}" width="28" height="${ph}" rx="5" fill="var(--text-2)" fill-opacity="0.07"/>`;
+      for (let i = 0; i <= k; i++) {
+        const it = D.iters[i], el = new Set(it.elites), op = i === k ? 1 : 0.35;
+        it.J.forEach((j, c) => {
+          const cx = X(i) + ((c % 5) - 2) * 2.6, e = el.has(c);
+          o += `<circle cx="${cx.toFixed(1)}" cy="${Y(j).toFixed(1)}" r="${e ? 3.4 : 2.8}" fill="${e ? 'var(--rb-search)' : 'var(--surface)'}" stroke="var(--rb-search)" stroke-width="1.2" opacity="${op}"/>`;
+        });
+      }
+      const pts = D.muScore.slice(0, k + 2).map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`);
+      o += `<polyline points="${pts.join(' ')}" fill="none" stroke="var(--rb-sol)" stroke-width="2.4" stroke-linejoin="round"/>`;
+      D.muScore.slice(0, k + 2).forEach((v, i) => (o += `<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="${i === k + 1 ? 4.2 : 3}" fill="var(--rb-sol)"/>`));
+      const lv = D.muScore[k + 1];
+      // étiquette directe au bout de la courbe (sous le point quand il est en haut du tracé)
+      const ly = Y(lv) < oy + 14 ? Y(lv) + 18 : Y(lv) + 4;
+      o += `<text x="${X(k + 1) + 9}" y="${ly.toFixed(1)}" class="lb" style="fill:var(--rb-sol)">w̄<tspan dy="3" font-size="9">${k + 1}</tspan><tspan dy="-3"> : ${fr(lv, 0)} pas</tspan></text>`;
+      $<SVGSVGElement>('plot').innerHTML = o;
+    }
+
+    // les quatre poids : candidats (vert), w̄_k ± σ_k (gris), w̄_{k+1} ± σ_{k+1} (violet)
+    const wx0 = 86, ww = 430, WMIN = -3, WMAX = 3;
+    const WX = (v: number) => wx0 + ((Math.max(WMIN, Math.min(WMAX, v)) - WMIN) / (WMAX - WMIN)) * ww;
+    const NAMES = ['w₁ · q₁', 'w₂ · q̇₁', 'w₃ · q₂', 'w₄ · q̇₂'];
+    function weights() {
+      const it = D.iters[k], el = new Set(it.elites);
+      let o = '';
+      for (const v of [-3, -2, -1, 0, 1, 2, 3]) o += `<text x="${WX(v)}" y="112" text-anchor="middle" class="ax">${v < 0 ? '−' + -v : v}</text>`;
+      for (let j = 0; j < 4; j++) {
+        const y = 14 + j * 24;
+        o += `<text x="${wx0 - 12}" y="${y + 4}" text-anchor="end" class="ax">${NAMES[j]}</text>`;
+        o += `<line x1="${wx0}" y1="${y}" x2="${wx0 + ww}" y2="${y}" stroke="var(--border)"/><line x1="${WX(0)}" y1="${y - 6}" x2="${WX(0)}" y2="${y + 6}" stroke="var(--border)"/>`;
+        o += `<line x1="${WX(it.mu[j] - it.sd[j])}" y1="${y - 7}" x2="${WX(it.mu[j] + it.sd[j])}" y2="${y - 7}" stroke="var(--text-2)" stroke-width="2" stroke-opacity="0.55"/><circle cx="${WX(it.mu[j])}" cy="${y - 7}" r="2.6" fill="var(--text-2)"/>`;
+        it.pop.forEach((w, c) => { const e = el.has(c); o += `<circle cx="${WX(w[j]).toFixed(1)}" cy="${y}" r="${e ? 3.2 : 2.6}" fill="${e ? 'var(--rb-search)' : 'var(--surface)'}" stroke="var(--rb-search)" stroke-width="1.1" opacity="${e ? 1 : 0.75}"/>`; });
+        o += `<line x1="${WX(it.muNext[j] - it.sdNext[j])}" y1="${y + 7}" x2="${WX(it.muNext[j] + it.sdNext[j])}" y2="${y + 7}" stroke="var(--rb-sol)" stroke-width="2.2"/><circle cx="${WX(it.muNext[j])}" cy="${y + 7}" r="3" fill="var(--rb-sol)"/>`;
+        o += `<text x="${wx0 + ww + 10}" y="${y + 4}" class="lb"><tspan style="fill:var(--text-2)">${fr(it.mu[j])}</tspan><tspan style="fill:var(--text-2)"> → </tspan><tspan style="fill:var(--rb-sol);font-weight:600">${fr(it.muNext[j])}</tspan></text>`;
+      }
+      $<SVGSVGElement>('ws').innerHTML = o;
+    }
+
+    function info() {
+      const it = D.iters[k], n500 = it.J.filter((j) => j === 500).length, ep = (k + 1) * D.cfg.N_POP * D.cfg.N_EP;
+      $('k2').textContent = `${n500} / ${D.cfg.N_POP}`;
+      $('k3').textContent = ep.toLocaleString('fr-FR');
+      $('l0').textContent = `w̄ = ${vec(it.mu)}, σ = ${vec(it.sd)} ; élites : candidats ${it.elites.map((e) => e + 1).join(', ')}, durées ${it.elites.map((e) => fr(it.J[e], 1)).join(' ; ')}`;
+      $('l1').textContent = `w̄ ← ¼ (${it.elites.map((e) => `w⁽${sup(e + 1)}⁾`).join(' + ')}) = ${vec(it.muNext)}`;
+      $('l2').textContent = `σ ← ${vec(it.sdNext.map((v) => v - D.cfg.SIGMA_EXTRA))} + 0,02 = ${vec(it.sdNext)}`;
+      root.querySelectorAll<HTMLButtonElement>('[data-ref="it"] button').forEach((b, i) => b.classList.toggle('active', i === k));
+    }
+    const draw = () => { plot(); weights(); info(); };
+
+    for (let i = 0; i < NI; i++) {
+      const b = document.createElement('button');
+      b.textContent = String(i);
+      b.addEventListener('click', () => { k = i; draw(); });
+      $('it').appendChild(b);
+    }
+    draw();
+  });
+</script>
+
+<style is:global>
+  .rb-cem .ch { margin-bottom: 8px; }
+  .rb-cem .ch b { font-size: 15px; font-weight: 600; color: var(--text); }
+  .rb-cem .row { font-size: 13px; }
+  .rb-cem .seg { display: inline-flex; flex-wrap: wrap; gap: 5px; }
+  .rb-cem .seg button { font-size: 13px; padding: 4px 10px; min-width: 2.2em; }
+  .rb-cem .tags { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; margin: 2px 0 2px 46px; }
+  .rb-cem .tags .g { color: var(--rb-search); }
+  .rb-cem .tags .v { color: var(--rb-sol); font-weight: 600; }
+  .rb-cem svg { display: block; width: 100%; height: auto; }
+  .rb-cem svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .rb-cem svg text.lb { font: 11.5px var(--font); }
+  .rb-cem .kpis > div { flex: 1 1 150px; }
+  .rb-cem .calc { margin-top: 10px; background: color-mix(in srgb, var(--text-2) 6%, transparent); border-radius: 8px; padding: 8px 12px; }
+  .rb-cem .calc .ln { font: 12px/1.55 var(--mono); color: var(--text); overflow-wrap: anywhere; }
+  .rb-cem .calc .fm { font-size: 0.92rem; margin: 6px 0 2px; overflow-x: auto; overflow-y: hidden; }
+  @media (max-width: 560px) { .rb-cem .tags { margin-left: 0; } .rb-cem svg text.yt, .rb-cem svg text.it, .rb-cem svg text.z { display: none; } .rb-cem svg text.ax, .rb-cem svg text.lb { font-size: 17px; } }
+</style>

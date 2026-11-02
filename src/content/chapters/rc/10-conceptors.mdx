@@ -1,0 +1,192 @@
+---
+num: 10
+title: "Conceptors : plusieurs motifs dans un réservoir"
+summary: "Stocker plusieurs motifs dans un même réservoir et choisir lequel rejouer : chaque motif occupe sa région de l'espace d'états, un conceptor (une projection douce) l'y maintient ; ouverture, chargement, rappel, mélange et logique des conceptors (Jaeger, 2014)."
+status: premier-jet
+---
+import Reveal from '@/components/shared/Reveal.astro';
+import Quiz from '@/components/shared/Quiz.astro';
+import Refs from '@/components/shared/Refs.astro';
+import ConceptorLoop from '@/components/rc/10-conceptors/ConceptorLoop.astro';
+import ConceptorSpectrum from '@/components/rc/10-conceptors/ConceptorSpectrum.astro';
+import ConceptorRecall from '@/components/rc/10-conceptors/ConceptorRecall.astro';
+import ShapeMorph from '@/components/rc/10-conceptors/ShapeMorph.astro';
+import Banc from '@/components/rc/10-conceptors/Banc.astro';
+import BancModes from '@/components/rc/10-conceptors/BancModes.astro';
+
+Un réservoir avec retour peut générer seul un motif appris (un sinus, une séquence périodique). Comment en garder **plusieurs** dans le même réseau, et choisir lequel rejouer ? Jaeger (2014) répond par un **conceptor** : une matrice insérée dans la boucle récurrente, qui contraint l'état à rester dans la région occupée par un motif.
+
+<ConceptorLoop />
+
+Toute la suite reprend l'expérience de référence de Jaeger : un réservoir de 100 neurones, quatre motifs (deux sinus de périodes 8,83 et 9,83, un motif aléatoire de période 5 et une variante où une seule valeur change).
+
+## 1. Chaque motif occupe sa région de l'espace d'états
+
+On conduit le réservoir (poids $W^{*}$ tirés au hasard) par chaque motif $p_j$ et on garde ses états, puis leur **matrice de corrélation** :
+
+$$
+x_j(n+1) = \tanh\big(W^{*} x_j(n) + W_{in}\, p_j(n+1) + b\big), \qquad R_j = \frac{1}{L} \sum_{n=1}^{L} x_j(n)\, x_j(n)^\top
+$$
+
+- Les vecteurs propres de $R_j$ sont les **directions principales** des états ; ses valeurs propres $\sigma_i$, l'énergie de l'état dans chacune. Les états forment un ellipsoïde, propre au motif.
+- **Motif 5-périodique** : le réservoir repasse par 5 états, donc exactement 5 directions ont une énergie non nulle.
+- **Sinus** : toutes les directions sont touchées, mais l'énergie décroît très vite (avec ces réglages, $\sigma_1 = 34$, $\sigma_6 = 0{,}41$, $\sigma_{21} = 0{,}004$).
+
+Pour rejouer un motif, il suffirait de maintenir l'état dans sa région. Une projection sur un sous-espace marche pour le motif 5-périodique, pas pour le sinus, qui occupe tout l'espace : il faut une projection **douce**, qui garde les directions fortes et efface les faibles.
+
+## 2. Le conceptor : une projection douce
+
+Le conceptor $C$ est la matrice qui projette au mieux les états du motif sur eux-mêmes, avec une pénalité qui le rapproche de zéro :
+
+$$
+C = \arg\min_{C}\; \mathbb{E}\big[\lVert x - C x \rVert^2\big] + \alpha^{-2} \lVert C \rVert_{\text{fro}}^2 \;=\; R\,(R + \alpha^{-2} I)^{-1}
+$$
+
+- $C$ a les **mêmes directions principales** que $R$, avec des valeurs singulières $s_i = \sigma_i / (\sigma_i + \alpha^{-2})$, entre 0 et 1.
+- Une direction forte ($\sigma_i \gg \alpha^{-2}$) donne $s_i \approx 1$ : elle passe. Une direction faible ($\sigma_i \ll \alpha^{-2}$) donne $s_i \approx 0$ : elle est effacée.
+- $\alpha$ est l'**ouverture** (*aperture*) : elle règle le seuil, donc combien de directions passent.
+
+<ConceptorSpectrum />
+
+- **Sinus** : plus l'ouverture est grande, plus de directions passent : 5 directions avec $s > 0{,}5$ pour $\alpha = 1$, 17 pour $\alpha = 10$, 37 pour $\alpha = 100$, 60 pour $\alpha = 1000$ (avec ces réglages).
+- **Motif 5-périodique** : 5 directions, quelle que soit l'ouverture. Quand $\alpha$ grandit, $C$ tend vers la projection sur ce sous-espace de dimension 5.
+
+## 3. Charger les motifs dans le réservoir
+
+Pendant la conduite, chaque neurone recevait l'entrée. On apprend de nouveaux poids $W$ pour que le réservoir **produise seul** ce que l'entrée lui faisait faire, pour tous les motifs à la fois :
+
+$$
+W = \arg\min_{\tilde W} \sum_{j} \sum_{n} \big\lVert \tilde W x_j(n) - \big(W^{*} x_j(n) + W_{in}\, p_j(n+1)\big) \big\rVert^2
+$$
+
+- C'est une **régression ridge**, comme la lecture (régularisation $10^{-4}$). La lecture $W_{out}$ est apprise à part, pour que $y = W_{out}\, x$ reproduise le motif (régularisation $0{,}01$).
+- Après ce **chargement**, $W$ mélange les quatre motifs : sans aide, le réservoir ne sait pas lequel rejouer.
+
+## 4. Rappeler un motif
+
+Sans entrée, on insère le conceptor du motif voulu dans la boucle :
+
+$$
+x(n+1) = C_j \tanh\big(W x(n) + b\big), \qquad y(n) = W_{out}\, x(n)
+$$
+
+<ConceptorRecall />
+
+Avec ces réglages ($\alpha = 10$, 600 pas d'amorçage) :
+
+- **Chaque conceptor rappelle son motif** : écart (NRMSE, après alignement de phase) de 0,018 pour $C_1$, 0,015 pour $C_2$, 0,008 pour $C_3$ et 0,005 pour $C_4$. Il sépare même les motifs voisins : les deux sinus, le motif 5-périodique et sa variante.
+- **Sans conceptor**, le réservoir chargé ne rejoue aucun motif en particulier : ici, il oscille avec une période de 10,6 pas. Selon le tirage du réservoir, il peut aussi s'arrêter.
+- **Ouverture** : avec $\alpha = 1$, trop peu de directions passent et le motif est déformé (écarts de 0,17 à 0,35) ; avec $\alpha = 10$ ou 100, ils restent sous 0,03.
+- **Mélange** : le conceptor $(1-\mu)\,C_1 + \mu\, C_2$ produit des sinus intermédiaires. La période passe de 8,84 ($\mu = 0$) à 9,30 ($\mu = 0{,}5$) puis 9,84 ($\mu = 1$), et l'extrapolation va au-delà : 8,14 pour $\mu = -1$, 10,77 pour $\mu = 2$. Jaeger obtient de 7,5 à 11,9 pour $\mu$ entre $-2$ et 3.
+
+### Exemple : mélanger deux motifs
+
+Jaeger a chargé de la même façon **15 mouvements humains** dans un réservoir de 600 neurones : marche lente, marche rapide, petite course, s'asseoir, ramper, valse, roue, coups de boxe… Chaque mouvement est un signal à 61 dimensions (posture et angles des articulations), tiré d'un enregistrement de capture de mouvement. La seule commande du réseau est la suite des conceptors. Pour passer d'un mouvement au suivant, il mélange $C_i$ et $C_j$ pendant une seconde simulée (120 pas), avec un poids qui passe progressivement de 0 à 1 : le bonhomme passe ainsi de la marche à la course sans à-coup. Le résultat est une vidéo d'une minute ([YouTube](https://www.youtube.com/watch?v=DkS_Yw1ldD4)).
+
+Le même mélange, sur quatre formes synthétiques que le réservoir trace en deux dimensions (sortie $(x, y)$, un tour en 30 pas). Choisis deux formes, puis une valeur de $\mu$ dans la rangée, ou lance la transition : $\mu$ passe de 0 à 1 en six tours, comme dans la vidéo de Jaeger.
+
+<ShapeMorph />
+
+Avec ces réglages ($\alpha = 20$) :
+
+- **Chaque conceptor rappelle sa forme.** Les poids $W$ contiennent les quatre ; seul le conceptor choisit.
+- **Cercle et carré** : la forme s'arrondit ou s'équarrit progressivement avec $\mu$.
+- **Cercle et étoile** : la forme reste presque ronde jusqu'à $\mu = 0{,}8$, devient un pentagone à 0,9 ; l'étoile n'apparaît qu'à $\mu = 1$. Le mélange n'avance pas au rythme de $\mu$.
+- **Cercle et huit** : le cercle s'aplatit en ellipse, presque un trait à $\mu = 0{,}7$, puis se tord en huit. Le mélange ne passe pas par une forme « entre les deux ».
+
+Mélanger deux conceptors n'est donc pas faire la moyenne des deux dessins : c'est le réservoir, contraint par le conceptor mélangé, qui produit sa propre dynamique.
+
+### Exemple : un banc de poissons
+
+Dix comportements collectifs d'un banc, chargés dans un seul réservoir de 300 neurones. Sa sortie compte 65 signaux : la position de 30 poissons et d'un prédateur, la présence du prédateur, et une horloge commune à tous les modes (deux signaux, $\cos\varphi$ et $\sin\varphi$, jamais dessinés). Les chorégraphies sont synthétiques, dessinées d'après les descriptions de la littérature ; le tableau dit ce qui est documenté.
+
+<BancModes />
+
+Pour situer les modes, deux paramètres d'ordre classiques (Tunstrøm et al., 2013), calculés à chaque pas à partir de la direction de nage $\hat v_i$ de chaque poisson (vecteur unitaire de sa vitesse) et de la direction $\hat r_i$ qui va du centre du groupe vers lui :
+
+$$
+P = \Big|\tfrac{1}{30} \textstyle\sum_i \hat v_i\Big|, \qquad M = \Big|\tfrac{1}{30} \textstyle\sum_i \hat r_i \times \hat v_i\Big|.
+$$
+
+Clique sur un mode : le réservoir y passe par une transition de 60 pas. « Intermédiaires » enchaîne des transitions et des mélanges.
+
+<Banc />
+
+Avec ces réglages :
+
+- **Un seul réservoir, dix modes.** Chacun est rappelé depuis un état tiré au hasard (écart au motif inférieur à 0,10), et les 90 transitions d'un mode à un autre aboutissent.
+- **Sans l'horloge commune, les mélanges s'éteignent** : 83 des 135 mélanges testés (45 paires, $\mu$ = 0,25 ; 0,5 ; 0,75) s'arrêtent, contre aucun avec elle. Explication probable (non vérifiée) : le mélange affaiblit l'état dans les directions que les deux modes ne partagent pas, et l'horloge leur donne des directions communes.
+- **Le tourbillon, intermédiaire dans deux modèles de banc, ne l'est pas pour les conceptors.** Le mélange essaim → tourbillon fait monter $M$ de 0,20 à 0,79 dès $\mu = 0{,}3$, avec $P$ sous 0,1. Le mélange direct essaim → banc polarisé fait monter $P$, mais $M$ ne dépasse pas celle du banc polarisé seul (0,29) : il ne passe pas par le tourbillon, pas plus que le mélange cordon → banc polarisé. Mélanger deux conceptors mélange deux dynamiques ; cela ne change pas une règle de comportement comme la zone d'alignement du modèle de Couzin et al. (2002).
+- **Tourbillon + banc polarisé ($\mu = 0{,}5$)** : le réservoir tient un banc à moitié tournant ($P$ et $M$ vers 0,6), dans la zone transitionnelle. Les vrais bancs n'y restent pas : le méné jaune passe du banc polarisé au tourbillon et retour, et la zone transitionnelle n'est qu'un passage (Tunstrøm et al., 2013) ; le modèle de Calovi et al. (2014) alterne de même.
+- **Tourbillon → boule d'appât** : seul le rayon du banc change, de 0,30 à 0,10 ; $P$ et $M$ restent fixes.
+- **Les modes polarisés se confondent sur la carte** : banc polarisé, vacuole, fontaine et éclair ont presque les mêmes $P$ et $M$ (vers 0,85 et 0,3). Ce sont la forme du banc et le prédateur qui les distinguent.
+
+## 5. Une logique des conceptors
+
+Un conceptor décrit une région de l'espace d'états ; on peut combiner ces régions comme des ensembles. Pour une ouverture de 1 et des matrices de corrélation inversibles, Jaeger définit d'abord :
+
+$$
+\neg C = I - C, \qquad C \wedge B = \big(C^{-1} + B^{-1} - I\big)^{-1}, \qquad C \vee B = \neg\big(\neg C \wedge \neg B\big)
+$$
+
+- **OU** revient à fusionner les données : si $C$ vient de $R$ et $B$ de $Q$, alors $C \vee B$ est le conceptor de $R + Q$.
+- **NON** garde les directions que $C$ efface. $\neg(C_1 \vee \dots \vee C_K)$ décrit donc la place encore libre dans le réservoir. Le rapport s'en sert pour charger de nouveaux motifs sans abîmer les anciens, et pour reconnaître un motif par le conceptor qui l'explique le mieux.
+- Les règles de De Morgan sont vérifiées. Le rapport étend ensuite ces définitions aux conceptors dont des valeurs singulières valent 0 ou 1.
+
+<div class="retain">
+
+**À retenir**
+
+- Un motif qui conduit un réservoir excite surtout quelques directions de l'espace d'états, résumées par la corrélation $R$.
+- Conceptor : $C = R\,(R + \alpha^{-2} I)^{-1}$, une projection douce ; valeurs singulières $\sigma_i / (\sigma_i + \alpha^{-2})$ entre 0 et 1 ; l'ouverture $\alpha$ règle combien de directions passent.
+- Charger : apprendre $W$ pour que le réservoir reproduise sans entrée les états des motifs. Rappeler : $x(n+1) = C_j \tanh(W x(n) + b)$.
+- Les conceptors se mélangent (motifs intermédiaires) et se combinent par NON, ET, OU.
+- Un mélange de conceptors mélange deux dynamiques, pas les règles qui les produisent : entre essaim et banc polarisé, il ne passe pas par le tourbillon du modèle de Couzin et al. (2002).
+
+</div>
+
+<Refs items={[["Controlling Recurrent Neural Networks by Conceptors (rapport technique 31, Jacobs University)", "Jaeger", 2014, "1403.3369"], ["Conceptors: an easy introduction", "Jaeger", 2014, "1406.2671"], ["Using Conceptors to Manage Neural Long-Term Memories for Temporal Patterns (JMLR 18 ; section 2.3 : mouvements humains)", "Jaeger", 2017, "https://www.jmlr.org/papers/v18/15-449.html"], ["Collective Memory and Spatial Sorting in Animal Groups", "Couzin, Krause, James, Ruxton, Franks", 2002, "10.1006/jtbi.2002.3065"], ["Collective States, Multistability and Transitional Behavior in Schooling Fish", "Tunstrøm et al.", 2013, "10.1371/journal.pcbi.1002915"], ["Swarming, schooling, milling: phase diagram of a data-driven fish school model", "Calovi et al.", 2014, "10.1088/1367-2630/16/1/015026"], ["From Schooling to Shoaling: Patterns of Collective Motion in Zebrafish", "Miller, Gerlai", 2012, "10.1371/journal.pone.0048865"], ["Fishy tales: behaviour of schooling fish escaping from terns", "Hulsman, Tularam", 2021, "http://www.marineornithology.org/PDF/49_1/49_1_159-166.pdf"], ["Predator-avoidance behaviours of sand-eel schools: why schools seldom split", "Pitcher, Wyche", 1983, "10.1007/978-94-009-7296-4_21"], ["Predator evasion in a fish school: test of a model for the fountain effect", "Hall, Wardle, MacLennan", 1986, "10.1007/BF00397579"], ["Collective anti-predator escape manoeuvres through optimal attack and avoidance strategies", "Bartashevich et al.", 2024, "10.1038/s42003-024-07267-2"], ["Provenance, shoal size and the sociobiology of predator-evasion behaviour in minnow shoals", "Magurran, Pitcher", 1987, "10.1098/rspb.1987.0004"], ["Surface and underwater observations of cooperatively feeding killer whales in northern Norway", "Similä, Ugarte", 1993, "10.1139/z93-210"], ["The feasibility of direct photographic assessment of giant bluefin tuna in New England waters", "Lutcavage, Kraus", 1995, "https://spo.nmfs.noaa.gov/sites/default/files/pdf-content/1995/933/lutcavage.pdf"]]} />
+
+<Quiz>
+
+**Q1.** Une direction principale a l'énergie $\sigma = 0{,}01$. Quelle valeur singulière lui donne le conceptor avec $\alpha = 1$, puis $\alpha = 100$ ?
+
+<Reveal>
+
+$\alpha = 1$ : $s = 0{,}01 / (0{,}01 + 1) \approx 0{,}01$, la direction est effacée. $\alpha = 100$ : $\alpha^{-2} = 10^{-4}$, $s = 0{,}01 / 0{,}0101 \approx 0{,}99$, elle passe.
+
+</Reveal>
+
+**Q2.** Pourquoi le conceptor du motif 5-périodique a-t-il 5 valeurs singulières non nulles, quelle que soit l'ouverture ?
+
+<Reveal>
+
+Conduit par un motif de période 5, le réservoir repasse par 5 états : ses états vivent dans un sous-espace de dimension 5, et $R$ n'a que 5 valeurs propres non nulles. Les autres donnent $s = 0 / (0 + \alpha^{-2}) = 0$.
+
+</Reveal>
+
+**Q3.** Dans le widget de rappel (section 4), que se passe-t-il sans conceptor, et pourquoi ?
+
+<Reveal>
+
+Le réservoir chargé tourne seul, mais ne rejoue aucun des quatre motifs : ses poids $W$ les contiennent tous, superposés. Le conceptor efface les directions des autres motifs et ne laisse que celle du motif choisi.
+
+</Reveal>
+
+**Q4.** Dans le widget du banc, pourquoi le mélange direct essaim + banc polarisé ne passe-t-il pas par le tourbillon, alors que le modèle de Couzin y passe (quand sa zone d'attraction est assez grande) ?
+
+<Reveal>
+
+Le modèle de Couzin change une règle de comportement, la largeur de la zone d'alignement, et le tourbillon apparaît entre les deux. Le conceptor $(1-\mu)\,C_{\text{essaim}} + \mu\, C_{\text{polarisé}}$ ne mélange que les régions d'états des deux modes : la rotation n'y est pas, et $M$ reste sous 0,3 avec ces réglages.
+
+</Reveal>
+
+**Q5.** À quoi sert $\neg(C_1 \vee C_2)$ quand on veut ajouter un troisième motif ?
+
+<Reveal>
+
+Il décrit les directions de l'espace d'états que les deux premiers motifs n'utilisent pas. On peut charger le nouveau motif dans cette place libre, sans abîmer les deux premiers.
+
+</Reveal>
+
+</Quiz>

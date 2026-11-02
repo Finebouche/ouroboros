@@ -1,0 +1,310 @@
+---
+// Cours Reservoir computing, chapitre 10 : un banc de 30 poissons (et un prédateur) produit par un réservoir à conceptors qui tourne
+// dans le navigateur (banc/model.ts ; poids calculés à la construction par banc/train.ts, chargés depuis /data/rc-banc.json).
+// - Un clic sur un mode y mène, seul, par une transition (les poids des conceptors glissent en 60 pas, 7,5 s) ; jauge = poids actuel.
+// - « Mélanger avec » et μ : le conceptor (1 − μ) C_A + μ C_B, atteint en 12 pas.
+// - « Intermédiaires » : scénarios (banc/inter.ts). Le réservoir est d'abord placé directement sur la première étape (sans trajet
+//   d'approche, pour que la trace ne montre que le scénario), puis enchaîne des transitions, avec une phrase sous la carte.
+// - Carte : polarisation P et rotation M moyennées sur une période (40 pas), aire du disque = rayon moyen du banc ;
+//   disques gris : chaque mode rappelé seul (calculé à la construction), contour ambre : conceptors en jeu.
+// Animation lancée par un clic, jamais au chargement ; 8 pas du réservoir par seconde, positions interpolées entre deux pas.
+---
+<div class="widget rcw bancw" data-widget="bancw">
+  <div class="row"><span class="lb">Sans prédateur :</span><span class="seg" data-ref="a0"></span></div>
+  <div class="row"><span class="lb">Face à un prédateur :</span><span class="seg" data-ref="a1"></span><span class="sp"></span><button data-ref="play" disabled>▶ lecture</button></div>
+  <div class="row"><span class="lb">Mélanger avec :</span><select data-ref="b" aria-label="Second conceptor du mélange"><option value="-1">aucun</option></select>
+    <label class="mul off" data-ref="mul"><span>Part du second, μ</span><input type="range" data-ref="mu" min="0.05" max="0.95" step="0.05" value="0.5" /><b data-ref="mu-out"></b></label></div>
+  <div class="row" data-ref="inter-row"><span class="lb">Intermédiaires :</span><span class="seg" data-ref="inter"></span></div>
+  <div class="ft gt" data-ref="title">Chargement du réservoir…</div>
+  <canvas data-ref="tank" role="img" aria-label="Bassin vu de dessus : trente poissons et un prédateur dont les positions sont produites par le réservoir"></canvas>
+  <div class="lower">
+    <div>
+      <div class="ft">Polarisation et rotation du banc <span>(moyennes sur une période ; aire du disque = rayon du banc ; cadres : états polarisé, tourbillon et essaim de Tunstrøm et al., 2013)</span></div>
+      <svg data-ref="map" viewBox="0 0 330 262" role="img" aria-label="Carte polarisation – rotation : un disque gris par mode rappelé seul, l'état actuel en couleur avec sa trace"></svg>
+    </div>
+    <div class="side">
+      <div class="kpis">
+        <div><span>Polarisation P</span><b data-ref="k1">—</b><i>1 : tous nagent dans la même direction</i></div>
+        <div><span>Rotation M</span><b data-ref="k2">—</b><i>1 : tous tournent autour du centre du groupe</i></div>
+        <div><span>Rayon du banc</span><b data-ref="k3">—</b><i>distance moyenne au centre du groupe (bassin : 2 × 1,2)</i></div>
+        <div><span>Prédateur</span><b data-ref="k4">—</b></div>
+      </div>
+      <p class="inote" data-ref="inote"></p>
+    </div>
+  </div>
+  <p class="note">Le réservoir (300 neurones tirés au hasard, graine fixe, α = 20) tourne dans ton navigateur, sans entrée. Entre deux pas, la position est interpolée ; le battement de queue est un détail du dessin.</p>
+</div>
+
+<script>
+  import { unpack, step, readout, order, type Model, type Packed } from './banc/model';
+  import { catmull, fish, tank, tankPath, VIEW, type Colors } from './banc/draw';
+  import { SCENARIOS, type Target } from './banc/inter';
+
+  const SPS = 8, TR_MODE = 60, TR_QUICK = 12, DWELL = 40, H = 64, TRAIL = 480;
+  const fr = (v: number, d = 2) => v.toFixed(d).replace('.', ',').replace('-', '−');
+
+  document.querySelectorAll<HTMLElement>('[data-widget="bancw"]').forEach((root) => {
+    const $ = <E extends Element = HTMLElement>(r: string) => root.querySelector<E>(`[data-ref="${r}"]`)!;
+    const cv = $<HTMLCanvasElement>('tank'), map = $<SVGSVGElement>('map'), muIn = $<HTMLInputElement>('mu');
+    let m: Model;
+    let x: Float64Array, xn: Float64Array, buf: Float64Array[] = [], n = 0;
+    let w: Float64Array, from: Float64Array, to: Float64Array, trT = 1, trDur = 1;
+    let A = 0, B = -1, playing = false, raf = 0, last = 0, acc = 0;
+    // scénario en cours (indice dans SCENARIOS, -1 : aucun), étape, pas passés sur place après la transition
+    let scen = -1, sk = 0, dwell = 0;
+    // paramètres d'ordre : fenêtre glissante d'une période, moyenne, et trace de la moyenne sur la carte
+    let win: { P: number; Mr: number; R: number }[] = [], sm = { P: 0, Mr: 0, R: 0 }, trail: number[][] = [];
+    let colors: Colors, fail = '';
+    const btA: HTMLButtonElement[] = [], btI: HTMLButtonElement[] = [], sel = $<HTMLSelectElement>('b');
+
+    const get = (i: number) => buf[((i % H) + H) % H];
+    const mu = () => +muIn.value;
+    const target = () => { const t = new Float64Array(m.K); if (B < 0) t[A] = 1; else { t[A] = 1 - mu(); t[B] = mu(); } return t; };
+    // cible déjà atteinte (clic sur le mode actif, par exemple) : pas de fausse transition
+    const setTarget = (dur: number) => {
+      from = Float64Array.from(w); to = target();
+      if (to.every((v, j) => Math.abs(v - w[j]) < 1e-9)) { trT = 1; return; }
+      trT = 0; trDur = dur;
+    };
+    const pick = (t: Target) => { A = m.keys.indexOf(t.a); B = t.b ? m.keys.indexOf(t.b) : -1; if (t.mu != null) muIn.value = String(t.mu); };
+    const goTo = (t: Target) => { pick(t); dwell = 0; setTarget(TR_MODE); };
+    // début d'un scénario : le réservoir est placé sur le cycle du mode a (état de départ fourni, poids = cible), puis une période
+    // sans dessiner remplit la fenêtre des paramètres d'ordre ; la trace repart de là
+    const jumpTo = (t: Target) => {
+      pick(t);
+      x = Float64Array.from(m.x0[A]);
+      w = target(); from = Float64Array.from(w); to = Float64Array.from(w); trT = 1;
+      for (let i = 0; i < m.T + 4; i++) advance();
+      trail = trail.slice(-1); dwell = 0; acc = 0;
+    };
+
+    // un pas du réservoir : poids des conceptors qui glissent vers la cible, x ← Σ w_j C_j tanh(W x + b), lecture des 65 signaux
+    function advance() {
+      if (trT < 1) { trT = Math.min(1, trT + 1 / trDur); for (let j = 0; j < m.K; j++) w[j] = from[j] + (to[j] - from[j]) * trT; }
+      else if (scen >= 0 && ++dwell >= DWELL && sk < SCENARIOS[scen].steps.length - 1) goTo(SCENARIOS[scen].steps[++sk]);
+      step(m, x, w, xn);
+      [x, xn] = [xn, x];
+      readout(m, x, get(n));
+      n++;
+      if (n >= 3) {
+        win.push(order(get(n - 3), get(n - 2), get(n - 1), m.M));
+        if (win.length > m.T) win.shift();
+        sm = { P: 0, Mr: 0, R: 0 };
+        for (const o of win) { sm.P += o.P / win.length; sm.Mr += o.Mr / win.length; sm.R += o.R / win.length; }
+        trail.push([sm.P, sm.Mr]);
+        if (trail.length > TRAIL) trail.shift();
+      }
+    }
+
+    function readColors() {
+      const cs = getComputedStyle(root), v = (k: string) => cs.getPropertyValue(k).trim();
+      colors = { fish: v('--r-out'), pred: v('--h-py'), water: v('--surface-2'), border: v('--border'), text: v('--text-2') };
+    }
+    // la hauteur vient du CSS (aspect-ratio) : on ne règle ici que la résolution, sans toucher à la boîte observée
+    function size() {
+      const dpr = window.devicePixelRatio || 1, cw = cv.clientWidth || 640, ch = cw * ((VIEW.y1 - VIEW.y0) / (VIEW.x1 - VIEW.x0));
+      cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr);
+    }
+
+    // bassin : positions interpolées entre les pas k et k + 1 (k = n − 3), direction = tangente
+    function drawTank() {
+      const ctx = cv.getContext('2d')!, dpr = window.devicePixelRatio || 1, cw = cv.width / dpr;
+      const s = cw / (VIEW.x1 - VIEW.x0), X = (v: number) => (v - VIEW.x0) * s, Y = (v: number) => (VIEW.y1 - v) * s;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, cw, cv.height / dpr);
+      tank(ctx, X, Y, colors);
+      if (!m) {
+        ctx.fillStyle = colors.text; ctx.font = '13px system-ui, sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(fail || 'Chargement du réservoir…', X(0), Y(0));
+        return;
+      }
+      // rien n'est dessiné hors de l'eau
+      ctx.save();
+      tankPath(ctx, X, Y);
+      ctx.clip();
+      const k = n - 3, p0 = get(k - 1), p1 = get(k), p2 = get(k + 1), p3 = get(k + 2), t = acc, len = 0.05 * s;
+      const at = (d: number) => catmull(p0[d], p1[d], p2[d], p3[d], t);
+      const now = performance.now() / 1000;
+      ctx.fillStyle = colors.fish;
+      for (let i = 0; i < m.M; i++) {
+        const [px, vx] = at(2 * i), [py, vy] = at(2 * i + 1), sp = Math.hypot(vx, vy);
+        fish(ctx, X(px), Y(py), Math.atan2(-vy, vx), len, 0.35 * Math.min(1, sp * 25) * Math.sin(9 * now + i * 1.7));
+      }
+      const q = at(m.IQ)[0];
+      if (q > 0.05) {
+        const [px, vx] = at(2 * m.M), [py, vy] = at(2 * m.M + 1);
+        ctx.globalAlpha = Math.min(1, q);
+        ctx.fillStyle = colors.pred;
+        fish(ctx, X(px), Y(py), Math.atan2(-vy, vx), 2.6 * len, 0.25 * Math.sin(6 * now));
+        ctx.globalAlpha = 1;
+      }
+      ctx.restore();
+    }
+
+    // carte P (horizontal) – M (vertical)
+    const MX = (P: number) => 46 + P * 264, MY = (M: number) => 218 - M * 176, MR = (R: number) => 13 * Math.sqrt(Math.max(R, 0.004) / 0.3);
+    function drawMap() {
+      let g = '';
+      for (const v of [0, 0.5, 1]) {
+        g += `<line x1="${MX(0)}" y1="${MY(v)}" x2="${MX(1)}" y2="${MY(v)}" stroke="var(--border)" stroke-dasharray="${v ? '2 4' : ''}"/>`;
+        g += `<line x1="${MX(v)}" y1="${MY(0)}" x2="${MX(v)}" y2="${MY(1)}" stroke="var(--border)" stroke-dasharray="${v ? '2 4' : ''}"/>`;
+        g += `<text x="${MX(v)}" y="${MY(0) + 14}" text-anchor="middle" class="ax">${fr(v, v % 1 ? 1 : 0)}</text><text x="${MX(0) - 18}" y="${MY(v) + 4}" text-anchor="end" class="ax">${fr(v, v % 1 ? 1 : 0)}</text>`;
+      }
+      // seuils de Tunstrøm et al. (2013) : polarisé P > 0,65 et M < 0,35 ; tourbillon (milling) P < 0,35 et M > 0,65 ; essaim P et M < 0,35 ; ailleurs, transitionnel
+      for (const [p0, p1, m0, m1] of [[0.65, 1, 0, 0.35], [0, 0.35, 0.65, 1], [0, 0.35, 0, 0.35]])
+        g += `<rect x="${MX(p0)}" y="${MY(m1)}" width="${MX(p1) - MX(p0)}" height="${MY(m0) - MY(m1)}" rx="4" fill="var(--text-2)" fill-opacity="0.05" stroke="var(--text-2)" stroke-opacity="0.35" stroke-dasharray="3 3"/>`;
+      g += `<text x="${MX(0.5)}" y="${MY(0.6) + 4}" text-anchor="middle" class="ax tr">transitionnel</text>`;
+      g += `<text x="${MX(1)}" y="${MY(0) + 28}" text-anchor="end" class="ax">polarisation P →</text><text x="${MX(0) - 30}" y="14" text-anchor="start" class="ax">rotation M ↑</text>`;
+      // modes rappelés seuls, contour ambre pour les conceptors en jeu (épaisseur = poids)
+      m.ref.forEach((r, j) => {
+        g += `<circle cx="${MX(r.P).toFixed(1)}" cy="${MY(r.M).toFixed(1)}" r="${MR(r.R).toFixed(1)}" fill="var(--text-2)" fill-opacity="0.12" stroke="var(--text-2)" stroke-opacity="0.45"/>`;
+      });
+      m.ref.forEach((r, j) => {
+        if (w[j] > 0.02) g += `<circle cx="${MX(r.P).toFixed(1)}" cy="${MY(r.M).toFixed(1)}" r="${(MR(r.R) + 2).toFixed(1)}" fill="none" stroke="var(--hl-stroke)" stroke-width="${(0.6 + 2.4 * w[j]).toFixed(2)}"/>`;
+      });
+      g += labels();
+      // trace : quatre tronçons de plus en plus nets vers le présent
+      const q4 = Math.ceil(trail.length / 4);
+      for (let c = 0; c < 4; c++) {
+        const seg = trail.slice(c * q4, (c + 1) * q4 + 1);
+        if (seg.length > 1) g += `<polyline points="${seg.map(([P, M]) => `${MX(P).toFixed(1)},${MY(M).toFixed(1)}`).join(' ')}" fill="none" stroke="var(--r-out)" stroke-width="1.6" stroke-opacity="${(0.15 + 0.15 * c).toFixed(2)}" stroke-linejoin="round"/>`;
+      }
+      g += `<circle cx="${MX(sm.P).toFixed(1)}" cy="${MY(sm.Mr).toFixed(1)}" r="${MR(sm.R).toFixed(1)}" fill="var(--r-out)" fill-opacity="0.75"/>`;
+      map.innerHTML = g;
+    }
+    // étiquettes des modes : placées une fois pour toutes d'après leurs positions ; les modes polarisés, presque confondus, en une seule
+    let labelSvg = '';
+    function labels() {
+      if (labelSvg) return labelSvg;
+      const pos = (key: string) => m.ref[m.keys.indexOf(key)];
+      const t = (x: number, y: number, s: string, anchor = 'start') => `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${anchor}" class="pl">${s}</text>`;
+      const sch = pos('school'), sh = pos('shoal'), sw = pos('swarm'), mi = pos('mill'), li = pos('line'), we = pos('wedge');
+      labelSvg =
+        t(MX(1), MY(0.35) - 28, 'banc polarisé, vacuole,', 'end') + t(MX(1), MY(0.35) - 15, 'fontaine, éclair', 'end') +
+        t(MX(we.P) - MR(we.R) - 4, MY(we.M) + 4, 'coin (V)', 'end') +
+        t(MX(sh.P) - MR(sh.R) - 4, MY(sh.M) + 4, 'banc lâche', 'end') +
+        t(MX(sw.P) + MR(sw.R) + 4, MY(sw.M) + 4, 'essaim') +
+        t(MX(mi.P) + MR(mi.R) + 4, MY(mi.M) + 1, 'tourbillon (grand disque)') + t(MX(mi.P) + MR(mi.R) + 4, MY(mi.M) + 14, "boule d'appât (petit)") +
+        t(MX(li.P) + 4, MY(li.M) - MR(li.R) - 4, 'cordon (ligne)');
+      return labelSvg;
+    }
+
+    function drawInfo() {
+      const nA = m.names[A], nB = B >= 0 ? m.names[B] : '';
+      const lab = B < 0 ? `Conceptor « ${nA} »` : `(1 − μ) C<sub>${nA}</sub> + μ C<sub>${nB}</sub>, μ = ${fr(mu())}`;
+      $('title').innerHTML = trT < 1 && trDur === TR_MODE ? `Transition vers ${B < 0 ? `« ${nA} »` : 'le mélange'} : ${Math.round(trT * 100)} %` : lab;
+      btA.forEach((b, j) => { b.classList.toggle('active', j === A); b.style.setProperty('--w', w[j].toFixed(3)); });
+      sel.value = String(B);
+      [...sel.options].forEach((o) => (o.disabled = +o.value === A));
+      btI.forEach((b, k) => b.classList.toggle('active', k === scen));
+      $('mul').classList.toggle('off', B < 0);
+      $('mu-out').textContent = fr(mu());
+      $('k1').textContent = fr(sm.P); $('k2').textContent = fr(sm.Mr); $('k3').textContent = fr(sm.R);
+      const q = get(n - 2)[m.IQ];
+      $('k4').textContent = q > 0.9 ? 'présent' : q < 0.05 ? 'absent' : `à moitié (${fr(q)})`;
+      $('inote').textContent = scen >= 0 ? SCENARIOS[scen].note : '';
+      $('play').textContent = playing ? '⏸ pause' : '▶ lecture';
+    }
+    const redraw = () => { drawTank(); drawMap(); drawInfo(); };
+
+    function loop(now: number) {
+      if (!playing) return;
+      acc += Math.min(0.25, (now - last) / 1000) * SPS;
+      last = now;
+      let stepped = false;
+      while (acc >= 1) { advance(); acc -= 1; stepped = true; }
+      drawTank();
+      if (stepped) { drawMap(); drawInfo(); }
+      raf = requestAnimationFrame(loop);
+    }
+    function start() { if (playing) return; playing = true; last = performance.now(); raf = requestAnimationFrame(loop); }
+    function pause() { playing = false; cancelAnimationFrame(raf); }
+
+    // boutons
+    const mk = (key: string, label: string, onClick: () => void, cls = '') => {
+      const b = document.createElement('button');
+      b.innerHTML = label;
+      if (cls) b.className = cls;
+      b.addEventListener('click', onClick);
+      $(key).appendChild(b);
+      return b;
+    };
+    function build() {
+      m.names.forEach((name, j) => {
+        btA[j] = mk(m.predator[j] ? 'a1' : 'a0', `<span>${name}</span><i></i>`, () => { A = j; B = -1; scen = -1; setTarget(TR_MODE); start(); drawInfo(); }, 'mode');
+        sel.add(new Option(name, String(j)));
+      });
+      sel.addEventListener('change', () => { B = +sel.value; scen = -1; setTarget(TR_QUICK); start(); drawInfo(); });
+      SCENARIOS.forEach((sc, k) => {
+        btI[k] = mk('inter', sc.label, () => { scen = -1; jumpTo(sc.steps[0]); scen = k; sk = 0; start(); redraw(); });
+      });
+      muIn.addEventListener('input', () => { if (B >= 0) { scen = -1; setTarget(TR_QUICK); start(); } drawInfo(); });
+      $<HTMLButtonElement>('play').disabled = false;
+      $('play').addEventListener('click', () => { if (playing) pause(); else start(); drawInfo(); });
+    }
+
+    async function init() {
+      const res = await fetch('/data/rc-banc.json');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      m = unpack((await res.json()) as Packed);
+      buf = Array.from({ length: H }, () => new Float64Array(m.D));
+      x = Float64Array.from(m.x0[A]); xn = new Float64Array(m.N);
+      w = new Float64Array(m.K); w[A] = 1; from = Float64Array.from(w); to = Float64Array.from(w);
+      // une période d'avance, sans dessiner : la fenêtre des paramètres d'ordre est pleine au premier affichage
+      for (let i = 0; i < m.T + 4; i++) advance();
+      trail = trail.slice(-1);
+      build();
+      redraw();
+    }
+
+    readColors();
+    size();
+    drawTank();
+    new ResizeObserver(() => { size(); drawTank(); }).observe(cv);
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { readColors(); if (m) redraw(); else drawTank(); });
+    // les poids (environ 640 Ko) ne sont chargés que quand le widget approche de l'écran, ou au premier survol
+    let started = false;
+    const kick = () => {
+      if (started) return;
+      started = true;
+      io.disconnect();
+      init().catch((err) => {
+        fail = "Le réservoir n'a pas pu être chargé.";
+        $('title').textContent = `${fail} (${err.message}) Survole le widget pour réessayer.`;
+        drawTank();
+        started = false;
+        root.addEventListener('pointerenter', kick, { once: true });
+      });
+    };
+    const io = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) kick(); }, { rootMargin: '600px' });
+    io.observe(root);
+    root.addEventListener('pointerenter', kick, { once: true });
+  });
+</script>
+
+<style is:global>
+  .bancw .row > .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .bancw .row .lb { min-width: 10.5em; }
+  .bancw .row .sp { flex: 1; }
+  .bancw .seg button, .bancw .row > button { font-size: 13px; padding: 4px 10px; }
+  .bancw .seg button:disabled { opacity: 0.35; cursor: default; }
+  /* jauge sous chaque mode : poids actuel de son conceptor */
+  .bancw button.mode { position: relative; padding-bottom: 7px; }
+  .bancw button.mode i { position: absolute; left: 6px; right: 6px; bottom: 3px; height: 3px; border-radius: 2px; background: var(--hl-stroke); transform-origin: left; transform: scaleX(var(--w, 0)); }
+  .bancw select { font: 13px var(--font); padding: 3px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+  .bancw label.mul { flex: 1; max-width: 300px; margin: 0 0 0 14px; }
+  .bancw label.mul.off { opacity: 0.4; }
+  .bancw .ft { font-size: 13px; font-weight: 500; margin: 4px 0 2px; }
+  .bancw .ft span { font-weight: 400; color: var(--text-2); }
+  .bancw .ft.gt { font-size: 15px; font-weight: 600; margin: 10px 0 6px; min-height: 1.3em; }
+  .bancw canvas { display: block; width: 100%; aspect-ratio: 2.1 / 1.3; } /* même rapport que VIEW (banc/draw.ts) */
+  .bancw .lower { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 18px; align-items: start; margin-top: 8px; }
+  .bancw svg { width: 100%; height: auto; display: block; }
+  .bancw svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .bancw svg text.pl { font: 11px var(--font); fill: var(--text-2); }
+  .bancw svg text.tr { font-style: italic; opacity: 0.8; }
+  .bancw .side .kpis { margin-top: 18px; }
+  .bancw .inote { font-size: 12.5px; color: var(--text-2); margin: 8px 0 0; min-height: 2.6em; }
+  .bancw .row { flex-wrap: wrap; }
+  @media (max-width: 640px) { .bancw .lower { grid-template-columns: 1fr; } .bancw .row .lb { min-width: 0; } .bancw label.mul { flex-basis: 100%; max-width: none; margin: 6px 0 0; } }
+</style>

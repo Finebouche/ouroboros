@@ -12,3 +12,7 @@ status: plan
 - Propriété de séparation (deux entrées différentes, deux états différents) et propriété d'approximation de la lecture
 - Lire des impulsions : filtrage des trains d'impulsions avant la lecture linéaire
 - Widget : un petit réseau à impulsions, raster et état filtré
+
+## Sources (vérifiées)
+
+- Maass, Natschläger & Markram, 2002 (chapitre 1) ; Lukoševičius & Jaeger (2009), section 6.1 : propriété de séparation et propriété d'approximation, les deux conditions introduites par Maass et al.

@@ -69,7 +69,7 @@ La valeur du but remonte vers la gauche à chaque itération, et la courbe lisse
 ### Limites
 
 - **Hors politique** : le $\max_{a'}$ évalue la meilleure action en $s'$, pas celle que les données ont choisie. Les données peuvent donc venir d'un comportement quelconque, même aléatoire, à condition de **couvrir** les situations utiles.
-- **Cible mouvante** : $y$ dépend de $Q_k$, qui vient elle-même d'une régression : une erreur à l'itération $k$ est recopiée dans les cibles suivantes. La convergence n'est garantie que pour certaines familles de régresseurs ; Ernst et al. ont introduit la méthode avec des arbres de régression.
+- **Cible mouvante** : $y$ dépend de $Q_k$, qui vient elle-même d'une régression : une erreur à l'itération $k$ est recopiée dans les cibles suivantes. La convergence n'est garantie que pour certains régresseurs : les méthodes à noyau (Ormoneit et Sen) ou les ensembles d'arbres totalement aléatoires ; Ernst et al. obtiennent de meilleurs résultats avec des arbres extrêmement aléatoires, qui ne la garantissent pas.
 - **Couverture** : une action jamais essayée dans un état n'a pas de cible. Le $\max_{a'}$ peut alors choisir une valeur imaginée par le régresseur, trop optimiste.
 
 ## 3. DQN : Q-learning en ligne, avec un réseau de neurones
@@ -89,7 +89,7 @@ Les deux ajouts répondent à deux problèmes :
 
 ### Ce qui peut encore mal tourner
 
-- **La triade mortelle** : approximation par une fonction, bootstrapping et apprentissage hors politique. Chacun est utile ; les trois ensemble peuvent faire diverger les valeurs (Sutton & Barto). DQN réunit les trois : la mémoire et le réseau cible le stabilisent en pratique, sans garantie.
+- **La triade mortelle** : approximation par une fonction, bootstrapping et apprentissage hors politique. Chacun est utile ; les trois ensemble peuvent faire diverger les valeurs (Sutton & Barto, section 11.3). DQN réunit les trois : la mémoire et le réseau cible le stabilisent en pratique, sans garantie.
 - **La surestimation** : le maximum de valeurs bruitées est en moyenne plus grand que le maximum des vraies valeurs. Le $\max_{a'}$ de la cible choisit donc de préférence les actions surestimées, et l'erreur se propage. **Double DQN** sépare le choix de l'action et son évaluation : $y = r + \gamma\, Q_{\theta^-}\big(s', \arg\max_{a'} Q_\theta(s', a')\big)$.
 
 
@@ -136,7 +136,7 @@ Avec ces réglages ($N = 200$ transitions, caractéristiques « une par couple �
 | Représentation | libre (arbres, réseaux) | linéaire en caractéristiques choisies |
 | Politique | lue à la fin : $\arg\max_a Q$ | améliorée à chaque itération |
 
-Le coût d'une évaluation croît avec le cube du nombre de caractéristiques (résolution du système). Avec une représentation linéaire, la convergence de l'itération n'est pas garantie en général.
+Le coût d'une évaluation, pour $k$ caractéristiques : $O(k^2)$ par transition pour former $A$ et $b$, puis $O(k^3)$ une fois pour résoudre le système. Avec une représentation linéaire, l'itération peut ne pas converger : elle converge, ou oscille entre des politiques dont l'écart à l'optimum est borné par l'erreur d'approximation $\epsilon$ des évaluations, $\limsup_m \|\hat Q^{\pi_m} - Q^\star\|_\infty \le 2\gamma\epsilon / (1-\gamma)^2$ (Lagoudakis et Parr, théorème 3.1).
 
 ## 5. Qui attribue le crédit ?
 
@@ -155,7 +155,7 @@ C'est la question du chapitre 1 : quelle action mérite la récompense d'une sui
 
 </div>
 
-<Refs items={[["Playing Atari with Deep Reinforcement Learning", "Mnih et al.", 2013, "1312.5602"], ["Deep Reinforcement Learning with Double Q-learning (AAAI 2016)", "van Hasselt, Guez & Silver", 2015, "1509.06461"]]} />
+<Refs items={[["Playing Atari with Deep Reinforcement Learning", "Mnih et al.", 2013, "1312.5602"], ["Deep Reinforcement Learning with Double Q-learning (AAAI 2016)", "van Hasselt, Guez & Silver", 2015, "1509.06461"], ["Reinforcement Learning: An Introduction, 2e éd. (section 11.3 : la triade mortelle)", "Sutton & Barto", 2018, "http://incompleteideas.net/book/RLbook2020.pdf"]]} />
 
 <Quiz>
 

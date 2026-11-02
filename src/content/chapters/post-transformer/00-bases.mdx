@@ -454,7 +454,7 @@ La figure de l'article d'origine décrit un modèle de traduction. Les modèles 
 
 <Arch2017 />
 
-1. **Décodeur seul** : plus d'encodeur ni d'attention croisée ; le modèle prédit le token suivant.
+1. **Décodeur seul** (*decoder-only*) : plus d'encodeur ni d'attention croisée ; chaque position ne voit qu'elle-même et le passé, et le modèle prédit le token suivant (PaLM le dit explicitement).
 2. **Norme avant la sous-couche** (*pre-norm*) : on normalise l'entrée de chaque sous-couche, pas sa sortie ($\mathrm{LayerNorm}(x + \mathrm{Sublayer}(x))$ en 2017). Avec la norme avant, les gradients restent bien conditionnés à l'initialisation et la phase de chauffe du pas d'apprentissage peut être supprimée, avec des résultats comparables (Xiong et al.). La norme est **RMSNorm** : une LayerNorm sans recentrage, moins coûteuse (Zhang et Sennrich).
 3. **Position dans l'attention** : RoPE fait tourner $q$ et $k$ (section 6), au lieu d'ajouter un encodage sinusoïdal à l'entrée.
 4. **MLP à porte** : SwiGLU remplace ReLU (Shazeer).
@@ -462,7 +462,7 @@ La figure de l'article d'origine décrit un modèle de traduction. Les modèles 
 
 LLaMA réunit la norme avant en RMSNorm, SwiGLU et RoPE à la place des positions absolues.
 
-<Refs items={[["Attention Is All You Need", "Vaswani et al.", 2017, "1706.03762"], ["On Layer Normalization in the Transformer Architecture", "Xiong et al.", 2020, "2002.04745"], ["Root Mean Square Layer Normalization", "Zhang & Sennrich", 2019, "1910.07467"], ["GLU Variants Improve Transformer", "Shazeer", 2020, "2002.05202"], ["LLaMA: Open and Efficient Foundation Language Models", "Touvron et al.", 2023, "2302.13971"]]} />
+<Refs items={[["Attention Is All You Need", "Vaswani et al.", 2017, "1706.03762"], ["On Layer Normalization in the Transformer Architecture", "Xiong et al.", 2020, "2002.04745"], ["Root Mean Square Layer Normalization", "Zhang & Sennrich", 2019, "1910.07467"], ["GLU Variants Improve Transformer", "Shazeer", 2020, "2002.05202"], ["LLaMA: Open and Efficient Foundation Language Models", "Touvron et al.", 2023, "2302.13971"], ["PaLM: Scaling Language Modeling with Pathways", "Chowdhery et al.", 2022, "2204.02311"]]} />
 
 <div class="retain">
 

@@ -1,0 +1,47 @@
+---
+// Cours Reservoir computing, chapitre 10 : les trois étapes de Jaeger (2014) en trois panneaux.
+// 1. Conduire le réservoir par chaque motif p_j et garder ses états (R_j). 2. Charger : apprendre W pour que le réservoir
+// reproduise ces états sans entrée. 3. Rappeler : sans entrée, le conceptor C_j inséré dans la boucle choisit le motif.
+// Réservoir en bleu-vert (--r-res), lecture entraînée en violet (--r-out), entrée en gris ; le conceptor en ambre (élément sélectionné).
+const box = (x: number, y: number, w: number, h: number, t: string, s: string, col: string) =>
+  `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" fill="color-mix(in srgb, ${col} 12%, var(--surface))" stroke="${col}" stroke-width="1.3"/>` +
+  `<text x="${x + w / 2}" y="${y + (s ? h / 2 - 2 : h / 2 + 4)}" text-anchor="middle" class="cb">${t}</text>` +
+  (s ? `<text x="${x + w / 2}" y="${y + h / 2 + 12}" text-anchor="middle" class="cs">${s}</text>` : '');
+const ar = (d: string, col = 'var(--text-2)', dash = false) => `<path d="${d}" fill="none" stroke="${col}" stroke-width="1.3"${dash ? ' stroke-dasharray="4 3"' : ''} marker-end="url(#cl-ar)"/>`;
+const wave = (x: number, y: number, w: number, col: string) => {
+  let d = '';
+  for (let i = 0; i <= 40; i++) d += `${(x + (i / 40) * w).toFixed(1)},${(y - 9 * Math.sin((i / 40) * 4 * Math.PI)).toFixed(1)} `;
+  return `<polyline points="${d}" fill="none" stroke="${col}" stroke-width="1.6"/>`;
+};
+const R = 'var(--r-res)', O = 'var(--r-out)', A = 'var(--hl-stroke)', T2 = 'var(--text-2)';
+let g = `<defs><marker id="cl-ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="${T2}"/></marker></defs>`;
+// 1. conduire
+g += `<text x="10" y="16" class="ct">1. Conduire</text>`;
+g += wave(10, 78, 44, T2) + `<text x="32" y="104" text-anchor="middle" class="cs">motif pⱼ</text>`;
+g += ar('M58,78 H82') + box(84, 54, 92, 48, 'réservoir', 'poids W* tirés', R);
+g += ar('M130,102 V128') + `<text x="130" y="144" text-anchor="middle" class="cs">états xⱼ(n) → Rⱼ</text>`;
+// 2. charger
+const o2 = 226;
+g += `<text x="${o2}" y="16" class="ct">2. Charger</text>`;
+g += box(o2 + 30, 54, 120, 48, 'réservoir', 'nouveaux poids W', R);
+g += `<path d="M${o2 + 150},70 C${o2 + 190},40 ${o2 + 190},120 ${o2 + 150},88" fill="none" stroke="${R}" stroke-width="1.3" marker-end="url(#cl-ar)"/>`;
+g += `<text x="${o2 + 90}" y="124" text-anchor="middle" class="cs">W x ≈ W* x + Wᵢₙ p :</text><text x="${o2 + 90}" y="138" text-anchor="middle" class="cs">l'entrée passe dans les poids</text>`;
+// 3. rappeler
+const o3 = 448;
+g += `<text x="${o3}" y="16" class="ct">3. Rappeler, sans entrée</text>`;
+g += box(o3, 54, 84, 44, 'tanh(W x + b)', '', R) + ar(`M${o3 + 86},76 H${o3 + 108}`) + box(o3 + 110, 54, 44, 44, 'Cⱼ', '', A);
+g += ar(`M${o3 + 132},100 V122 H${o3 + 42} V100`);
+g += `<text x="${o3 + 88}" y="136" text-anchor="middle" class="cs">x(n+1) = Cⱼ tanh(W x(n) + b)</text>`;
+g += ar(`M${o3 + 156},76 H${o3 + 176}`, O) + `<text x="${o3 + 196}" y="72" text-anchor="middle" class="cb" style="fill:${O}">y</text>` + wave(o3 + 180, 92, 30, O);
+---
+<figure class="cloop">
+  <svg viewBox="0 0 660 152" role="img" aria-label="Trois étapes : conduire le réservoir par chaque motif, charger les motifs dans les poids, rappeler un motif en insérant son conceptor dans la boucle" set:html={g} />
+</figure>
+
+<style is:global>
+  .cloop { margin: 1.5rem 0; }
+  .cloop svg { width: 100%; height: auto; display: block; }
+  .cloop svg text.ct { font: 600 13px var(--font); fill: var(--text); }
+  .cloop svg text.cb { font: 600 12px var(--font); fill: var(--text); }
+  .cloop svg text.cs { font: 11px var(--font); fill: var(--text-2); }
+</style>

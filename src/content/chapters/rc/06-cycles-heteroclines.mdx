@@ -17,13 +17,13 @@ Au chapitre 5, un souvenir était un **attracteur** : un état où l'on reste. I
 - **Connexion hétérocline** : une trajectoire qui part d'une selle et arrive sur une autre : la variété instable de la première rejoint la variété stable de la seconde.
 - **Cycle hétérocline** : une chaîne fermée de selles reliées ainsi. La trajectoire passe d'une selle à la suivante, dans un ordre fixé.
 
-Ces cycles sont d'ordinaire fragiles : une petite perturbation des équations casse les connexions. Ils deviennent robustes dans des systèmes qui ont des sous-espaces invariants, comme les modèles de populations où une population éteinte le reste (Guckenheimer et Holmes).
+Ces cycles sont d'ordinaire fragiles : une petite perturbation des équations casse les connexions. Ils deviennent robustes quand les connexions restent dans des sous-espaces invariants : sous-espaces imposés par une symétrie (Guckenheimer et Holmes) ou, dans les modèles de populations, plans où une population est éteinte et le reste (Castro et Rucklidge).
 
 ## 2. La compétition sans gagnant
 
 Des groupes de neurones d'activité $a_i \ge 0$ s'inhibent mutuellement (modèle de Lotka-Volterra généralisé). Si l'inhibition est **symétrique** et forte, un groupe l'emporte et y reste : c'est un attracteur, comme au chapitre 5. Si elle est **asymétrique**, chaque gagnant est battu par le suivant : c'est la **compétition sans gagnant** (*winnerless competition*, Rabinovich et al.). Chaque état « un seul groupe actif » est une selle.
 
-Le cas le plus simple a trois populations (May et Leonard) : chacune inhibe fortement ($\beta > 1$) l'une des deux autres et faiblement ($\alpha < 1$) la troisième.
+Le cas le plus simple a trois populations (May et Leonard) : chacune inhibe fortement ($\beta > 1$) l'une des deux autres et faiblement ($\alpha < 1$) la troisième. Le cycle hétérocline existe alors ; il attire les trajectoires si $\alpha + \beta > 2$, et la coexistence des trois populations est stable si $\alpha + \beta < 2$ (Sorin, Nepomnyashchy et Volpert, qui rappellent l'analyse de May et Leonard).
 
 <Heteroclinic />
 
@@ -36,7 +36,7 @@ Avec ces réglages ($\alpha = 0{,}8$, $\beta = 1{,}3$) :
 
 ## 3. Une séquence robuste qui n'est pas un attracteur
 
-- **Séquence hétérocline stable** (*stable heteroclinic sequence*, Afraimovich, Zhigulin et Rabinovich) : dans un modèle de Lotka-Volterra de grande dimension (les taux de décharge d'un réseau inhibiteur), une chaîne de selles entourée d'un canal. Ce n'est pas un attracteur, la trajectoire ne fait qu'y passer, mais les trajectoires voisines restent dans le canal : la séquence est **reproductible malgré le bruit**.
+- **Séquence hétérocline stable** (*stable heteroclinic sequence*, Afraimovich, Zhigulin et Rabinovich) : dans un modèle de Lotka-Volterra de grande dimension (les taux de décharge d'un réseau inhibiteur), une chaîne de selles. Ce n'est pas un attracteur, la trajectoire ne fait qu'y passer, mais elle est **reproductible malgré le bruit**. Les trajectoires voisines de cette chaîne de selles et de leurs connexions forment un **canal hétérocline stable** (*stable heteroclinic channel*, Rabinovich, Huerta, Varona et Afraimovich, 2008).
 - **Calculer avec des transitoires** : l'entrée change les paramètres du réseau, donc la séquence de selles parcourue. L'information est codée dans la trajectoire. Avec $N$ neurones, Rabinovich et al. estiment le nombre de séquences possibles à environ $e\,(N-1)!$, bien plus que de points fixes.
 
 ## 4. Une mémoire de travail séquentielle
@@ -67,7 +67,7 @@ Un réservoir à propriété d'écho calcule déjà avec des transitoires, mais 
 
 </div>
 
-<Refs items={[["Nonlinear Aspects of Competition Between Three Species (SIAM J. Appl. Math. 29, 243–253)", "May & Leonard", 1975, "10.1137/0129022"], ["Structurally stable heteroclinic cycles (Math. Proc. Cambridge Phil. Soc. 103, 189–192)", "Guckenheimer & Holmes", 1988, "10.1017/S0305004100064732"], ["Dynamical Encoding by Networks of Competing Neuron Groups: Winnerless Competition (Phys. Rev. Lett. 87, 068102)", "Rabinovich et al.", 2001, "10.1103/PhysRevLett.87.068102"], ["On the origin of reproducible sequential activity in neural circuits (Chaos 14, 1123–1129)", "Afraimovich, Zhigulin & Rabinovich", 2004, "10.1063/1.1819625"], ["Transient Dynamics for Neural Processing (Science 321, 48–50)", "Rabinovich, Huerta & Laurent", 2008, "10.1126/science.1155564"], ["Dynamical Origin of the Effective Storage Capacity in the Brain's Working Memory (Phys. Rev. Lett. 103, 218101)", "Bick & Rabinovich", 2009, "10.1103/PhysRevLett.103.218101"]]} />
+<Refs items={[["Nonlinear Aspects of Competition Between Three Species (SIAM J. Appl. Math. 29, 243–253)", "May & Leonard", 1975, "10.1137/0129022"], ["Structurally stable heteroclinic cycles (Math. Proc. Cambridge Phil. Soc. 103, 189–192)", "Guckenheimer & Holmes", 1988, "10.1017/S0305004100064732"], ["Random Perturbations of Heteroclinic Attractors (SIAM J. Appl. Math. 50, 726–743)", "Stone & Holmes", 1990, "10.1137/0150043"], ["Robust heteroclinic cycles in pluridimensions", "Castro & Rucklidge", 2024, "2412.12805"], ["Stability of oscillations in the spatially extended May-Leonard model", "Sorin, Nepomnyashchy & Volpert", 2025, "2502.18048"], ["Dynamical Encoding by Networks of Competing Neuron Groups: Winnerless Competition (Phys. Rev. Lett. 87, 068102)", "Rabinovich et al.", 2001, "10.1103/PhysRevLett.87.068102"], ["On the origin of reproducible sequential activity in neural circuits (Chaos 14, 1123–1129)", "Afraimovich, Zhigulin & Rabinovich", 2004, "10.1063/1.1819625"], ["Transient Dynamics for Neural Processing (Science 321, 48–50)", "Rabinovich, Huerta & Laurent", 2008, "10.1126/science.1155564"], ["Transient Cognitive Dynamics, Metastability, and Decision Making (PLoS Comput. Biol. 4, e1000072)", "Rabinovich, Huerta, Varona & Afraimovich", 2008, "10.1371/journal.pcbi.1000072"], ["Dynamical Origin of the Effective Storage Capacity in the Brain's Working Memory (Phys. Rev. Lett. 103, 218101)", "Bick & Rabinovich", 2009, "10.1103/PhysRevLett.103.218101"]]} />
 
 <Quiz>
 
@@ -91,7 +91,7 @@ Près d'un attracteur, la trajectoire s'en approche dans toutes les directions e
 
 <Reveal>
 
-Il empêche la trajectoire de s'approcher arbitrairement près des selles : la distance minimale reste de l'ordre de $\varepsilon$, donc le temps de séjour reste de l'ordre de $\ln(1/\varepsilon)$ au lieu de croître sans fin. L'ordre de passage, fixé par les connexions, ne change pas.
+Il empêche la trajectoire de s'approcher arbitrairement près des selles : la distance minimale reste de l'ordre de $\varepsilon$, donc le temps de séjour reste de l'ordre de $\ln(1/\varepsilon)$ divisé par la valeur propre instable de la selle (Stone et Holmes), au lieu de croître sans fin. L'ordre de passage, fixé par les connexions, ne change pas.
 
 </Reveal>
 

@@ -15,6 +15,7 @@ import DftDetails from '@/components/preprocessing/01-mfcc/DftDetails.astro';
 import MelBank from '@/components/preprocessing/01-mfcc/MelBank.astro';
 import MelPitfall from '@/components/preprocessing/01-mfcc/MelPitfall.astro';
 import LogCompress from '@/components/preprocessing/01-mfcc/LogCompress.astro';
+import TopDbLeak from '@/components/preprocessing/01-mfcc/TopDbLeak.astro';
 import DctTruncate from '@/components/preprocessing/01-mfcc/DctTruncate.astro';
 import Deltas from '@/components/preprocessing/01-mfcc/Deltas.astro';
 import Cmvn from '@/components/preprocessing/01-mfcc/Cmvn.astro';
@@ -119,6 +120,7 @@ w[m] = 0{,}54 - 0{,}46\cos\!\Big(\frac{2\pi m}{L-1}\Big) \quad \text{(fenêtre d
 $$
 
 - **La DFT** : la trame est complétée de zéros jusqu'à $n_{\text{fft}}$ valeurs (une puissance de 2). $X[k]$ mesure combien la trame ressemble à une sinusoïde de fréquence $f_k = k\, f_s / n_{\text{fft}}$. On garde la **puissance** $|X[k]|^2$ : on perd la phase, pas l'énergie.
+- **Un gain $g$ sur le signal** multiplie chaque $X[k]$ par $g$, donc chaque puissance $P[k]$ par $g^2$ : en décibels, tout le spectre monte de $20\log_{10} g$ (+6 dB pour ×2), sans changer de forme. Le spectrogramme, normalisé par son maximum, ne change pas. Le logarithme (section 4) transforme ce facteur en un simple décalage.
 
 
 
@@ -305,6 +307,17 @@ $$
 - **Un changement de volume devient un décalage** : multiplier le signal par $g$ multiplie chaque $E_m$ par $g^2$, donc ajoute la même constante $2\ln g$ à tous les $\ln E_m$. La forme de la courbe ne change pas.
 - **Il transforme un produit en somme** : dans le modèle source-filtre de la voix, le spectre est le produit de l'excitation (cordes vocales) et de la forme du conduit vocal. Le logarithme en fait une somme, ce qui permet de les séparer ensuite.
 - **Le zéro est interdit** : $\ln 0 = -\infty$, on ajoute un petit plancher aux énergies. `librosa` travaille en décibels ($10\log_{10}$) ; changer de base ne fait que changer l'échelle des coefficients.
+
+### Piège : le plancher relatif voit le futur
+
+`librosa.feature.mfcc` passe les énergies en décibels avec `power_to_db`, dont le paramètre par défaut est `top_db=80` : toute valeur est remontée à au moins **(maximum de toute la matrice) − 80 dB**. Si on calcule les MFCC sur un enregistrement entier pour prédire quelque chose à un instant $t$, ce maximum inclut le futur.
+
+<TopDbLeak />
+
+- **Ce qui est touché** : les valeurs à plus de 80 dB sous le maximum, surtout le silence et les bandes peu énergétiques. Dans le widget, un point de prédiction dans le silence change toutes les valeurs passées ; une fois le passage le plus fort passé, plus rien ne change.
+- **Ce qui fuit** : un seul nombre, le niveau maximal de l'enregistrement. Il ne dit pas ce qui suit, mais il peut aider : s'il reste un passage fort à venir, l'enregistrement n'est pas fini.
+- **Correction** : `top_db=None`. Le plancher est alors seulement le plancher absolu (`amin`, −100 dB), le même pour tous les enregistrements, et aucune trame passée ne dépend du futur. `mfcc(y=…)` appelle `power_to_db` avec ses valeurs par défaut, et ses arguments supplémentaires vont au spectrogramme de Mel, pas à `power_to_db` : il faut calculer le spectrogramme soi-même et passer `S=power_to_db(mel, top_db=None)`.
+
 
 <ArchMarker parts="dct" label="DCT : décomposer la courbe, ne garder que la forme générale" />
 

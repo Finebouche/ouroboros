@@ -1,0 +1,89 @@
+---
+// Cours Reservoir computing, chapitre 1 : lemme de Johnson-Lindenstrauss. P = 40 points de R^200 à des échelles différentes, projetés par G/√k.
+// Chaque point du nuage est une paire : distance avant (x), après (y). Distorsion et borne calculées ici (jl.ts). Réglages vérifiés par simulation (Node).
+import katex from 'katex';
+const tex = (s: string) => katex.renderToString(s, { throwOnError: false });
+const F1 = tex('f(u) = \\tfrac{1}{\\sqrt{k}}\\,G\\,u, \\quad G_{ij} \\sim \\mathcal{N}(0,1)');
+const F1b = tex('(1-\\varepsilon)\\,\\|u-v\\|^2 \\le \\|f(u)-f(v)\\|^2 \\le (1+\\varepsilon)\\,\\|u-v\\|^2');
+const F2 = tex('k \\ge \\frac{4\\ln P}{\\varepsilon^2/2 - \\varepsilon^3/3}');
+---
+<div class="widget rcw jlw" data-widget="jlw">
+  <div class="jlrow">
+    <span class="jlk">Dimension k <span class="seg" data-ref="ks"></span></span>
+    <button data-ref="draw">nouveau tirage de G</button>
+  </div>
+  <div class="calc">
+    <div class="fm" set:html={F1} />
+    <div class="fm" set:html={F1b} />
+    <div class="fm" set:html={F2} />
+    <div class="ln" data-ref="line"></div>
+  </div>
+  <div class="scr"><svg data-ref="svg" role="img" aria-label="Distance entre deux points après projection selon la distance avant projection, pour toutes les paires"></svg></div>
+  <div class="kpis">
+    <div><span>Distorsion mesurée ε</span><b data-ref="k1"></b><i>plus grand écart des distances au carré, sur les 780 paires</i></div>
+    <div><span>Distorsion de la borne</span><b data-ref="k2"></b><i data-ref="k2i"></i></div>
+  </div>
+  <p class="note">P = 40 points de R<sup>200</sup>, composantes gaussiennes d'échelles différentes (0,3 à 2). Les k lignes de G sont les k premières d'une même matrice : passer à k plus grand ajoute des lignes. La borne est probabiliste, pas garantie à tout coup.</p>
+</div>
+
+<script>
+  import { KS, M, D, makeCloud, makeG, pairs, distortion, epsBound } from './jl';
+
+  document.querySelectorAll<HTMLElement>('[data-widget="jlw"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const X = makeCloud(5);
+    let gseed = 1, G = makeG(gseed), k = 50;
+    const fm = (v: number, d = 2) => v.toFixed(d).replace('.', ',');
+    KS.forEach((kk) => {
+      const b = document.createElement('button'); b.textContent = String(kk); b.dataset.v = String(kk);
+      b.addEventListener('click', () => { k = kk; draw(); });
+      $('ks').appendChild(b);
+    });
+    $('draw').addEventListener('click', () => { G = makeG(++gseed); draw(); });
+
+    function draw() {
+      $('ks').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +(b as HTMLElement).dataset.v! === k));
+      const ps = pairs(X, G, k), eps = distortion(ps), eb = epsBound(k, M);
+      const W = 640, S = 240, ox = 52, oy = 12;
+      const mx = Math.max(...ps.map((p) => Math.max(p.d0, p.d1))) * 1.04;
+      const sx = (v: number) => ox + (v / mx) * S, sy = (v: number) => oy + S - (v / mx) * S;
+      let g = `<rect x="${ox}" y="${oy}" width="${S}" height="${S}" fill="none" stroke="var(--border)"/>`;
+      if (eb !== null) {
+        const lo = Math.sqrt(1 - eb), hi = Math.sqrt(1 + eb);
+        // bande entre les droites y = x√(1+ε) et y = x√(1−ε), coupée au cadre
+        g += `<path d="M${sx(0)},${sy(0)} L${sx(mx / hi)},${sy(mx)} L${sx(mx)},${sy(mx)} L${sx(mx)},${sy(mx * lo)} Z" fill="var(--text-2)" fill-opacity="0.07" stroke="var(--text-2)" stroke-width="1" stroke-dasharray="4 3"/>`;
+        g += `<text x="${ox + S + 6}" y="${sy(mx * lo) + 3}" class="zl">borne ±ε</text><line x1="${sx(mx)}" y1="${sy(mx * lo)}" x2="${ox + S + 4}" y2="${sy(mx * lo)}" stroke="var(--text-2)" stroke-width="0.8"/>`;
+      }
+      g += `<line x1="${sx(0)}" y1="${sy(0)}" x2="${sx(mx)}" y2="${sy(mx)}" stroke="var(--text-2)" stroke-width="1.2"/>`;
+      g += `<line x1="${sx(mx)}" y1="${sy(mx)}" x2="${ox + S + 4}" y2="${sy(mx)}" stroke="var(--text-2)" stroke-width="0.8"/><text x="${ox + S + 6}" y="${sy(mx) + 3}" class="zl">y = x : distances conservées</text>`;
+      ps.forEach((p) => (g += `<circle cx="${sx(p.d0).toFixed(1)}" cy="${sy(Math.min(p.d1, mx)).toFixed(1)}" r="2.3" fill="var(--text-2)" fill-opacity="0.6"/>`));
+      const ticks = [0, 0.5, 1].map((t) => Math.round(t * mx));
+      ticks.forEach((t) => (g += `<text x="${sx(t)}" y="${oy + S + 14}" text-anchor="middle" class="zl">${t}</text><text x="${ox - 5}" y="${sy(t) + 3}" text-anchor="end" class="zl">${t}</text>`));
+      g += `<text x="${ox + S / 2}" y="${oy + S + 28}" text-anchor="middle" class="zl">distance avant projection (R^${D})</text>`;
+      g += `<text transform="translate(12 ${oy + S / 2}) rotate(-90)" text-anchor="middle" class="zl">après (R^${k})</text>`;
+      const svg = $('svg') as unknown as SVGSVGElement;
+      svg.setAttribute('viewBox', `0 0 ${W} ${oy + S + 34}`); svg.innerHTML = g;
+
+      $('line').textContent = `P = ${M} points, d = ${D} → k = ${k} : ${ps.length} paires. Distorsion mesurée ε = ${fm(eps)}.`;
+      $('k1').innerHTML = eps > 1 ? `<span class="r">${fm(eps)}</span>` : fm(eps);
+      $('k2').textContent = eb === null ? 'aucune' : fm(eb);
+      $('k2i').textContent = eb === null ? `la borne ne garantit rien : il faut k ≥ ${Math.ceil(24 * Math.log(M))} pour avoir ε < 1` : 'plus petit ε garanti par la formule pour ce k';
+    }
+    draw();
+  });
+</script>
+
+<style is:global>
+  .jlw .jlrow { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-bottom: 8px; }
+  .jlw .jlk { display: inline-flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 13px; color: var(--text-2); }
+  .jlw .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .jlw .jlrow > button[data-ref="draw"] { margin-left: auto; }
+  .jlw .calc { margin-top: 10px; padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--text-2) 4.5%, transparent); }
+  .jlw .fm { font-size: 0.92rem; overflow-x: auto; overflow-y: hidden; margin: 2px 0; }
+  .jlw .ln { font: 11.5px/1.5 var(--mono); color: var(--text-2); min-height: 1.5em; margin-top: 4px; }
+  .jlw .scr { overflow-x: auto; }
+  .jlw svg { min-width: 600px; width: 100%; height: auto; display: block; margin: 8px auto 0; max-width: 680px; }
+  .jlw svg text.zl { font: 11px var(--font); fill: var(--text-2); }
+  .jlw .kpis .r { color: var(--h-py); }
+  .jlw .note { font-size: 12.5px; color: var(--text-2); line-height: 1.5; margin: 8px 0 0; }
+</style>

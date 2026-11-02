@@ -56,6 +56,13 @@
   /* cours Reservoir computing : état du réservoir, sortie (lecture entraînée) ; entrée en gris --text-2, cible en trait pointillé --text */
   --r-res: #2f8a8a;
   --r-out: #6656c8;
+  /* cours Robotique (palette Okabe-Ito) : articulations et configuration q ; solution calculée (chemin planifié, trajectoire
+     optimisée, prédiction d'un modèle) ; exploration (nœuds visités, arbre RRT, itérations d'un solveur) ; forces et couples.
+     Cible en ambre --hl-stroke ; corps du robot et obstacles en gris ; mesures en --text ; collision, échec en --h-py */
+  --rb-q: #0072b2;
+  --rb-sol: #7a4fb5;
+  --rb-search: #009e73;
+  --rb-force: #d55e00;
   /* trois populations en compétition (chapitre des cycles hétéroclines), palette Okabe-Ito */
   --r-p1: #0072b2;
   --r-p2: #d55e00;
@@ -113,6 +120,10 @@
     --a-act: #c3a0e0;
     --r-res: #6cc3c3;
     --r-out: #a99cf0;
+    --rb-q: #5ba8e0;
+    --rb-sol: #b39ae8;
+    --rb-search: #3fcf9f;
+    --rb-force: #f08a4b;
     --r-p1: #5ba8e0;
     --r-p2: #f08a4b;
     --r-p3: #e0a3c6;

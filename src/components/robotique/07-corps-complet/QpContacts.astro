@@ -1,0 +1,171 @@
+---
+// Cours Robotique : QP des forces de contact, réduit à la dynamique centroïdale dans le plan (qp.ts). Pas TSID :
+// on suppose que les articulations produisent les couples nécessaires. Corps de 60 kg, CoM à 0,9 m, pieds en x = −0,3 et +0,3 m.
+// Trois rangées de boutons (a*, μ, priorité w_c / w_L) : 4 × 3 × 3 = 36 états, tous résolus exactement à la construction de la page.
+// Dessin : cônes en gris (demi-angle arctan μ), forces en vermillon (--rb-force), accélération demandée en ambre (cible),
+// accélération obtenue en violet (--rb-sol, solution calculée), CoP sur le sol ; rouge (--h-py) seulement pour « frottement saturé »
+// ou « pied avant décollé » quand la demande n'est pas tenue.
+import katex from 'katex';
+import { solveQP, G } from './qp';
+const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
+const FORM = tx('\\min_{f_1,\\, f_2}\\; w_c\\,\\big\\|f_1 + f_2 + m g - m\\ddot c^\\star\\big\\|^2 + w_L\\,\\dot L^2 \\quad \\text{s.c.}\\quad n_i \\ge 0,\\ \\ |t_i| \\le \\mu\\, n_i');
+const FORM_L = tx('\\dot L = \\textstyle\\sum_i \\big(h\\,t_i + (x_i - c_x)\\,n_i\\big)');
+const KF = { mc: tx('f_1 + f_2 + m g = m\\ddot c ='), mcs: tx('m\\ddot c^\\star ='), L: tx('\\dot L =') };
+
+const AX = [0, 2, 4, 6], MU = [0.3, 0.6, 1.0], W = [[100, 1], [1, 1], [1, 100]];
+const base = { m: 60, h: 0.9, cx: 0, x1: -0.3, x2: 0.3, eps: 1e-6 };
+const r4 = (v: number) => Math.round(v * 1e4) / 1e4;
+const S = W.map(([wc, wL]) => MU.map((mu) => AX.map((ax) => {
+  const r = solveQP({ ...base, mu, ax, wc, wL });
+  return { t1: r4(r.t1), n1: r4(r.n1), t2: r4(r.t2), n2: r4(r.n2), ax: r4(r.ax), az: r4(r.az), L: r4(r.Ldot), cop: r4(r.cop) };
+})));
+const data = { base, g: G, AX, MU, W, S };
+---
+<div class="widget qpcw" data-widget="qpcontacts">
+  <div class="qph"><b>Quelles forces de contact pour accélérer le CoM ?</b></div>
+  <div class="row"><span>Accélération demandée a* (m/s²) :</span><span class="qseg" data-ref="ax"></span></div>
+  <div class="row"><span>Frottement μ :</span><span class="qseg" data-ref="mu"></span></div>
+  <div class="row"><span>Priorité :</span><span class="qseg" data-ref="w"></span></div>
+  <div class="qpcalc">
+    <div class="qpfm" set:html={FORM} />
+    <div class="qpfm qpfl" set:html={FORM_L} />
+    <div class="qpnum"><span set:html={KF.mc} /> <b data-ref="nmc"></b><span class="qsep">·</span><span set:html={KF.mcs} /> <b data-ref="nmcs"></b><span class="qsep">·</span><span set:html={KF.L} /> <b data-ref="nL"></b></div>
+  </div>
+  <svg data-ref="svg" viewBox="0 0 640 334" role="img" aria-label="Corps sur deux pieds : cônes de frottement, forces de contact, accélération demandée et obtenue du centre de masse, centre de pression"></svg>
+  <div class="kpis">
+    <div><span>a<sub>x</sub> / a*</span><b data-ref="kax"></b><i data-ref="kaxi"></i></div>
+    <div><span>a<sub>z</sub></span><b data-ref="kaz"></b><i>demandée : 0</i></div>
+    <div><span>L̇</span><b data-ref="kL"></b><i>&gt; 0 : bascule vers l'arrière</i></div>
+    <div><span>CoP</span><b data-ref="kcop"></b><i>pieds en x = ±0,3 m</i></div>
+  </div>
+  <p class="note">Dynamique centroïdale dans le plan, pas TSID : on suppose que les articulations produisent les couples nécessaires. m = 60 kg, CoM à h = 0,9 m au-dessus du sol ; f<sub>i</sub> = (t<sub>i</sub>, n<sub>i</sub>), composantes tangentielle et normale. Priorités : (w<sub>c</sub>, w<sub>L</sub>) = (100, 1), (1, 1), (1, 100). QP résolu exactement à la construction de la page (énumération des 64 ensembles de contraintes actives).</p>
+  <script type="application/json" data-ref="data" set:html={JSON.stringify(data)} />
+</div>
+
+<script>
+  type St = { t1: number; n1: number; t2: number; n2: number; ax: number; az: number; L: number; cop: number };
+  type Data = { base: { m: number; h: number; cx: number; x1: number; x2: number }; g: number; AX: number[]; MU: number[]; W: number[][]; S: St[][][] };
+  const fr = (v: number, d: number) => { const s = v.toFixed(d); return (/^-0(\.0+)?$/.test(s) ? s.slice(1) : s).replace('.', ',').replace('-', '−'); };
+  const NS = 'http://www.w3.org/2000/svg';
+
+  document.querySelectorAll<HTMLElement>('[data-widget="qpcontacts"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const D: Data = JSON.parse($('data').textContent!);
+    const { m, h, x1, x2 } = D.base, g = D.g;
+    let ia = 1, im = 1, iw = 0;
+    const seg = (el: HTMLElement, labels: string[], on: (i: number) => void) =>
+      labels.map((t, i) => { const b = document.createElement('button'); b.textContent = t; b.addEventListener('click', () => { on(i); draw(); }); el.appendChild(b); return b; });
+    const bA = seg($('ax'), D.AX.map(String), (i) => (ia = i));
+    const bM = seg($('mu'), D.MU.map((v) => fr(v, 1)), (i) => (im = i));
+    const bW = seg($('w'), ["CoM d'abord", 'égale', "rotation d'abord"], (i) => (iw = i));
+
+    // monde → pixels : même échelle en x et en z (les angles des cônes sont justes)
+    const PX = 260, X = (x: number) => 320 + x * PX, Y = (z: number) => 300 - z * PX, FS = 0.0011 * PX, AS = 24;
+    const arrow = (xa: number, ya: number, xb: number, yb: number, c: string, w: number, dash = '') => {
+      const L = Math.hypot(xb - xa, yb - ya); if (L < 2) return '';
+      const a = Math.atan2(yb - ya, xb - xa), hd = Math.min(9, 0.5 * L + 3), s = 0.42;
+      const p1 = [xb - hd * Math.cos(a - s), yb - hd * Math.sin(a - s)], p2 = [xb - hd * Math.cos(a + s), yb - hd * Math.sin(a + s)];
+      return `<line x1="${xa.toFixed(1)}" y1="${ya.toFixed(1)}" x2="${(xb - 0.7 * hd * Math.cos(a)).toFixed(1)}" y2="${(yb - 0.7 * hd * Math.sin(a)).toFixed(1)}" stroke="${c}" stroke-width="${w}" stroke-linecap="round"${dash ? ` stroke-dasharray="${dash}"` : ''}/><polygon points="${xb.toFixed(1)},${yb.toFixed(1)} ${p1[0].toFixed(1)},${p1[1].toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}" fill="${c}"/>`;
+    };
+
+    function draw() {
+      bA.forEach((b, i) => b.classList.toggle('active', i === ia));
+      bM.forEach((b, i) => b.classList.toggle('active', i === im));
+      bW.forEach((b, i) => b.classList.toggle('active', i === iw));
+      const st = D.S[iw][im][ia], mu = D.MU[im], aT = D.AX[ia];
+      const lift = [st.n1 < 1e-3, st.n2 < 1e-3];
+      const sat = [!lift[0] && Math.abs(st.t1) >= mu * st.n1 - 1e-3, !lift[1] && Math.abs(st.t2) >= mu * st.n2 - 1e-3];
+      const met = Math.abs(st.ax - aT) < 0.02 && Math.abs(st.az) < 0.02 && Math.abs(st.L) < 0.5;
+      const alert = !met;
+      let s = '';
+      // sol, appui (segment entre les pieds), hachures
+      s += `<line x1="16" y1="${Y(0)}" x2="624" y2="${Y(0)}" stroke="var(--text-2)" stroke-width="1.2"/>`;
+      for (let x = 22; x < 624; x += 11) s += `<line x1="${x}" y1="${Y(0)}" x2="${x - 6}" y2="${Y(0) + 7}" stroke="var(--text-2)" stroke-width="0.8" stroke-opacity="0.45"/>`;
+      // cônes de frottement (demi-angle arctan μ)
+      const Hc = 0.8;
+      [x1, x2].forEach((xi) => {
+        s += `<polygon points="${X(xi)},${Y(0)} ${X(xi - mu * Hc)},${Y(Hc)} ${X(xi + mu * Hc)},${Y(Hc)}" fill="var(--text-2)" fill-opacity="0.07" stroke="var(--text-2)" stroke-opacity="0.55" stroke-width="1"/>`;
+      });
+      // corps : jambes, tronc, pieds
+      const hip = 0.8;
+      s += `<line x1="${X(-0.06)}" y1="${Y(hip)}" x2="${X(x1)}" y2="${Y(0.05)}" stroke="var(--c-neutral)" stroke-width="7" stroke-linecap="round" stroke-opacity="0.45"/>`;
+      s += `<line x1="${X(0.06)}" y1="${Y(hip)}" x2="${X(x2)}" y2="${Y(0.05)}" stroke="var(--c-neutral)" stroke-width="7" stroke-linecap="round" stroke-opacity="0.45"/>`;
+      s += `<rect x="${X(-0.11)}" y="${Y(1.12)}" width="${0.22 * PX}" height="${0.34 * PX}" rx="14" fill="var(--surface-2)" stroke="var(--c-neutral)" stroke-width="1.2"/>`;
+      [x1, x2].forEach((xi, i) => {
+        s += `<rect x="${X(xi - 0.07)}" y="${Y(0.04)}" width="${0.14 * PX}" height="${0.04 * PX}" rx="3" fill="var(--c-neutral)" fill-opacity="${lift[i] ? 0.35 : 0.85}"/>`;
+        s += `<text x="${X(xi)}" y="${Y(0) + 27}" text-anchor="middle" class="qpl">${i ? 'pied avant' : 'pied arrière'}</text>`;
+      });
+      // CoM (disque à quartiers)
+      const cX = X(0), cY = Y(h), rC = 7;
+      s += `<circle cx="${cX}" cy="${cY}" r="${rC}" fill="var(--surface)" stroke="var(--text)" stroke-width="1.2"/>`;
+      s += `<path d="M${cX},${cY} L${cX + rC},${cY} A${rC},${rC} 0 0 1 ${cX},${cY + rC} Z M${cX},${cY} L${cX - rC},${cY} A${rC},${rC} 0 0 1 ${cX},${cY - rC} Z" fill="var(--text)"/>`;
+      s += `<text x="${cX - 12}" y="${cY + 4}" text-anchor="end" class="qpl">CoM</text>`;
+      // forces de contact
+      const F = [[st.t1, st.n1], [st.t2, st.n2]];
+      [x1, x2].forEach((xi, i) => {
+        const [t, n] = F[i], bx = X(xi), by = Y(0), ex = bx + t * FS, ey = by - n * FS;
+        if (lift[i]) { s += `<text x="${bx}" y="${by - 16}" text-anchor="middle" class="${alert ? 'qpr' : 'qpl'}">décollé : f<tspan dy="3" class="qps">${i + 1}</tspan><tspan dy="-3"> = 0</tspan></text>`; return; }
+        s += arrow(bx, by, ex, ey, 'var(--rb-force)', 3);
+        const lab = `f<tspan dy="3" class="qps">${i + 1}</tspan>`;
+        s += `<text x="${ex + (i ? 8 : -8)}" y="${ey + 4}" text-anchor="${i ? 'start' : 'end'}" class="qpf">${lab}</text>`;
+        if (sat[i]) s += `<text x="${ex + (i ? 8 : -8)}" y="${ey + 18}" text-anchor="${i ? 'start' : 'end'}" class="${alert ? 'qpr' : 'qpl'}">bord du cône</text>`;
+      });
+      // accélérations du CoM : demandée (ambre, pointillé) et obtenue (violet)
+      if (aT > 0) {
+        const ox = cX + st.ax * AS, oy = cY - st.az * AS, tX = cX + aT * AS;
+        s += arrow(cX + rC, cY, ox, oy, 'var(--rb-sol)', 3.2);
+        s += arrow(cX + rC, cY, tX, cY, 'var(--hl-stroke)', 1.8, '5 3');
+        s += `<text x="${Math.max(tX, ox) + 8}" y="${cY - 6}" class="qpa">demandée</text>`;
+        s += `<text x="${Math.max(tX, ox) + 8}" y="${Math.max(oy, cY) + 12}" class="qpo">obtenue</text>`;
+      }
+      // centre de pression (CoP)
+      if (Number.isFinite(st.cop)) {
+        const px = X(st.cop), py = Y(0) + 3;
+        s += `<polygon points="${px},${py} ${px - 5},${py + 9} ${px + 5},${py + 9}" fill="var(--text)"/>`;
+        s += `<text x="${px + 8}" y="${py + 9}" class="qpm">CoP</text>`;
+      }
+      // état, en mots (rouge seulement quand la demande n'est pas tenue)
+      const etat = met ? 'demande réalisable' : lift[1] ? 'pied avant décollé : demande non tenue' : 'frottement saturé : demande non tenue';
+      s += `<text x="18" y="22" class="${alert ? 'qpr' : 'qpm'}">${etat}</text>`;
+      const svg = $('svg') as unknown as SVGSVGElement;
+      svg.innerHTML = s;
+
+      // ligne de calcul et indicateurs
+      const sx = st.t1 + st.t2, sz = st.n1 + st.n2 - m * g;
+      $('nmc').textContent = `(${fr(sx, 0)} ; ${fr(sz, 0)}) N`;
+      $('nmcs').textContent = `(${fr(m * aT, 0)} ; 0) N`;
+      $('nL').textContent = `${fr(st.L, 1)} N·m`;
+      $('kax').textContent = `${fr(st.ax, 2)} / ${aT} m/s²`;
+      $('kaxi').textContent = `glissement : μ g = ${fr(mu * g, 2)} ; bascule : ${fr(g * (x2 - x1) / 2 / h, 2)}`;
+      $('kaz').textContent = `${fr(st.az, 2)} m/s²`;
+      $('kL').textContent = `${fr(st.L, 1)} N·m`;
+      $('kcop').textContent = `${fr(st.cop, 3)} m`;
+    }
+    draw();
+  });
+</script>
+
+<style is:global>
+  .qpcw .qph { margin-bottom: 8px; }
+  .qpcw .qph b { font-size: 15px; font-weight: 600; color: var(--text); }
+  .qpcw .qseg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .qpcw .qseg button { font-size: 13px; padding: 4px 12px; }
+  .qpcw .qpcalc { background: color-mix(in srgb, var(--text-2) 5%, transparent); border-radius: 8px; padding: 8px 12px; margin: 4px 0 8px; }
+  .qpcw .qpfm { font-size: 0.92rem; overflow-x: auto; overflow-y: hidden; color: var(--text); }
+  .qpcw .qpfm .katex { font-size: 1em; }
+  .qpcw .qpfl { font-size: 0.85rem; margin-top: 2px; color: var(--text-2); }
+  .qpcw .qpnum { font-size: 13px; color: var(--text-2); margin-top: 6px; line-height: 1.7; }
+  .qpcw .qpnum .katex { font-size: 0.95em; color: var(--text); }
+  .qpcw .qpnum b { font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .qpcw .qpnum .qsep { margin: 0 8px; }
+  .qpcw svg { width: 100%; height: auto; display: block; }
+  .qpcw svg text.qpl { font: 11.5px var(--font); fill: var(--text-2); }
+  .qpcw svg text.qpm { font: 600 11.5px var(--font); fill: var(--text); }
+  .qpcw svg text.qpr { font: 600 11.5px var(--font); fill: var(--h-py); }
+  .qpcw svg text.qpf { font: italic 600 13px var(--font); fill: var(--rb-force); }
+  .qpcw svg text.qpa { font: 600 11.5px var(--font); fill: var(--hl-stroke); }
+  .qpcw svg text.qpo { font: 600 11.5px var(--font); fill: var(--rb-sol); }
+  .qpcw svg tspan.qps { font-size: 9px; }
+  .qpcw .kpis > div { flex: 1 1 140px; }
+  .qpcw .kpis b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+</style>

@@ -33,9 +33,16 @@ export const COURSES = {
   rc: {
     title: 'Reservoir computing',
     unit: 'Chapitre',
-    tagline: "Des réseaux récurrents tirés au hasard dont on n'entraîne que la sortie : principe, propriété d'écho, mémoire, bord du chaos, expressivité, puis neurones à impulsions et réservoirs physiques.",
+    tagline: "Des réseaux récurrents tirés au hasard dont on n'entraîne que la sortie : principe, propriété d'écho, mémoire, bord du chaos, expressivité, neurones à impulsions et réservoirs physiques, puis les conceptors.",
     intro:
       "Un cours visuel qui part de zéro : un RNN aux poids aléatoires et figés, dont seule une lecture linéaire est entraînée. Puis la théorie (quand l'état oublie son passé, combien il en retient, pourquoi cela suffit) et les réservoirs hors du logiciel : neurones à impulsions, photonique, mécanique, matériel neuromorphique.",
+  },
+  robotique: {
+    title: 'Robotique',
+    unit: 'Chapitre',
+    tagline: "La boîte à outils d'un roboticien en un chapitre : décrire le robot (CAO), le modéliser, la cinématique inverse, la planification, l'apprentissage en simulation, l'identification et la dynamique du corps complet.",
+    intro:
+      "Une vue d'ensemble construite sur une diapositive « A toolbox: recommended tools and leads » : sept familles d'outils (Onshape, Pinocchio, MuJoCo, pink, placo, mink, Gymnasium, Stable Baselines3, mjlab, BAM, TSID, Crocoddyl…), chacune en quelques lignes, avec un widget seulement là où il montre le mécanisme.",
   },
 } as const;
 
