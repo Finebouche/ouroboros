@@ -12,6 +12,7 @@ import Regles from '@/components/rc/02-regles-lecture/Regles.astro';
 import ReglesWidget from '@/components/rc/02-regles-lecture/ReglesWidget.astro';
 import EhWidget from '@/components/rc/02-regles-lecture/EhWidget.astro';
 import Ordre2Widget from '@/components/rc/02-regles-lecture/Ordre2Widget.astro';
+import OhkuboFigure from '@/components/rc/02-regles-lecture/OhkuboFigure.astro';
 import Variantes from '@/components/rc/02-regles-lecture/Variantes.astro';
 
 Toutes les lectures du chapitre lisent les mêmes états et visent les mêmes cibles. Seule change la façon d'apprendre les poids $W_{out}$.
@@ -73,11 +74,11 @@ Avec ces réglages, précision de test sur 50 époques :
 Bouton « états bruts » : les neurones à taux positifs ont une **moyenne forte et des variations faibles**. Moyenne d'un neurone : 0,50 en moyenne (de 0,03 à 0,97 selon le neurone) ; écart-type : 0,014 (de 0,002 à 0,035).
 
 - **LMS et NLMS** restent à 31-33 % (31 % : la classe la plus fréquente) pendant 11 époques, puis oscillent entre 31 et 63 %. eh reste à 31 % pendant 50 époques, eh_np entre 13 et 42 % (31 % le plus souvent) ; eh_np_local et neh y remontent par moments (60 et 57 % au mieux).
-- **Le mécanisme** : la matrice $\langle x\,x^{\top} \rangle$ a une valeur propre de 20, dans la direction de l'activité moyenne ; la suivante vaut 0,005, 4 000 fois moins. Le pas $\eta = c / \langle \lVert x \rVert^2 \rangle \approx 0{,}1/20$ est réglé sur la première. Dans une direction de valeur propre $\nu$, une époque de $n$ phrases réduit la distance restante d'un facteur $\approx e^{-n \eta \nu}$ : ici $e^{-382 \times 0{,}005 \times 0{,}005} \approx 0{,}99$, 1 % par époque. La règle n'apprend que la direction moyenne : après 5 époques, $W_{out}$ figé donne presque la même sortie pour toutes les phrases, proche de la fréquence de chaque classe (0,28 pour B, écart-type d'une phrase à l'autre au plus 0,013), et l'argmax répond toujours B. Pendant l'apprentissage, la sortie dérive d'un pas à l'autre ($y_B$ de 0,23 à 0,38 pendant l'époque 6).
+- **Le mécanisme** : la matrice $\langle x\,x^{\top} \rangle$ a une valeur propre de 20, dans la direction de l'activité moyenne ; la suivante vaut 0,005, 4 000 fois moins. Le pas $\eta = c / (\langle \lVert x \rVert^2 \rangle + 1) \approx 0{,}1/20$ est réglé sur la première. Dans une direction de valeur propre $\nu$, une époque de $n$ phrases réduit la distance restante d'un facteur $\approx e^{-n \eta \nu}$ : ici $e^{-382 \times 0{,}005 \times 0{,}005} \approx 0{,}99$, 1 % par époque. La règle n'apprend que la direction moyenne : après 5 époques, $W_{out}$ figé donne presque la même sortie pour toutes les phrases, proche de la fréquence de chaque classe (0,28 pour B, écart-type d'une phrase à l'autre au plus 0,013), et l'argmax répond toujours B. Pendant l'apprentissage, la sortie dérive d'un pas à l'autre ($y_B$ de 0,23 à 0,38 pendant l'époque 6).
 - **Standardiser** chaque neurone (moyenne et écart-type sur les chants d'apprentissage) remplace ces valeurs propres par 20, 16, 9, 6… : la direction moyenne n'écrase plus les autres.
 - **NLMS ne corrige pas** : il divise par $\lVert x \rVert^2 + 1$, un seul nombre, dominé par la moyenne.
 - **RLS et ridge** trouvent quand même la solution exacte : $P$ corrige la géométrie. Mais $\lambda$ dépend de l'échelle : sur les états bruts, $\lambda = 1$ pèse beaucoup plus (62 % contre 68 %). Dans le projet, centrage ou standardisation sont choisis pour RLS par validation croisée.
-- Sur les données du projet (réservoir de 500 neurones, nommé `random_ee` dans son code) : moyenne 0,16 et écart-type 0,01 par neurone, et les règles en ligne restent au niveau du hasard sans standardisation.
+- Sur les données du projet (`random_ee` : 500 neurones, poids récurrents tirés dans $\mathcal U(0, 1)$, tous excitateurs) : activité moyenne 0,16 et écart-type 0,01 par neurone sur les états bruts, et les règles en ligne restent au niveau du hasard sans standardisation.
 
 ## 4. EH : apprendre avec une récompense
 
@@ -108,7 +109,13 @@ Trois temps :
 
 ## 5. Ordre 2 : une lecture quadratique, apprise en dual
 
-[Ohkubo et Inubushi (2024)](https://www.nature.com/articles/s41598-024-81880-3) : si l'état du réservoir est une fonction inversible de l'état du système qu'il lit (synchronisation généralisée, *generalized synchronization*), la sortie idéale est une fonction $h(x)$ de l'état du réservoir. La lecture linéaire en est le développement de Taylor à l'ordre 1, en $x = 0$ ; on ajoute l'ordre 2. Le widget apprend cette lecture par NLMS (nlms:2) sous deux formes : primale (un poids par monôme) et duale (un coefficient par phrase).
+[Ohkubo et Inubushi (2024)](https://www.nature.com/articles/s41598-024-81880-3) : si l'état du réservoir est une fonction inversible de l'état du système qu'il lit (synchronisation généralisée, *generalized synchronization*), la sortie idéale est une fonction $h(x)$ de l'état du réservoir. La lecture linéaire en est le développement de Taylor à l'ordre 1, en $x = 0$ ; on ajoute l'ordre 2. Leur test : prédire le système de Lorenz $\tau = 0{,}2$ plus loin avec un réservoir de 10 neurones.
+
+<OhkuboFigure />
+
+Avec ces réglages, sur les mêmes états ($N = 10$), l'ordre 2 divise l'erreur par 21 et retrouve l'attracteur en ailes de papillon, comme leur figure 2. À nombre de paramètres égal, l'écart se réduit : RMSE 0,39 (ordre 1, $N = 65$) contre 0,11 (ordre 2, $N = 10$) à $M = 195$, 0,026 contre 0,021 à $M = 690$. Leur figure 3b donne des erreurs presque égales à $M$ égal : l'ordre 2 économise surtout des neurones. Le meilleur $\sigma_A$ est le plus souvent le plus petit de la grille (0,01) : l'entrée est l'état complet, la tâche ne demande presque pas de mémoire.
+
+Le widget apprend cette lecture par NLMS (nlms:2) sous deux formes : primale (un poids par monôme) et duale (un coefficient par phrase).
 
 <Ordre2Widget />
 
@@ -137,7 +144,7 @@ Avec ces réglages :
 
 - **Primal et dual** suivent la même erreur ; écart relatif entre leurs sorties de l'ordre de $10^{-12}$ au plus ($10^{-11}$ quand l'erreur explose).
 - **Pourquoi normaliser le taux** : sur l'exemple vu, l'erreur est multipliée par $1 - \eta\,\big((K_c)_{ii} + 1\big)$ et grandit dès que $\eta\,\big((K_c)_{ii} + 1\big) > 2$. Le plus grand $\lVert \varphi_c \rVert^2$ vaut 4,0 fois la moyenne (contre 2,0 pour $\lVert x \rVert^2$ : $\lVert \varphi \rVert^2$ croît comme $\lVert x \rVert^4$, le rapport est à peu près élevé au carré). Avec un taux unique, $c = 0{,}1$ et $0{,}5$ convergent (à 0,5, un seul exemple dépasse 2, de peu), $c = 1$ oscille (erreur entre 0,6 et 3,9), $c = 1{,}5$ diverge (erreur $4 \cdot 10^{5}$ après une époque, $2 \cdot 10^{8}$ après deux). Le taux normalisé ne diverge pas pour $c < 2$, le facteur vaut $1 - c$ ; à $c = 1{,}5$, l'erreur reste bruitée (0,9 à 2,6).
-- Sur les données du projet ($N = 500$), le plus grand $\lVert \varphi \rVert^2$ vaut 560 fois la moyenne : avec un taux unique, $c = 0{,}1$ donne déjà $\eta\,\big((K_c)_{ii} + 1\big) \approx 56$ sur cet exemple, soit un facteur $-55$ sur son erreur.
+- Sur les données du projet (`random_ei` : 500 neurones à fuite, poids récurrents dans $\mathcal U(-1, 1)$ ; états standardisés, 10 689 exemples d'apprentissage), le plus grand $(K_c)_{ii} + 1$ vaut 561 fois la moyenne (44 fois pour $\lVert x \rVert^2 + 1$ à l'ordre 1) : avec un taux unique, $c = 0{,}1$ donne déjà $\eta\,\big((K_c)_{ii} + 1\big) \approx 56$ sur cet exemple, soit un facteur $-55$ sur son erreur.
 - **Précision de test** : l'ordre 2 ne bat pas l'ordre 1 sur ce jeu. ridge:2 va de 52 % ($\lambda = 0{,}1$) à 66 % ($\lambda = 10^4$), contre 68 % pour le ridge d'ordre 1 ; nlms:2 (taux normalisé, $c = 0{,}1$) donne 67 % après une époque, puis 57 à 64 % jusqu'à 20 époques ; neh:2 ($c = 0{,}1$, $\sigma = 0{,}5$, hors widget) 67 %, puis 60 à 66 %.
 - **Coût** : le dual garde $K_c$, $n \times n$ ; le primal, $W_{out}$ de taille $6 \times 1\,890$ ici, $6 \times 125\,750$ pour $N = 500$.
 
@@ -169,7 +176,7 @@ La solution ridge de $\lambda = \alpha = 1$, à $10^{-12}$ près : $P$ vaut $(\s
 
 <Reveal>
 
-Les états ont une forte moyenne commune : $\langle x\,x^{\top}\rangle$ a une valeur propre de 20 dans sa direction, et 0,005 au plus dans les autres. Le pas, réglé sur la première, avance d'environ 1 % par époque dans les autres. La lecture apprend seulement la fréquence de chaque classe : B, la plus fréquente, gagne partout. NLMS divise par $\lVert x \rVert^2$, un seul nombre : le rapport entre directions ne change pas.
+Les états ont une forte moyenne commune : $\langle x\,x^{\top}\rangle$ a une valeur propre de 20 dans sa direction, et 0,005 au plus dans les autres. Le pas, réglé sur la première, avance d'environ 1 % par époque dans les autres. La lecture apprend seulement la fréquence de chaque classe : B, la plus fréquente, gagne partout. NLMS divise par $\lVert x \rVert^2 + 1$, un seul nombre : le rapport entre directions ne change pas.
 
 </Reveal>
 
@@ -193,7 +200,7 @@ $\bar z$ est une moyenne glissante des sorties passées. D'une phrase à l'autre
 
 <Reveal>
 
-Seul le vecteur $a_i$ (et le biais) : $a_i \leftarrow a_i - \eta_i e_i$. Sur l'exemple vu, l'erreur est multipliée par $1 - \eta\,\big((K_c)_{ii} + 1\big)$. Avec un taux unique $c / \big(\langle (K_c)_{ii} \rangle + 1\big)$ et un $(K_c)_{ii}$ 560 fois plus grand que la moyenne, ce facteur atteint $-55$ pour $c = 0{,}1$ : l'erreur de cet exemple explose. Le taux $c/\big((K_c)_{ii}+1\big)$ le ramène à $1 - c$.
+Seul le vecteur $a_i$ (et le biais) : $a_i \leftarrow a_i - \eta_i e_i$. Sur l'exemple vu, l'erreur est multipliée par $1 - \eta\,\big((K_c)_{ii} + 1\big)$. Avec un taux unique $c / \big(\langle (K_c)_{ii} \rangle + 1\big)$ et un $(K_c)_{ii} + 1$ 561 fois plus grand que la moyenne, ce facteur atteint $-55$ pour $c = 0{,}1$ : l'erreur de cet exemple explose. Le taux $c/\big((K_c)_{ii}+1\big)$ le ramène à $1 - c$.
 
 </Reveal>
 

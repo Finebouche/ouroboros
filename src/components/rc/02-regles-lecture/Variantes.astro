@@ -4,10 +4,10 @@
 import katex from 'katex';
 const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
 const rows = [
-  { name: 'eh', src: 'Hoerzer et al. (2014), d’après Legenstein et al. (2010)', ref: `${tx('\\bar z')}, ${tx('\\bar r')} : moyennes glissantes dans le temps`, rew: `globale : un seul ${tx('M')}`, rate: tx('c / \\langle \\lVert x \\rVert^2 \\rangle') },
-  { name: 'eh_np', src: 'projet', ref: `${tx('\\bar z')} : sortie sans bruit sur la même phrase, donc ${tx('z - \\bar z = \\xi')} ; ${tx('\\bar r')} : sa récompense`, rew: 'globale', rate: tx('c / \\langle \\lVert x \\rVert^2 \\rangle') },
-  { name: 'eh_np_local', src: 'projet', ref: 'idem', rew: `une par sortie : ${tx('M_i = [\\,r_i > \\bar r_i\\,]')}, ${tx('r_i = -(z_i - d_i)^2')}`, rate: tx('c / \\langle \\lVert x \\rVert^2 \\rangle') },
-  { name: 'neh', src: 'projet (perturbation de nœud de Fiete et Seung, 2006, avec une récompense par sortie)', ref: 'idem', rew: 'une par sortie', rate: `${tx('c / (\\lVert x \\rVert^2 + 1)')} (NLMS)` },
+  { name: 'eh', src: 'Hoerzer et al. (2014), d’après Legenstein et al. (2010)', ref: `${tx('\\bar z')}, ${tx('\\bar r')} : moyennes glissantes dans le temps`, rew: `globale : un seul ${tx('M')}`, rate: tx('c / (\\langle \\lVert x \\rVert^2 \\rangle + 1)') },
+  { name: 'eh_np', src: 'projet', ref: `${tx('\\bar z')} : sortie sans bruit sur la même phrase, donc ${tx('z - \\bar z = \\xi')} ; ${tx('\\bar r')} : sa récompense`, rew: 'globale', rate: tx('c / (\\langle \\lVert x \\rVert^2 \\rangle + 1)') },
+  { name: 'eh_np_local', src: 'projet', ref: 'idem', rew: `une par sortie : ${tx('M_i = [\\,r_i > \\bar r_i\\,]')}, ${tx('r_i = -(z_i - d_i)^2')}`, rate: tx('c / (\\langle \\lVert x \\rVert^2 \\rangle + 1)') },
+  { name: 'neh', src: 'projet : eh_np_local avec le taux de NLMS (« n » : normalisé)', ref: 'idem', rew: 'une par sortie', rate: `${tx('c / (\\lVert x \\rVert^2 + 1)')} (NLMS)` },
 ];
 ---
 <figure class="ehv">

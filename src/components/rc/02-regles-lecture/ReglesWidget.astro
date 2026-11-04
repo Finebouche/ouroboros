@@ -10,11 +10,11 @@ const pieces = (a: string[]) => a.map((s, i) => `<span class="fp">${tx(s + (i < 
 const UPD = 'W_{out} \\leftarrow W_{out} + \\eta\\, M\\,(z - \\bar z)\\, x^{\\top}', UPDB = 'b \\leftarrow b + \\eta\\, M\\,(z - \\bar z)';
 const FM: Record<string, string> = {
   rls: pieces(['e = W\\tilde x - d', 'g = \\frac{P \\tilde x}{1 + \\tilde x^{\\top} P \\tilde x}', 'W \\leftarrow W - e\\,g^{\\top}', 'P \\leftarrow P - g\\,\\tilde x^{\\top}P']),
-  lms: pieces(['e = W_{out}x + b - d', 'W_{out} \\leftarrow W_{out} - \\eta\\, e\\, x^{\\top}', 'b \\leftarrow b - \\eta\\, e', '\\eta = c\\,/\\,\\langle \\lVert x \\rVert^2 \\rangle']),
+  lms: pieces(['e = W_{out}x + b - d', 'W_{out} \\leftarrow W_{out} - \\eta\\, e\\, x^{\\top}', 'b \\leftarrow b - \\eta\\, e', '\\eta = c\\,/\\,(\\langle \\lVert x \\rVert^2 \\rangle + 1)']),
   nlms: pieces(['e = W_{out}x + b - d', 'W_{out} \\leftarrow W_{out} - \\eta\\, e\\, x^{\\top}', 'b \\leftarrow b - \\eta\\, e', '\\eta = c\\,/\\,(\\lVert x \\rVert^2 + 1)']),
   eh: pieces(['z = W_{out}x + b + \\xi', 'r = -\\lVert z - d \\rVert^2', '\\bar z, \\bar r \\text{ moyennes glissantes}', 'M = [\\,r > \\bar r\\,]', UPD, UPDB]),
   eh_np: pieces(['\\bar z = W_{out}x + b \\text{ (sans bruit)}', '\\bar r = -\\lVert \\bar z - d \\rVert^2', 'M = [\\,r > \\bar r\\,]', UPD, UPDB]),
-  eh_np_local: pieces(['M_i = [\\,r_i > \\bar r_i\\,]', 'r_i = -(z_i - d_i)^2', '\\bar z = W_{out}x + b', '\\eta = c\\,/\\,\\langle \\lVert x \\rVert^2 \\rangle']),
+  eh_np_local: pieces(['M_i = [\\,r_i > \\bar r_i\\,]', 'r_i = -(z_i - d_i)^2', '\\bar z = W_{out}x + b', '\\eta = c\\,/\\,(\\langle \\lVert x \\rVert^2 \\rangle + 1)']),
   neh: pieces(['M_i = [\\,r_i > \\bar r_i\\,]', 'r_i = -(z_i - d_i)^2', '\\bar z = W_{out}x + b', '\\eta = c\\,/\\,(\\lVert x \\rVert^2 + 1)']),
 };
 ---

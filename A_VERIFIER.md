@@ -6,7 +6,7 @@ Dernière vérification complète : 3 novembre 2026. Les points confirmés (sour
 
 ## Post-Transformer
 
-- **Chapitre 5 (plan)** : Jamba 2 et LFM2.5 ne sont vus que sur des sites tiers, pas dans une source primaire (le plan le dit).
+- Rien de signalé pour l'instant.
 
 ## RL
 
@@ -21,10 +21,9 @@ Dernière vérification complète : 3 novembre 2026. Les points confirmés (sour
   - Pitcher (1983) n'a pas été lu directement (accès Elsevier fermé). Ses définitions sont confirmées par la citation de Delcourt et Poncin (2012, p. 596) et par Pitcher (1986, p. 295, figure 12.1 reprise de Pitcher 1983).
   - Pitcher et Wyche (1983) : seules les p. 193-194 ont été lues (aperçu Springer). La description détaillée de la vacuole, p. 195 et suivantes, ne l'a pas été. Elle pourrait chiffrer la « minimum approach distance », donc un rayon de vacuole. Leur répertoire de 10 manœuvres ne contient pas la fontaine.
   - Rotation interne d'une boule d'appât : non documentée (dessin). Rayon de la vacuole : aucune valeur publiée (choix de dessin).
-  - Coin (V) d'un banc entier et banc entier en file indienne : non trouvés ; le V est une stylisation, la seule forme documentée est la rangée de thons en parabole ou en ligne (Lutcavage et Kraus 1995). Sens de la parabole non vérifié.
-  - « Explication probable » de l'extinction des mélanges sans horloge commune (directions non partagées) : non vérifiée ; seul le décompte (83 mélanges sur 135 sans horloge, aucun avec) est simulé.
+  - Coin (V) d'un banc entier et banc entier en file indienne : non trouvés ; le V est une stylisation. Seules formes documentées : petits groupes de thons (moins de 15) en parabole ou en ligne (Lutcavage et Kraus 1995), ou en échelon (Partridge et al. 1983, non lu, cités par Hanrahan et Juanes 2001). Sens de la parabole non vérifié. Piste non lue pour la file indienne : Gerlotto et al. (2003, résumé ICES), cité par Calovi et al. (2014).
+  - Explication de l'extinction des mélanges sans horloge commune (directions non partagées), dite « possible, partielle » dans le texte. Simulé (graines 1 à 3) : une horloge propre à chaque mode laisse 27 à 32 extinctions sur 135, contre 0 avec l'horloge commune et 73 à 86 sans horloge, ce qui appuie le rôle du partage ; mais sans horloge, le recouvrement des conceptors d'une paire ne prédit pas son extinction (Spearman −0,12 à −0,34), et la somme C_a + C_b, qui n'affaiblit aucune direction, s'éteint encore pour 15 paires sur 45.
   - Frontière entre banc lâche et essaim : aucune source ne la fixe, ni ne décrit la forme globale d'un essaim (choix de dessin).
-  - Effet fontaine : dans le dessin, le prédateur va à peu près à la vitesse des proies au sol (il arrive de face) ; Bartashevich et al. (2024) donnent un rapport d'environ 1,85.
 - **Chapitre 2 (règles d'apprentissage de la lecture)** :
   - Nagumo et Noda (1967) et Albert et Gardner (1967) : forme exacte de la règle NLMS non lue dans les originaux (identifiants vérifiés).
   - Legenstein et al. (2010) : forme de la règle EH non lue dans l'article (titre et DOI vérifiés).
@@ -32,16 +31,13 @@ Dernière vérification complète : 3 novembre 2026. Les points confirmés (sour
   - « λ décroît à peu près comme l'inverse du nombre d'époques » pour LMS : constat de simulation (λ × époques entre 315 et 500), sans source théorique.
   - Ohkubo et Inubushi : « il ne centre pas φ » d'après l'absence de mention dans la version publiée (PMC11680959).
   - neh:2 (67 % puis 60 à 66 %) : simulation hors widget, non montrée sur la page.
-  - LMS et eh du jeu jouet : le taux est c / ⟨‖x‖² + 1⟩ (moyenne sur le vecteur complété par 1), le tableau écrit c / ⟨‖x‖²⟩ comme dans le projet ; écart d'environ 1,6 %.
-  - Chiffres « sur les données du projet » : 0,16 et 0,01 ne figurent que dans une docstring de `canopy/next_phrase_prediction/readout_rules.py` ; 560 n'est dans aucun fichier du projet (seulement dans des transcriptions de sessions) ; on ne sait pas s'il porte sur ‖φ‖² ou ‖φ_c‖². À confirmer par l'utilisateur.
-  - Sens du « n » de neh, et du nom `random_ee` : inconnus.
+  - Chiffres « sur les données du projet » (précisés par l'utilisateur le 4 novembre 2026) : 0,16 et 0,01 viennent de la docstring de `readout_rules.py`, mesurés lors d'une session antérieure, non recalculés ; 561 (diagonale du noyau centré plus 1, `random_ei` 500) et 44 (ordre 1) viennent d'un log de script non relu ici.
+  - Figure Ohkubo et Inubushi (section 5) : leurs réglages (σ_A, σ_B, β, longueurs, supplément) non lus ; leurs figures 2 et 3b sont résumées d'après le texte de l'article.
 
 ## Robotique
 
 - **Chapitre unique « vue d'ensemble »** :
-  - Dijkstra 1959 (10.1007/BF01386390) repris des anciens chapitres, identifiant non recontrôlé.
   - Exemples non exécutés : TSID, Stable Baselines3, mjlab, identification réelle avec BAM, onshape-to-robot (clés d'API requises).
-  - Les 28 références viennent des anciens chapitres, identifiants non recontrôlés.
 
 ## HPC et Preprocessing
 

@@ -1,6 +1,6 @@
 // Cours Reservoir computing, chapitre 2 : les règles d'apprentissage de la lecture, sur les mêmes données.
 // Lecture : W (6 × (N+1)) sur x complété par la constante 1, sortie y = W x, prédiction argmax y, cible d one-hot, erreur e = y − d.
-// ridge (hors ligne, biais pénalisé comme les poids), RLS (P₀ = I/α, une passe), LMS (η = c / moyenne ‖x‖²), NLMS (η = c / ‖x‖²),
+// ridge (hors ligne, biais pénalisé comme les poids), RLS (P₀ = I/α, une passe), LMS (η = c / moyenne de ‖x‖² sur x complété, soit c / (⟨‖x‖²⟩ + 1) pour l'état seul), NLMS (η = c / ‖x‖², x complété),
 // EH et ses variantes : sortie bruitée z = y + ξ, ξ ~ U(−σ, σ) ; récompense r = −‖z − d‖² ; W ← W + η M (z − z̄) xᵀ.
 import { rng } from '../esn';
 

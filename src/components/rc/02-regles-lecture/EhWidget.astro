@@ -12,7 +12,7 @@ const COMMON = pc(['z = W_{out}x + b + \\xi,\\;\\; \\xi_i \\sim \\mathcal U(-\\s
 const FM: Record<string, string> = {
   eh: pc(['r = -\\lVert z - d \\rVert^2,', '\\bar z \\leftarrow (1 - \\tfrac{1}{\\tau})\\,\\bar z + \\tfrac{1}{\\tau}\\, z,', '\\bar r \\leftarrow (1 - \\tfrac{1}{\\tau})\\,\\bar r + \\tfrac{1}{\\tau}\\, r,', 'M = [\\,r > \\bar r\\,]']),
   eh_np: pc(['r = -\\lVert z - d \\rVert^2,', '\\bar z = W_{out}x + b \\text{ (même phrase, sans bruit)},', '\\bar r = -\\lVert \\bar z - d \\rVert^2,', 'M = [\\,r > \\bar r\\,]']),
-  eh_np_local: pc(['\\bar z = W_{out}x + b,', 'r_i = -(z_i - d_i)^2,', '\\bar r_i = -(\\bar z_i - d_i)^2,', 'M_i = [\\,r_i > \\bar r_i\\,],', '\\eta = c\\,/\\,\\langle \\lVert x \\rVert^2 \\rangle']),
+  eh_np_local: pc(['\\bar z = W_{out}x + b,', 'r_i = -(z_i - d_i)^2,', '\\bar r_i = -(\\bar z_i - d_i)^2,', 'M_i = [\\,r_i > \\bar r_i\\,],', '\\eta = c\\,/\\,(\\langle \\lVert x \\rVert^2 \\rangle + 1)']),
   neh: pc(['\\bar z = W_{out}x + b,', 'r_i = -(z_i - d_i)^2,', '\\bar r_i = -(\\bar z_i - d_i)^2,', 'M_i = [\\,r_i > \\bar r_i\\,],', '\\eta = c\\,/\\,(\\lVert x \\rVert^2 + 1)']),
 };
 ---

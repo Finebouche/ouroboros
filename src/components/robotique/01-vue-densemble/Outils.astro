@@ -16,7 +16,7 @@ const DATA: Record<string, Row[]> = {
   ik: [
     { name: 'pink', org: 'Caron et al.', what: 'cinématique inverse différentielle : un QP par pas (tâches, butées, vitesses)', base: 'Pinocchio, solveur QP à part (DAQP)' },
     { name: 'mink', org: 'Zakka', what: 'cinématique inverse sur MuJoCo, sur le modèle de pink', base: 'MuJoCo' },
-    { name: 'placo', org: 'Rhoban', what: 'même QP, plus dynamique et marche ; poids appliqué à la norme au carré', base: 'C++, Pinocchio' },
+    { name: 'placo', org: 'Rhoban', what: 'même QP, plus dynamique et marche ; poids appliqué à la norme au carré', base: 'C++ ; Pinocchio jusqu\'à la 0.10, modèle propre depuis la 0.11' },
   ],
   planification: [
     { name: 'Dijkstra, A*', org: '—', what: 'plus court chemin sur une grille ; A* oriente la recherche par une heuristique h(n)', base: 'configurations discrétisées' },
