@@ -14,6 +14,7 @@ import EhWidget from '@/components/rc/02-regles-lecture/EhWidget.astro';
 import Ordre2Widget from '@/components/rc/02-regles-lecture/Ordre2Widget.astro';
 import OhkuboFigure from '@/components/rc/02-regles-lecture/OhkuboFigure.astro';
 import Variantes from '@/components/rc/02-regles-lecture/Variantes.astro';
+import FluxWidget from '@/components/rc/02-regles-lecture/FluxWidget.astro';
 
 Toutes les lectures du chapitre lisent les mêmes états et visent les mêmes cibles. Seule change la façon d'apprendre les poids $W_{out}$.
 
@@ -68,6 +69,12 @@ Avec ces réglages, précision de test sur 50 époques :
 - **LMS et NLMS** : 66-67 % dès la première époque, puis entre 61 et 70 %.
 - **eh_np_local et neh** : 64-65 % après une époque, 55-56 % après deux, puis entre 60 et 71 %. **eh_np** : 47 % après une époque, 61 % après trois, puis entre 59 et 71 %.
 - **eh** (la variante de Hoerzer et al.) : 60 % après une époque, 53 % après deux, puis entre 30 et 43 % (section 4). Ses poids divergent : écart au ridge 770 après 10 époques, $2 \cdot 10^{21}$ après 50.
+
+### Où chaque règle écrit sa mise à jour
+
+À chaque phrase, la mise à jour $\Delta W$ est le produit d'un nombre par sortie (facteur de ligne) et d'un nombre par neurone (facteur de colonne). Le bouton « lecture » enchaîne les phrases.
+
+<FluxWidget />
 
 ### Pourquoi standardiser les neurones
 

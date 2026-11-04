@@ -1,0 +1,163 @@
+---
+// Cours Reservoir computing, chapitre 2 : où une règle écrit-elle sa mise à jour ? Pour chaque phrase, la matrice ΔW (6 sorties × 60 neurones + biais)
+// est le produit d'un facteur de ligne (un nombre par sortie) et d'un facteur de colonne (un nombre par neurone) : x pour LMS, NLMS et les règles EH,
+// g = P x̃ / (1 + x̃ᵀ P x̃) pour RLS. Mêmes états standardisés, mêmes phrases, mêmes réglages que ReglesWidget ; tout est calculé dans la page.
+// « lecture » avance d'une phrase toutes les 0,45 s, seulement après un clic ; « pause » l'arrête.
+import katex from 'katex';
+const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
+const FM: Record<string, string> = {
+  rls: tx('\\Delta W = -\\,e\\,g^{\\top},\\quad g = \\frac{P\\,\\tilde x}{1 + \\tilde x^{\\top} P\\,\\tilde x}'),
+  lms: tx('\\Delta W = -\\,\\eta\\,e\\,x^{\\top}'),
+  nlms: tx('\\Delta W = -\\,\\eta\\,e\\,x^{\\top}'),
+  eh: tx('\\Delta W = \\eta\\,M\\,(z - \\bar z)\\,x^{\\top}'),
+  eh_np: tx('\\Delta W = \\eta\\,M\\,(z - \\bar z)\\,x^{\\top}'),
+  eh_np_local: tx('\\Delta W = \\eta\\,M \\odot (z - \\bar z)\\,x^{\\top}'),
+  neh: tx('\\Delta W = \\eta\\,M \\odot (z - \\bar z)\\,x^{\\top}'),
+};
+---
+<div class="widget flw" data-widget="flw">
+  <div class="row"><span>Règle :</span><span class="seg" data-ref="rule"></span></div>
+  <div class="row flctl"><span class="seg" data-ref="ctl"></span></div>
+  <div class="calc">
+    {Object.entries(FM).map(([k, h]) => <div class="fm" data-fm={k} set:html={h} hidden={k !== 'lms'} />)}
+    <div class="ln" data-ref="ln1"></div>
+    <div class="ln" data-ref="ln2"></div>
+  </div>
+  <svg data-ref="fig" role="img" aria-label="Mise à jour des poids de la lecture pour la dernière phrase vue : facteur de colonne, facteur de ligne et matrice ΔW"></svg>
+  <p class="note" data-ref="note"></p>
+</div>
+
+<script>
+  import { dataset, NAMES, NC, N } from './chants';
+  import { stats, feat, makeRule, epochOrder, RULES } from './regles';
+  import { rng } from '../esn';
+
+  document.querySelectorAll<HTMLElement>('[data-widget="flw"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const { train } = dataset();
+    const st = stats(train.map((s) => s.x));
+    const Z = train.map((s) => feat(s.x, st)), T = train.map((s) => s.next), nTr = train.length, D = N + 1;
+    const songIdx: number[][] = [];
+    train.forEach((s, n) => (songIdx[s.song] ??= []).push(n));
+    const meanZ2 = Z.reduce((a, z) => a + z.reduce((s, v) => s + v * v, 0), 0) / nTr;
+    const fm = (v: number, d = 2) => (Math.abs(v) < 0.5 * 10 ** -d ? (0).toFixed(d) : v.toFixed(d)).replace('.', ',').replace('-', '−');
+    const sci = (v: number) => { if (!Number.isFinite(v) || v === 0) return '0'; const e = Math.floor(Math.log10(Math.abs(v))); return e >= -2 && e < 3 ? fm(v, 2) : `${(v / 10 ** e).toFixed(1).replace('.', ',').replace('-', '−')}·10<sup>${String(e).replace('-', '−')}</sup>`; };
+
+    type R = { id: string; label: string; m: ReturnType<typeof makeRule>; dW: Float64Array[] | null; row: number[]; col: number[] | null; info: ReturnType<ReturnType<typeof makeRule>['step']> | null };
+    let sel = 1, rules: R[] = [], order: number[] = [], pos = 0, cur = -1, ro = rng(77), ep = 0, timer = 0;
+
+    function reset() {
+      stop();
+      rules = RULES.map((r) => ({ id: r.id, label: r.label, m: makeRule(r.id, NC, D, { ...r.o, meanZ2 }), dW: null, row: [], col: null, info: null }));
+      ro = rng(77); order = epochOrder(songIdx, ro); pos = 0; cur = -1; ep = 0;
+      draw();
+    }
+    function stepOne() {
+      const n = order[pos];
+      rules.forEach((R) => {
+        const before = R.m.W.map((w) => Float64Array.from(w));
+        const I = R.m.step(Z[n], T[n]);
+        const dW = R.m.W.map((w, a) => w.map((v, i) => v - before[a][i]));
+        let row: number[];
+        if (R.id === 'rls') row = I.e.map((v) => -v);
+        else if (R.id === 'lms' || R.id === 'nlms') row = I.e.map((v) => -I.eta * v);
+        else row = I.zn!.map((v, a) => I.eta * (v - I.zref![a]) * I.M![a]);
+        // facteur de colonne : x ; pour RLS, g déduit de ΔW (ligne de plus grande erreur)
+        let col: number[] | null = Array.from(Z[n]);
+        if (R.id === 'rls') {
+          const a = row.reduce((b, v, k) => (Math.abs(v) > Math.abs(row[b]) ? k : b), 0);
+          col = Math.abs(row[a]) > 1e-12 ? Array.from(dW[a], (v) => v / row[a]) : null;
+        }
+        Object.assign(R, { dW, row, col, info: I });
+      });
+      cur = n; pos++;
+      if (pos >= nTr) { pos = 0; ep++; order = epochOrder(songIdx, ro); }
+    }
+    function stop() { if (timer) { clearInterval(timer); timer = 0; } $('ctl').querySelectorAll('button').forEach((b) => b.dataset.k === 'play' && (b.textContent = 'lecture')); }
+    const mk = (box: string, label: string, f: () => void) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', f); $(box).appendChild(b); return b; };
+    mk('ctl', 'phrase suivante', () => { stop(); stepOne(); draw(); });
+    const play = mk('ctl', 'lecture', () => { if (timer) { stop(); return; } play.textContent = 'pause'; timer = window.setInterval(() => { stepOne(); draw(); }, 450); });
+    play.dataset.k = 'play';
+    mk('ctl', 'tout effacer', reset);
+    RULES.forEach((r, i) => { const b = mk('rule', r.label, () => { sel = i; draw(); }); b.dataset.i = String(i); });
+
+    const NOTE: Record<string, string> = {
+      rls: 'Les colonnes ne sont pas proportionnelles à x : P les mélange, et la matrice change de forme au fil des phrases.',
+      lms: 'Chaque ligne est x mis à l’échelle de l’erreur de sa sortie : toutes les sorties sont corrigées, la cible comme les autres.',
+      nlms: 'Même forme que LMS ; seul le pas change, divisé par ‖x‖² + 1 de cette phrase.',
+      eh: 'Une seule récompense pour six sorties : si M = 0, rien ne bouge ; sinon chaque ligne suit son bruit, pas son erreur.',
+      eh_np: 'Même forme qu’eh ; z̄ est la sortie sans bruit, donc z − z̄ est exactement le bruit.',
+      eh_np_local: 'Une récompense par sortie : seules les lignes dont le bruit a rapproché la sortie de sa cible sont mises à jour.',
+      neh: 'Comme eh_np_local, avec le pas de NLMS.',
+    };
+
+    function fig() {
+      const R = rules[sel], W = 680, hx = 64, cw = 7.2, hy = 46, rh = 24, rx = 530, rwd = 130;
+      const hm = hx + D * cw, H = hy + NC * rh + 34;
+      let g = '';
+      const t = cur >= 0 ? T[cur] : -1;
+      const mx = (v: number[] | null) => (v ? Math.max(1e-300, ...v.map(Math.abs)) : 1);
+      const dmax = R.dW ? Math.max(1e-300, ...R.dW.map((w) => Math.max(...Array.from(w, Math.abs)))) : 1;
+      const col = R.col, cmax = mx(col), rmax = mx(R.row);
+      const fillOf = (v: number, m: number) => `fill="${v >= 0 ? 'var(--r-out)' : 'var(--text-2)'}" fill-opacity="${Math.min(1, Math.abs(v) / m).toFixed(3)}"`;
+      // facteur de colonne
+      const cl = R.id === 'rls' ? 'g' : 'x';
+      g += `<text x="${hx - 8}" y="${hy - 24}" text-anchor="end" class="fl">${cl}</text>`;
+      g += `<rect x="${hx}" y="${hy - 32}" width="${D * cw}" height="14" fill="none" stroke="var(--border)"/>`;
+      if (col) col.forEach((v, j) => (g += `<rect x="${(hx + j * cw).toFixed(1)}" y="${hy - 32}" width="${(cw + 0.3).toFixed(1)}" height="14" ${fillOf(v, cmax)}/>`));
+      // ΔW
+      g += `<rect x="${hx}" y="${hy}" width="${D * cw}" height="${NC * rh}" fill="none" stroke="var(--border)"/>`;
+      for (let a = 0; a < NC; a++) {
+        g += `<text x="${hx - 8}" y="${hy + a * rh + rh / 2 + 4}" text-anchor="end" class="${a === t ? 'fl b' : 'fl'}">${NAMES[a]}</text>`;
+        if (R.dW) R.dW[a].forEach((v, j) => { if (Math.abs(v) > 1e-12) g += `<rect x="${(hx + j * cw).toFixed(1)}" y="${hy + a * rh + 1}" width="${(cw + 0.3).toFixed(1)}" height="${rh - 2}" ${fillOf(v, dmax)}/>`; });
+      }
+      if (t >= 0) g += `<rect x="${hx - 2}" y="${hy + t * rh}" width="${D * cw + 4}" height="${rh}" fill="none" stroke="var(--text)" stroke-dasharray="3 2" rx="2"/>`;
+      g += `<text x="${hx}" y="${hy + NC * rh + 14}" class="fa">60 neurones</text><text x="${hm}" y="${hy + NC * rh + 14}" text-anchor="end" class="fa">biais</text>`;
+      g += `<text x="${hx + (D * cw) / 2}" y="${hy + NC * rh + 28}" text-anchor="middle" class="fa">ΔW : 6 sorties × 61 poids (violet : +, gris : −, opacité : amplitude)</text>`;
+      // facteur de ligne
+      const cx = rx + rwd / 2;
+      g += `<text x="${cx}" y="${hy - 24}" text-anchor="middle" class="fl">${R.id === 'rls' ? '−e' : R.id === 'lms' || R.id === 'nlms' ? '−η e' : 'η M (z − z̄)'}</text>`;
+      g += `<line x1="${cx}" x2="${cx}" y1="${hy}" y2="${hy + NC * rh}" stroke="var(--border)"/>`;
+      R.row.forEach((v, a) => {
+        const w = (Math.abs(v) / rmax) * (rwd / 2 - 4);
+        g += `<rect x="${(v >= 0 ? cx : cx - w).toFixed(1)}" y="${hy + a * rh + 5}" width="${w.toFixed(1)}" height="${rh - 10}" fill="${v >= 0 ? 'var(--r-out)' : 'var(--text-2)'}" fill-opacity="0.8"/>`;
+      });
+      $('fig').setAttribute('viewBox', `0 0 ${W} ${H}`); $('fig').innerHTML = g;
+    }
+    function calc() {
+      const R = rules[sel];
+      root.querySelectorAll<HTMLElement>('[data-fm]').forEach((d) => (d.hidden = d.dataset.fm !== R.id));
+      $('note').textContent = NOTE[R.id];
+      if (cur < 0 || !R.info) { $('ln1').textContent = 'W = 0 au départ. « phrase suivante » : un pas de chaque règle sur la même phrase.'; $('ln2').textContent = ''; return; }
+      const s = train[cur], len = songIdx[s.song].length, I = R.info;
+      const nz = R.row.filter((v) => Math.abs(v) > 1e-12).length;
+      $('ln1').innerHTML = `chant ${s.song + 1}, phrase ${s.pos + 1}/${len} (${NAMES[s.cur]}) → cible ${NAMES[T[cur]]} · ${ep ? `époque ${ep + 1}` : 'première époque'}`;
+      const extra = R.id === 'rls' ? `1 + x̃ᵀPx̃ = ${fm(I.den!)}` : `η = ${sci(I.eta)}` + (I.M ? ` · M = (${I.M.join(' ')})` : '');
+      $('ln2').innerHTML = `lignes mises à jour : ${nz} sur ${NC} · ${extra} · ‖ΔW‖ = ${sci(I.dW)}`;
+    }
+    function draw() {
+      $('rule').querySelectorAll<HTMLElement>('button').forEach((b) => b.classList.toggle('active', +b.dataset.i! === sel));
+      fig(); calc();
+    }
+    reset();
+  });
+</script>
+
+<style is:global>
+  .flw .row { margin: 0 0 6px; }
+  .flw .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .flw .seg button { font-size: 13px; padding: 4px 11px; }
+  .flw .flctl > .seg { display: flex; width: 100%; }
+  .flw .flctl > .seg button:last-child { margin-left: auto; }
+  .flw .calc { margin-top: 2px; padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--text-2) 4.5%, transparent); }
+  .flw .fm { display: flex; flex-wrap: wrap; align-items: baseline; font-size: 0.9rem; overflow-x: auto; overflow-y: hidden; margin: 2px 0 4px; }
+  .flw .fm[hidden] { display: none; }
+  .flw .fm .katex { font-size: 1em; }
+  .flw .ln { font: 11.5px/1.5 var(--mono); color: var(--text-2); min-height: 1.5em; overflow-wrap: anywhere; }
+  .flw svg { width: 100%; height: auto; display: block; margin: 8px 0 0; min-width: 520px; }
+  .flw svg text.fl { font: 12px var(--font); fill: var(--text-2); }
+  .flw svg text.fl.b { font-weight: 600; fill: var(--text); }
+  .flw svg text.fa { font: 11px var(--font); fill: var(--text-2); }
+  .flw .note { font-size: 12.5px; color: var(--text-2); margin: 6px 0 0; }
+  .flw { overflow-x: auto; }
+</style>
