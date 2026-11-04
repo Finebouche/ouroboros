@@ -15,6 +15,7 @@ import Ordre2Widget from '@/components/rc/02-regles-lecture/Ordre2Widget.astro';
 import OhkuboFigure from '@/components/rc/02-regles-lecture/OhkuboFigure.astro';
 import Variantes from '@/components/rc/02-regles-lecture/Variantes.astro';
 import FluxWidget from '@/components/rc/02-regles-lecture/FluxWidget.astro';
+import BillesWidget from '@/components/rc/02-regles-lecture/BillesWidget.astro';
 
 Toutes les lectures du chapitre lisent les mêmes états et visent les mêmes cibles. Seule change la façon d'apprendre les poids $W_{out}$.
 
@@ -50,6 +51,10 @@ Un réservoir lit un chant d'oiseau découpé en phrases. À la fin de chaque ph
 Ordre 1 : la sortie est linéaire en $x$. La lecture généralisée applique les mêmes règles aux monômes de $x$ (section 5). Une règle est **locale** quand la mise à jour du poids du neurone $j$ vers la sortie $i$ n'utilise que $x_j$, un signal propre à la sortie $i$ et, au plus, un scalaire commun à tous les poids.
 
 <Regles />
+
+Le même trajet pour toutes les règles : l'entrée traverse le réservoir, la lecture somme les neurones ; seule la dernière étape change.
+
+<BillesWidget />
 
 - **Ridge** : la solution du chapitre 1, en un système linéaire. Ici la constante est pénalisée comme les autres poids, pour comparer exactement avec RLS.
 - **RLS** (*recursive least squares*) : $P$ est l'inverse de $\sum \tilde x\,\tilde x^{\top} + \alpha I$ sur les phrases déjà vues, tenu à jour par la formule de Sherman-Morrison. Parti de $W_{out} = 0$, après **une passe**, $W_{out}$ est exactement la solution ridge de coefficient $\lambda = \alpha$, quel que soit l'ordre des phrases (sans facteur d'oubli, *forgetting factor*). Une deuxième passe compte chaque phrase deux fois : ridge de coefficient $\alpha/2$. FORCE est RLS appliqué pendant que la sortie est renvoyée dans le réservoir (chapitre 6, section 6) ; ici, pas de retour.
