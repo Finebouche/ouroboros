@@ -33,7 +33,7 @@ export const COURSES = {
   rc: {
     title: 'Reservoir computing',
     unit: 'Chapitre',
-    tagline: "Des réseaux récurrents tirés au hasard dont on n'entraîne que la sortie : principe, propriété d'écho, mémoire, bord du chaos, expressivité, neurones à impulsions et réservoirs physiques, puis les conceptors.",
+    tagline: "Des réseaux récurrents tirés au hasard dont on n'entraîne que la sortie : principe, règles d'apprentissage de la lecture, propriété d'écho, mémoire, bord du chaos, expressivité, neurones à impulsions et réservoirs physiques, puis les conceptors.",
     intro:
       "Un cours visuel qui part de zéro : un RNN aux poids aléatoires et figés, dont seule une lecture linéaire est entraînée. Puis la théorie (quand l'état oublie son passé, combien il en retient, pourquoi cela suffit) et les réservoirs hors du logiciel : neurones à impulsions, photonique, mécanique, matériel neuromorphique.",
   },

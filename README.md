@@ -8,7 +8,7 @@ Site personnel de cours : des fiches de révision visuelles. Il héberge plusieu
 | Preprocessing | `preprocessing` | Chapitre | prétraitement des données ; chapitre 1 : MFCC ; chapitre 2 : mémoire de Legendre (LMU) |
 | HPC | `hpc` | Chapitre | calcul haute performance : matériel et roofline ; JAX de Python à l'appareil (exécution, compilation, transformations, sharding, étude de cas `run_batched`) ; moindres carrés (Cholesky, QR, SVD, LSQR) |
 | RL | `rl` | Chapitre | apprentissage par renforcement : mécanismes mathématiques (Bellman), familles d'algorithmes (méthodes de valeur, gradient de politique, stratégies d'évolution, méthodes avec modèle), benchmarks (POPGym, LunarLander) |
-| Reservoir computing | `rc` | Chapitre | réseaux récurrents aléatoires dont seule la lecture est entraînée : principe (ESN), propriété d'écho, mémoire, bord du chaos, expressivité, liquid state machines, réservoirs physiques et neuromorphiques, conceptors |
+| Reservoir computing | `rc` | Chapitre | réseaux récurrents aléatoires dont seule la lecture est entraînée : principe (ESN), règles d'apprentissage de la lecture (ridge, RLS, LMS, NLMS, EH, ordre 2), propriété d'écho, mémoire, bord du chaos, expressivité, liquid state machines, réservoirs physiques et neuromorphiques, conceptors |
 | Robotique | `robotique` | Chapitre | la boîte à outils d'une diapositive en un seul chapitre général : CAO et description du robot, modélisation, cinématique inverse, planification, apprentissage en simulation, identification, dynamique du corps complet |
 
 ## Lancer

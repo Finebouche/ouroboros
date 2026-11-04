@@ -1,0 +1,200 @@
+---
+num: 2
+title: "Apprendre la lecture : mêmes états, règles différentes"
+summary: "Une lecture qui prédit la phrase suivante d'un chant, apprise de plusieurs façons sur les mêmes états : ridge, RLS, LMS, NLMS, règle hebbienne modulée par une récompense (EH) et ses variantes, pourquoi standardiser les neurones, puis une lecture d'ordre 2 apprise en dual par un noyau."
+status: premier-jet
+---
+import Reveal from '@/components/shared/Reveal.astro';
+import Quiz from '@/components/shared/Quiz.astro';
+import Refs from '@/components/shared/Refs.astro';
+import ChantFigure from '@/components/rc/02-regles-lecture/ChantFigure.astro';
+import Regles from '@/components/rc/02-regles-lecture/Regles.astro';
+import ReglesWidget from '@/components/rc/02-regles-lecture/ReglesWidget.astro';
+import EhWidget from '@/components/rc/02-regles-lecture/EhWidget.astro';
+import Ordre2Widget from '@/components/rc/02-regles-lecture/Ordre2Widget.astro';
+import Variantes from '@/components/rc/02-regles-lecture/Variantes.astro';
+
+Toutes les lectures du chapitre lisent les mêmes états et visent les mêmes cibles. Seule change la façon d'apprendre les poids $W_{out}$.
+
+<ChantFigure />
+
+## 1. Le problème commun
+
+Un réservoir lit un chant d'oiseau découpé en phrases. À la fin de chaque phrase, la lecture doit prédire la phrase suivante.
+
+- **Entrée de la lecture** : l'état $x$ du réservoir à la **dernière frame** de la phrase. Dans le projet, $N = 500$ ou $1\,000$ neurones.
+- **Cible** $d$ : le one-hot de la phrase suivante, ou de FIN après la dernière phrase du chant.
+- **Sortie** : $y = W_{out}\,x + b$, comme au chapitre 1 ($b$ : biais, appris avec les poids ; ridge et RLS le traitent comme un poids de plus, sur $\tilde x = [x\,;\,1]$). Prédiction : la phrase de plus grande sortie, $\arg\max_i y_i$. Erreur : $e = y - d$.
+
+**Jeu jouet du chapitre.** Cinq types de phrases et une grammaire :
+
+| Phrase | Suivante |
+|---|---|
+| A | A (0,3) ou B (0,7) |
+| B | C si la phrase d'avant est A, D si c'est E |
+| C | E (0,6) ou FIN (0,4) |
+| D | E (0,3) ou FIN (0,7) |
+| E | B |
+
+- Chaque phrase dure 5 à 8 frames (spectre grossier à 8 canaux) : A, note montante ; B, note tenue aiguë ; C, note descendante ; D, trille ; E, note grave.
+- Chaque chant commence par A et compte au plus 14 phrases (FIN forcé ensuite).
+- Après B, la lecture doit retrouver dans $x$ la trace de la phrase d'**avant** : la mémoire du réservoir sert (chapitre 4).
+- Réservoir : $N = 60$ neurones à taux positifs, $x(n) = \tfrac12\big(1 + \tanh(W x(n-1) + W_{in}\,u(n) + b)\big)$, rayon spectral $\rho = 1{,}6$ ($2x - 1$ suit un réservoir en tanh de matrice $W/2$, de rayon 0,8), poids d'entrée dans $\pm 0{,}1$. Il repart de son état de repos à chaque chant.
+- 60 chants d'apprentissage (382 phrases), 40 de test (230 phrases).
+- Repères sur le test : toujours prédire la classe la plus fréquente (B) donne 31 % ; le ridge, 68 % ; connaître la grammaire et les deux dernières phrases, 84 %.
+
+## 2. Les règles : ordre 1 et lecture généralisée
+
+Ordre 1 : la sortie est linéaire en $x$. La lecture généralisée applique les mêmes règles aux monômes de $x$ (section 5). Une règle est **locale** quand la mise à jour du poids du neurone $j$ vers la sortie $i$ n'utilise que $x_j$, un signal propre à la sortie $i$ et, au plus, un scalaire commun à tous les poids.
+
+<Regles />
+
+- **Ridge** : la solution du chapitre 1, en un système linéaire. Ici la constante est pénalisée comme les autres poids, pour comparer exactement avec RLS.
+- **RLS** (*recursive least squares*) : $P$ est l'inverse de $\sum \tilde x\,\tilde x^{\top} + \alpha I$ sur les phrases déjà vues, tenu à jour par la formule de Sherman-Morrison. Parti de $W_{out} = 0$, après **une passe**, $W_{out}$ est exactement la solution ridge de coefficient $\lambda = \alpha$, quel que soit l'ordre des phrases (sans facteur d'oubli, *forgetting factor*). Une deuxième passe compte chaque phrase deux fois : ridge de coefficient $\alpha/2$. FORCE est RLS appliqué pendant que la sortie est renvoyée dans le réservoir (chapitre 6, section 6) ; ici, pas de retour.
+- **LMS** (*least mean squares*) : descente de gradient stochastique sur $\tfrac12 \lVert e \rVert^2$, un exemple à la fois. Il minimise l'erreur quadratique **sans pénalité** : il ne vise aucun ridge. Parti de $W_{out} = 0$, il passe près des solutions ridge de $\lambda$ de plus en plus petit ; l'arrêt précoce (*early stopping*) joue le rôle de $\lambda$.
+- **NLMS** (*normalized LMS*) : le pas est divisé par $\lVert x \rVert^2 + 1$ de l'exemple (le 1 vient du biais). L'erreur sur cet exemple est alors multipliée par exactement $1 - c$ : elle diminue si $0 < c < 2$, sans changer de signe si $c \le 1$.
+- **Ordre des données** des règles en ligne : les chants un par un, chacun dans l'ordre du temps ; les chants dans un ordre aléatoire à chaque époque.
+
+Avec ces réglages (états standardisés, $c = 0{,}1$, $\lambda$ sur une grille fine de 0,001 à 1 000), LMS est le plus proche de la solution ridge de $\lambda \approx 400$ après 1 époque, 40 après 10, 1,6 après 300, 0,5 après 1 000, 0,25 après 2 000 : $\lambda$ décroît à peu près comme l'inverse du nombre d'époques (écart relatif au ridge le plus proche : 10 à 17 %).
+
+## 3. Les règles côte à côte
+
+<ReglesWidget />
+
+Avec ces réglages, précision de test sur 50 époques :
+
+- **RLS** : 68 % après sa passe, la valeur du ridge ; écart relatif à la solution ridge $6 \cdot 10^{-13}$.
+- **LMS et NLMS** : 66-67 % dès la première époque, puis entre 61 et 70 %.
+- **eh_np_local et neh** : 64-65 % après une époque, 55-56 % après deux, puis entre 60 et 71 %. **eh_np** : 47 % après une époque, 61 % après trois, puis entre 59 et 71 %.
+- **eh** (la variante de Hoerzer et al.) : 60 % après une époque, 53 % après deux, puis entre 30 et 43 % (section 4). Ses poids divergent : écart au ridge 770 après 10 époques, $2 \cdot 10^{21}$ après 50.
+
+### Pourquoi standardiser les neurones
+
+Bouton « états bruts » : les neurones à taux positifs ont une **moyenne forte et des variations faibles**. Moyenne d'un neurone : 0,50 en moyenne (de 0,03 à 0,97 selon le neurone) ; écart-type : 0,014 (de 0,002 à 0,035).
+
+- **LMS et NLMS** restent à 31-33 % (31 % : la classe la plus fréquente) pendant 11 époques, puis oscillent entre 31 et 63 %. eh reste à 31 % pendant 50 époques, eh_np entre 13 et 42 % (31 % le plus souvent) ; eh_np_local et neh y remontent par moments (60 et 57 % au mieux).
+- **Le mécanisme** : la matrice $\langle x\,x^{\top} \rangle$ a une valeur propre de 20, dans la direction de l'activité moyenne ; la suivante vaut 0,005, 4 000 fois moins. Le pas $\eta = c / \langle \lVert x \rVert^2 \rangle \approx 0{,}1/20$ est réglé sur la première. Dans une direction de valeur propre $\nu$, une époque de $n$ phrases réduit la distance restante d'un facteur $\approx e^{-n \eta \nu}$ : ici $e^{-382 \times 0{,}005 \times 0{,}005} \approx 0{,}99$, 1 % par époque. La règle n'apprend que la direction moyenne : après 5 époques, $W_{out}$ figé donne presque la même sortie pour toutes les phrases, proche de la fréquence de chaque classe (0,28 pour B, écart-type d'une phrase à l'autre au plus 0,013), et l'argmax répond toujours B. Pendant l'apprentissage, la sortie dérive d'un pas à l'autre ($y_B$ de 0,23 à 0,38 pendant l'époque 6).
+- **Standardiser** chaque neurone (moyenne et écart-type sur les chants d'apprentissage) remplace ces valeurs propres par 20, 16, 9, 6… : la direction moyenne n'écrase plus les autres.
+- **NLMS ne corrige pas** : il divise par $\lVert x \rVert^2 + 1$, un seul nombre, dominé par la moyenne.
+- **RLS et ridge** trouvent quand même la solution exacte : $P$ corrige la géométrie. Mais $\lambda$ dépend de l'échelle : sur les états bruts, $\lambda = 1$ pèse beaucoup plus (62 % contre 68 %). Dans le projet, centrage ou standardisation sont choisis pour RLS par validation croisée.
+- Sur les données du projet (réservoir de 500 neurones, nommé `random_ee` dans son code) : moyenne 0,16 et écart-type 0,01 par neurone, et les règles en ligne restent au niveau du hasard sans standardisation.
+
+## 4. EH : apprendre avec une récompense
+
+La règle EH (*exploratory Hebbian*), ici dans la version de Hoerzer et al. (2014), d'après Legenstein et al. (2010), n'utilise pas l'erreur $e$, seulement une **récompense** (*reward*) scalaire.
+
+<EhWidget />
+
+Trois temps :
+
+1. **Explorer** : bruiter la sortie, $z = W_{out}\,x + b + \xi$, $\xi_i \sim \mathcal U(-\sigma, \sigma)$ tiré pour chaque sortie.
+2. **Juger** : récompense $r = -\lVert z - d \rVert^2$, comparée à une référence $\bar r$ (moyenne glissante des récompenses chez Hoerzer et al., récompense de la sortie sans bruit dans eh_np). $M = 1$ si $r > \bar r$ (mieux que la référence), 0 sinon.
+3. **Renforcer** : $W_{out} \leftarrow W_{out} + \eta\, M\,(z - \bar z)\,x^{\top}$ et $b \leftarrow b + \eta\, M\,(z - \bar z)$, où $\bar z$ est une référence de sortie (moyenne glissante, ou sortie sans bruit). Si $M = 1$, les poids suivent $z - \bar z$, qui estime le bruit sans que la synapse le connaisse.
+
+<Variantes />
+
+- **Chez Hoerzer et al.** : bruit uniforme sur $[-0{,}5 ; 0{,}5]$ ajouté à chaque sortie, mise à jour toutes les 1 ms, $\bar z$ et $\bar r$ filtrés avec une constante de 5 ms, $M$ binaire, $\eta$ décroissant. La sortie sans bruit change peu à l'échelle de ces 5 ms.
+- **Ici, une mise à jour par phrase** : $z - \bar z$ mêle le bruit et le changement de sortie d'une phrase à l'autre. Avec ces réglages, sur trois passes, seules 38 % des sorties mises à jour se rapprochent de leur cible, et la précision de test baisse à chaque passe (section 3).
+- **eh_np** est une **perturbation de nœud** (*node perturbation*, d'où le « np ») : perturber la sortie d'un neurone et corréler la perturbation à la récompense. Fiete et Seung (2006) l'étendent aux réseaux à impulsions ; l'idée est plus ancienne (Widrow et Lehr, 1990). Elle demande de connaître le bruit $\xi$. eh_np l'obtient en calculant la sortie deux fois, avec et sans bruit, et prend pour $\bar r$ la récompense sans bruit (Fiete et Seung admettent toute référence non corrélée au bruit de l'essai). 61 % des sorties mises à jour se rapprochent de leur cible : un $M$ global peut récompenser une sortie parce que les autres se sont améliorées.
+- **Une récompense par sortie** (eh_np_local, neh) : 100 %. Si $M_i = 1$, le bruit $\xi_i$ a rapproché $z_i$ de $d_i$ ; déplacer la sortie d'une fraction de $\xi_i$ ($\eta\,(\lVert x \rVert^2 + 1) \le 1$) la rapproche aussi.
+- **En moyenne sur le bruit** (une récompense par sortie) :
+
+  $$
+  \mathbb E[\xi_i M_i] = -\operatorname{signe}(e_i)\,\frac{\min(2|e_i|, \sigma)^2}{4\sigma}
+  $$
+
+  La règle suit le **signe** de l'erreur, plafonne à $\sigma/4$ dès que $|e_i| \ge \sigma/2$, et ralentit près de la cible. (Calcul fait pour ce chapitre, vérifié par simulation.)
+- Réglages du projet pour neh : $c \in \{0{,}01 ; 0{,}03 ; 0{,}1\}$, $\sigma \in \{0{,}5 ; 1{,}5\}$.
+
+## 5. Ordre 2 : une lecture quadratique, apprise en dual
+
+[Ohkubo et Inubushi (2024)](https://www.nature.com/articles/s41598-024-81880-3) : si l'état du réservoir est une fonction inversible de l'état du système qu'il lit (synchronisation généralisée, *generalized synchronization*), la sortie idéale est une fonction $h(x)$ de l'état du réservoir. La lecture linéaire en est le développement de Taylor à l'ordre 1, en $x = 0$ ; on ajoute l'ordre 2. Le widget apprend cette lecture par NLMS (nlms:2) sous deux formes : primale (un poids par monôme) et duale (un coefficient par phrase).
+
+<Ordre2Widget />
+
+Dans cette section, $x$ est l'état seul ; $i$ et $j$ numérotent les phrases d'apprentissage ($x_i$ : état lu à la fin de la phrase $i$ ; $e_i$ : son vecteur d'erreur, une composante par sortie).
+
+$$
+y = W_{out}\,\varphi(x) + b_{out}, \qquad \varphi(x) = \big(x_m \,;\; x_m x_{m'},\ m \le m'\big)
+$$
+
+- La lecture est **linéaire en $\varphi$** et quadratique en $x$ : chaque sortie est un polynôme de degré 2 de l'état. L'article a un biais de sortie (il approche le terme constant du développement de Taylor), que ses essais numériques retirent ; il ne centre pas $\varphi$. Le projet garde $b_{out}$, centre $\varphi$ sur l'apprentissage et apprend en forme duale (*dual form*) par un noyau : ce n'est pas dans l'article.
+- **Taille** : $N + N(N+1)/2$ monômes : 1 890 pour $N = 60$, 125 750 pour $N = 500$, 501 500 pour $N = 1\,000$.
+- **Jamais $\varphi$ explicite** : seul compte le produit scalaire, ou **noyau** (*kernel*). Avec $s_m = x_m x'_m$, $p_1 = \sum_m s_m = x \cdot x'$ et $p_2 = \sum_m s_m^2$ (identités de Newton) :
+
+$$
+k(x, x') = \varphi(x) \cdot \varphi(x') = p_1 + \sum_{m \le m'} s_m s_{m'} = p_1 + \frac{p_1^2 + p_2}{2}
+$$
+
+- Ce n'est pas le noyau polynomial usuel $(1 + x \cdot x')^2$ : chaque monôme unique y a le poids 1. $k = h_1(s) + h_2(s)$, somme des polynômes symétriques homogènes complets de $s = x \odot x'$ ; les identités de Newton les calculent comme pour le noyau ANOVA (Shawe-Taylor et Cristianini, 2004, chapitre 9).
+- Coût : $O(N)$ au lieu de $O(N^2)$. Écart relatif mesuré avec $\varphi$ explicite : $5 \cdot 10^{-15}$.
+- **Centrage** : $K_{ij} = k(x_i, x_j)$ (matrice de Gram), $K_c = H K H$ avec $H = I - \tfrac1n \mathbf 1 \mathbf 1^{\top}$ sur les $n$ phrases d'apprentissage. C'est le produit scalaire des $\varphi$ centrés : $(K_c)_{ii} = \lVert \varphi_c(x_i) \rVert^2$.
+- **ridge:2** : $W_{out} = \sum_j a_j\, \varphi_c(x_j)^{\top}$ avec $A = Y_c\,(K_c + \lambda I)^{-1}$ ($a_j$ : colonne $j$ de $A$, un coefficient par sortie ; $Y_c$ : cibles centrées ; $b_{out}$ : leur moyenne). Avec $K_c = U \Lambda U^{\top}$ gardé, changer $\lambda$ ne demande que $(\Lambda + \lambda I)^{-1}$.
+- **nlms:2** : la mise à jour $W_{out} \leftarrow W_{out} - \eta_i\, e_i\, \varphi_c(x_i)^{\top}$, $b_{out} \leftarrow b_{out} - \eta_i\, e_i$ ne touche que le coefficient de la phrase vue : $a_i \leftarrow a_i - \eta_i e_i$, avec $\eta_i = c/\big((K_c)_{ii} + 1\big)$ (le $+1$ vient de la constante du biais). Parti de zéro, $W_{out}$ reste dans le sous-espace engendré par les $\varphi_c(x_j)$ : les deux formes donnent les mêmes sorties.
+- **neh:2** : toute règle dont la mise à jour est un vecteur fois $\varphi_c(x_i)^{\top}$ passe en dual, EH compris : $a_i \leftarrow a_i + \eta_i\, M \odot (z - \bar z)$, avec $M = (M_1, \dots, M_6)$, une récompense par sortie.
+
+Avec ces réglages :
+
+- **Primal et dual** suivent la même erreur ; écart relatif entre leurs sorties de l'ordre de $10^{-12}$ au plus ($10^{-11}$ quand l'erreur explose).
+- **Pourquoi normaliser le taux** : sur l'exemple vu, l'erreur est multipliée par $1 - \eta\,\big((K_c)_{ii} + 1\big)$ et grandit dès que $\eta\,\big((K_c)_{ii} + 1\big) > 2$. Le plus grand $\lVert \varphi_c \rVert^2$ vaut 4,0 fois la moyenne (contre 2,0 pour $\lVert x \rVert^2$ : $\lVert \varphi \rVert^2$ croît comme $\lVert x \rVert^4$, le rapport est à peu près élevé au carré). Avec un taux unique, $c = 0{,}1$ et $0{,}5$ convergent (à 0,5, un seul exemple dépasse 2, de peu), $c = 1$ oscille (erreur entre 0,6 et 3,9), $c = 1{,}5$ diverge (erreur $4 \cdot 10^{5}$ après une époque, $2 \cdot 10^{8}$ après deux). Le taux normalisé ne diverge pas pour $c < 2$, le facteur vaut $1 - c$ ; à $c = 1{,}5$, l'erreur reste bruitée (0,9 à 2,6).
+- Sur les données du projet ($N = 500$), le plus grand $\lVert \varphi \rVert^2$ vaut 560 fois la moyenne : avec un taux unique, $c = 0{,}1$ donne déjà $\eta\,\big((K_c)_{ii} + 1\big) \approx 56$ sur cet exemple, soit un facteur $-55$ sur son erreur.
+- **Précision de test** : l'ordre 2 ne bat pas l'ordre 1 sur ce jeu. ridge:2 va de 52 % ($\lambda = 0{,}1$) à 66 % ($\lambda = 10^4$), contre 68 % pour le ridge d'ordre 1 ; nlms:2 (taux normalisé, $c = 0{,}1$) donne 67 % après une époque, puis 57 à 64 % jusqu'à 20 époques ; neh:2 ($c = 0{,}1$, $\sigma = 0{,}5$, hors widget) 67 %, puis 60 à 66 %.
+- **Coût** : le dual garde $K_c$, $n \times n$ ; le primal, $W_{out}$ de taille $6 \times 1\,890$ ici, $6 \times 125\,750$ pour $N = 500$.
+
+<div class="retain">
+
+**À retenir**
+
+- Mêmes états, mêmes cibles : les règles ne diffèrent que par l'apprentissage. RLS en une passe, parti de zéro, donne exactement le ridge de $\lambda = \alpha$ ; LMS et NLMS demandent l'erreur de chaque sortie ; EH, seulement une récompense.
+- Standardiser chaque neurone avant une règle en ligne : sinon la direction de l'activité moyenne écrase les autres et la lecture prédit la classe la plus fréquente.
+- LMS vise les moindres carrés sans pénalité ; l'arrêt précoce tient lieu de $\lambda$.
+- EH : bruit sur la sortie, récompense binaire, $W_{out} \leftarrow W_{out} + \eta M (z - \bar z) x^{\top}$. Avec une mise à jour par phrase, il faut $\bar z$ = sortie sans bruit (perturbation de nœud), et une récompense par sortie aide.
+- Ordre 2 : $N + N(N+1)/2$ monômes, jamais formés ; noyau $k = p_1 + (p_1^2 + p_2)/2$, forme duale $a_i \leftarrow a_i - \eta_i e_i$, taux $c/\big((K_c)_{ii} + 1\big)$ indispensable.
+
+</div>
+
+<Refs items={[["Generating Coherent Patterns of Activity from Chaotic Neural Networks (Neuron 63, 544–557)", "Sussillo & Abbott", 2009, "10.1016/j.neuron.2009.07.018"], ["A Reward-Modulated Hebbian Learning Rule Can Explain Experimentally Observed Network Reorganization in a Brain Control Task (J. Neurosci. 30, 8400–8410)", "Legenstein, Chase, Schwartz & Maass", 2010, "10.1523/JNEUROSCI.4284-09.2010"], ["Emergence of Complex Computational Structures From Chaotic Neural Networks Through Reward-Modulated Hebbian Learning (Cerebral Cortex 24, 677–690)", "Hoerzer, Legenstein & Maass", 2014, "10.1093/cercor/bhs348"], ["Gradient Learning in Spiking Neural Networks by Dynamic Perturbation of Conductances (Phys. Rev. Lett. 97, 048104)", "Fiete & Seung", 2006, "10.1103/PhysRevLett.97.048104"], ["30 years of adaptive neural networks: perceptron, Madaline, and backpropagation (Proc. IEEE 78, 1415–1442)", "Widrow & Lehr", 1990, "10.1109/5.58323"], ["Adaptive switching circuits (rapport technique, Stanford Electronics Laboratories)", "Widrow & Hoff", 1960, "10.21236/AD0241531"], ["A learning method for system identification (IEEE Trans. Automatic Control 12, 282–287)", "Nagumo & Noda", 1967, "10.1109/TAC.1967.1098599"], ["Reservoir computing with generalized readout based on generalized synchronization (Scientific Reports 14, 30918)", "Ohkubo & Inubushi", 2024, "10.1038/s41598-024-81880-3"], ["Ridge Regression: Biased Estimation for Nonorthogonal Problems (Technometrics 12, 55–67)", "Hoerl & Kennard", 1970, "10.1080/00401706.1970.10488634"], ["Some Theorems in Least Squares (Biometrika 37, 149–157)", "Plackett", 1950, "10.1093/biomet/37.1-2.149"], ["Stochastic Approximation and Nonlinear Regression (MIT Press, Research Monograph 42)", "Albert & Gardner", 1967, "https://search.worldcat.org/title/973152"], ["Ridge Regression Learning Algorithm in Dual Variables (ICML 1998, 515–521)", "Saunders, Gammerman & Vovk", 1998, "https://eprints.soton.ac.uk/258942/"], ["The Kernel Least-Mean-Square Algorithm (IEEE Trans. Signal Processing 56, 543–554)", "Liu, Pokharel & Príncipe", 2008, "10.1109/TSP.2007.907881"], ["Online Prediction of Time Series Data With Kernels (IEEE Trans. Signal Processing 57, 1058–1067)", "Richard, Bermudez & Honeine", 2009, "10.1109/TSP.2008.2009895"], ["Kernel Adaptive Filtering", "Liu, Príncipe & Haykin", 2010, "10.1002/9780470608593"], ["Kernel Methods for Pattern Analysis", "Shawe-Taylor & Cristianini", 2004, "10.1017/CBO9780511809682"]]} />
+
+<Quiz>
+
+**Q1.** Dans le widget de la section 3, RLS s'arrête après une époque. Que vaut alors $W_{out}$, et que donnerait une deuxième passe ?
+
+<Reveal>
+
+La solution ridge de $\lambda = \alpha = 1$, à $10^{-12}$ près : $P$ vaut $(\sum \tilde x\,\tilde x^{\top} + \alpha I)^{-1}$ sur toutes les phrases, quel que soit leur ordre. Une deuxième passe compte chaque phrase deux fois : ridge de $\lambda = \alpha/2$.
+
+</Reveal>
+
+**Q2.** Avec les états bruts, LMS prédit B pour presque toutes les phrases pendant une dizaine d'époques. Pourquoi ? Et pourquoi NLMS n'y change rien ?
+
+<Reveal>
+
+Les états ont une forte moyenne commune : $\langle x\,x^{\top}\rangle$ a une valeur propre de 20 dans sa direction, et 0,005 au plus dans les autres. Le pas, réglé sur la première, avance d'environ 1 % par époque dans les autres. La lecture apprend seulement la fréquence de chaque classe : B, la plus fréquente, gagne partout. NLMS divise par $\lVert x \rVert^2$, un seul nombre : le rapport entre directions ne change pas.
+
+</Reveal>
+
+**Q3.** Dans le widget EH, toutes les flèches d'eh_np_local vont vers la cible ; avec eh_np, certaines sont rouges. Pourquoi ?
+
+<Reveal>
+
+eh_np a une seule récompense pour les six sorties : $M = 1$ si l'erreur totale baisse, même si le bruit d'une sortie l'a éloignée de sa cible ; cette sortie suit alors son bruit, dans le mauvais sens. Avec une récompense par sortie, $M_i = 1$ seulement si $\xi_i$ a rapproché $z_i$ de $d_i$.
+
+</Reveal>
+
+**Q4.** Pourquoi la règle eh de Hoerzer et al. marche-t-elle mal avec une mise à jour par phrase ?
+
+<Reveal>
+
+$\bar z$ est une moyenne glissante des sorties passées. D'une phrase à l'autre, la sortie change beaucoup : $z - \bar z$ n'est plus le bruit, mais surtout ce changement. La règle renforce alors des directions sans rapport avec la récompense (38 % de sorties rapprochées de leur cible, avec ces réglages).
+
+</Reveal>
+
+**Q5.** Dans la forme duale de nlms:2, que modifie un pas sur la phrase $i$ ? Et pourquoi un taux unique diverge-t-il sur les données du projet ?
+
+<Reveal>
+
+Seul le vecteur $a_i$ (et le biais) : $a_i \leftarrow a_i - \eta_i e_i$. Sur l'exemple vu, l'erreur est multipliée par $1 - \eta\,\big((K_c)_{ii} + 1\big)$. Avec un taux unique $c / \big(\langle (K_c)_{ii} \rangle + 1\big)$ et un $(K_c)_{ii}$ 560 fois plus grand que la moyenne, ce facteur atteint $-55$ pour $c = 0{,}1$ : l'erreur de cet exemple explose. Le taux $c/\big((K_c)_{ii}+1\big)$ le ramène à $1 - c$.
+
+</Reveal>
+
+</Quiz>

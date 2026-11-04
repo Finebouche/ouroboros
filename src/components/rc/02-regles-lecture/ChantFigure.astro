@@ -1,0 +1,73 @@
+---
+// Cours Reservoir computing, chapitre 2 : ce que voit la lecture. Premier chant d'apprentissage (A B C E B D), frame par frame :
+// l'entrée (8 canaux), cinq neurones du réservoir à l'échelle brute (taux entre 0 et 1) puis standardisés,
+// la dernière frame de chaque phrase (seul état lu) et la cible (phrase suivante). Calculé à la construction de la page.
+import { songs, runSong, dataset, NAMES, END, CH, N_TRAIN } from './chants';
+import { stats } from './regles';
+
+const { res, rest, train } = dataset();
+const seq = songs(N_TRAIN, 111)[0];
+// mêmes tirages que la collecte des états d'apprentissage (le premier chant consomme les premiers tirages)
+const { U, X, ends } = runSong(seq, 113, res, rest);
+const st = stats(train.map((s) => s.x));
+// cinq neurones aux moyennes étalées
+const order = Array.from(st.m, (v, i) => [v, i]).sort((a, b) => a[0] - b[0]).map((p) => p[1]);
+const pick = [0.08, 0.3, 0.5, 0.7, 0.92].map((q) => order[Math.floor(q * (order.length - 1))]);
+const T = X.length, W = 680, px = 118, pw = W - px - 10, fw = pw / T;
+const Xf = (t: number) => px + (t + 0.5) * fw;
+const rows = { lab: 14, inp: { y: 24, h: 64 }, raw: { y: 100, h: 70 }, std: { y: 184, h: 90 }, tgt: 294 };
+let g = '';
+// bandes des phrases
+let start = 0;
+seq.forEach((k, j) => {
+  const e = ends[j], x0 = px + start * fw, x1 = px + (e + 1) * fw;
+  if (j % 2 === 0) g += `<rect x="${x0.toFixed(1)}" y="${rows.lab - 10}" width="${(x1 - x0).toFixed(1)}" height="${rows.std.y + rows.std.h - rows.lab + 10}" fill="var(--text-2)" fill-opacity="0.05"/>`;
+  g += `<text x="${((x0 + x1) / 2).toFixed(1)}" y="${rows.lab}" text-anchor="middle" class="ph">${NAMES[k]}</text>`;
+  start = e + 1;
+});
+// entrée : 8 canaux, intensité en gris
+const ch = rows.inp.h / CH;
+U.forEach((u, t) => { for (let c = 0; c < CH; c++) { const v = Math.min(1, u[c]); if (v > 0.03) g += `<rect x="${(px + t * fw + 0.5).toFixed(1)}" y="${(rows.inp.y + (CH - 1 - c) * ch + 0.5).toFixed(1)}" width="${(fw - 1).toFixed(1)}" height="${(ch - 1).toFixed(1)}" fill="var(--text-2)" fill-opacity="${(0.85 * v).toFixed(2)}"/>`; } });
+g += `<rect x="${px}" y="${rows.inp.y}" width="${pw}" height="${rows.inp.h}" fill="none" stroke="var(--border)"/>`;
+// neurones bruts sur l'échelle commune [0, 1]
+const Yraw = (v: number) => rows.raw.y + rows.raw.h * (1 - v);
+[0, 1].forEach((v) => (g += `<line x1="${px}" x2="${px + pw}" y1="${Yraw(v)}" y2="${Yraw(v)}" stroke="var(--border)"/><text x="${px - 6}" y="${Yraw(v) + 3.5}" text-anchor="end" class="ax">${v}</text>`));
+const pl = (f: (t: number) => number) => X.map((_, t) => `${Xf(t).toFixed(1)},${f(t).toFixed(1)}`).join(' ');
+pick.forEach((i) => (g += `<polyline points="${pl((t) => Yraw(X[t][i]))}" fill="none" stroke="var(--r-res)" stroke-width="1.3"/>`));
+// les mêmes, standardisés : (x − moyenne) / écart-type, chacun dans sa bande, coupé à ±3
+const bh = rows.std.h / pick.length;
+pick.forEach((i, r) => {
+  const yc = rows.std.y + (r + 0.5) * bh;
+  g += `<line x1="${px}" x2="${px + pw}" y1="${yc}" y2="${yc}" stroke="var(--border)" stroke-dasharray="2 3"/>`;
+  g += `<polyline points="${pl((t) => yc - (Math.max(-3, Math.min(3, (X[t][i] - st.m[i]) / st.s[i])) / 3) * (bh / 2 - 1))}" fill="none" stroke="var(--r-res)" stroke-width="1.3"/>`;
+});
+// dernière frame de chaque phrase et cible
+seq.forEach((k, j) => {
+  const e = ends[j], x = Xf(e), nxt = j + 1 < seq.length ? seq[j + 1] : END;
+  g += `<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${rows.inp.y}" y2="${rows.tgt - 14}" stroke="var(--text)" stroke-width="1" stroke-dasharray="3 2" opacity="0.6"/>`;
+  pick.forEach((i, r) => (g += `<circle cx="${x.toFixed(1)}" cy="${(rows.std.y + (r + 0.5) * bh - (Math.max(-3, Math.min(3, (X[e][i] - st.m[i]) / st.s[i])) / 3) * (bh / 2 - 1)).toFixed(1)}" r="2.6" fill="var(--r-res)"/>`));
+  const lab = NAMES[nxt], w = lab.length > 1 ? 34 : 22;
+  g += `<rect x="${(x - w / 2).toFixed(1)}" y="${rows.tgt - 13}" width="${w}" height="18" rx="4" fill="none" stroke="var(--text)" stroke-dasharray="3 2"/><text x="${x.toFixed(1)}" y="${rows.tgt}" text-anchor="middle" class="tg">${lab}</text>`;
+});
+const lbl = (y: number, a: string, b?: string) => `<text x="${px - 10}" y="${y}" text-anchor="end" class="rl">${a}</text>` + (b ? `<text x="${px - 10}" y="${y + 13}" text-anchor="end" class="rs">${b}</text>` : '');
+g += lbl(rows.inp.y + rows.inp.h / 2, 'entrée', '8 canaux');
+g += lbl(rows.raw.y + rows.raw.h / 2 - 12, '5 neurones', 'bruts (0 à 1)');
+g += lbl(rows.std.y + rows.std.h / 2, 'les mêmes,', 'standardisés');
+g += lbl(rows.tgt - 2, 'cible');
+const H = rows.tgt + 10;
+---
+<figure class="chf">
+  <div class="chs"><svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Un chant : entrée, états de cinq neurones bruts et standardisés, et cible de la lecture à la fin de chaque phrase" set:html={g} /></div>
+  <figcaption>Le premier chant d'apprentissage, {seq.map((k) => NAMES[k]).join(' ')}. Pointillés verticaux : dernière frame de chaque phrase, le seul état lu ; en dessous, la cible. À l'échelle brute, les traces paraissent plates.</figcaption>
+</figure>
+
+<style is:global>
+  .chf { margin: 1.5rem 0; }
+  .chf .chs { overflow-x: auto; }
+  .chf svg { width: 100%; min-width: 520px; height: auto; display: block; }
+  .chf svg text.ph { font: 600 12px var(--font); fill: var(--text); }
+  .chf svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .chf svg text.rl { font: 11.5px var(--font); fill: var(--text); }
+  .chf svg text.rs { font: 11px var(--font); fill: var(--text-2); }
+  .chf svg text.tg { font: 600 11.5px var(--font); fill: var(--text); }
+</style>

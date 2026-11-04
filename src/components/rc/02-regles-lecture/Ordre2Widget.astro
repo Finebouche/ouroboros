@@ -1,0 +1,145 @@
+---
+// Cours Reservoir computing, chapitre 2 : lecture d'ordre 2 apprise par NLMS, menée en parallèle sous deux formes sur les mêmes phrases :
+// primal (W_out sur les 1 890 monômes centrés φ(x), N = 60) et dual (un vecteur a_i par phrase d'apprentissage, noyau centré).
+// Taux normalisé η_i = c / ((K_c)_ii + 1), ou taux unique c / (⟨(K_c)_ii⟩ + 1). Sur l'exemple vu, l'erreur est multipliée par 1 − η ((K_c)_ii + 1) :
+// elle grandit dès que η ((K_c)_ii + 1) > 2. Tout est calculé dans le navigateur (≈ 15 ms par époque).
+import katex from 'katex';
+const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
+// chaque formule est une suite de morceaux qui passent à la ligne sur un écran étroit
+const pc = (a: string[]) => a.map((s) => `<span class="fp">${tx(s)}</span>`).join('');
+const F1 = pc(['\\text{primal : } y = W_{out}\\,\\varphi_c(x) + b_{out}', '\\text{dual : } W_{out} = \\sum_j a_j\\, \\varphi_c(x_j)^{\\top}', '\\Rightarrow\\; y(x_i) = \\sum_j a_j\\, (K_c)_{ji} + b_{out}']);
+const F2 = pc(['a_i \\leftarrow a_i - \\eta_i\\, e_i, \\quad b_{out} \\leftarrow b_{out} - \\eta_i\\, e_i,', '\\eta_i = \\frac{c}{(K_c)_{ii} + 1} \\;\\text{ ou }\\; \\frac{c}{\\langle (K_c)_{ii} \\rangle + 1}']);
+---
+<div class="widget o2w" data-widget="o2w">
+  <div class="o2top">
+    <div class="row"><span>Taux :</span><span class="seg" data-ref="rate"></span></div>
+    <div class="row"><span>c :</span><span class="seg" data-ref="c"></span></div>
+  </div>
+  <div class="row o2ctl"><span class="seg" data-ref="ctl"></span></div>
+  <div class="calc">
+    <div class="fm" set:html={F1} />
+    <div class="fm" set:html={F2} />
+    <div class="ln" data-ref="ln1"></div>
+    <div class="ln" data-ref="ln2"></div>
+  </div>
+  <div class="fcard">
+    <div class="fhead"><b>Un taux unique fait-il diverger nlms:2 ?</b><span>erreur quadratique moyenne sur les phrases d'apprentissage, primal et dual</span></div>
+    <svg data-ref="plot" role="img" aria-label="Erreur d'apprentissage au fil des époques, calculée sous forme primale et sous forme duale"></svg>
+  </div>
+  <div class="kpis">
+    <div><span>Plus grand η((K<sub>c</sub>)<sub>ii</sub> + 1)</span><b data-ref="k3"></b></div>
+    <div><span>Écart primal / dual</span><b data-ref="k4">–</b><i>plus grand écart relatif entre leurs sorties</i></div>
+  </div>
+  <p class="note">États standardisés, monômes centrés sur l'apprentissage ; W<sub>out</sub> = 0 et a = 0 au départ. Même ordre des phrases que le widget de la section 3. Changer de taux ou de c recommence l'apprentissage.</p>
+</div>
+
+<script>
+  import { dataset, NAMES, NC } from './chants';
+  import { stats, epochOrder } from './regles';
+  import { makeO2 } from './ordre2';
+  import { rng } from '../esn';
+
+  document.querySelectorAll<HTMLElement>('[data-widget="o2w"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const EMAX = 20, CS = [0.1, 0.5, 1, 1.5];
+    const { train } = dataset();
+    const st = stats(train.map((s) => s.x));
+    const X = train.map((s) => Float64Array.from(s.x, (v, i) => (v - st.m[i]) / st.s[i])), T = train.map((s) => s.next), n = X.length;
+    const songIdx: number[][] = [];
+    train.forEach((s, k) => (songIdx[s.song] ??= []).push(k));
+    const O = makeO2(X, T, NC);
+    const fm = (v: number, d = 2) => v.toFixed(d).replace('.', ',').replace('-', '−');
+    const sci = (v: number) => { if (!Number.isFinite(v)) return '∞'; if (v === 0) return '0'; const e = Math.floor(Math.log10(Math.abs(v))); if (e >= -2 && e < 4) return fm(v, e >= 0 ? 2 : 3); return `${(v / 10 ** e).toFixed(1).replace('.', ',')}·10<sup>${String(e).replace('-', '−')}</sup>`; };
+    const big = (v: number) => Math.round(v).toLocaleString('fr-FR');
+    let single = false, c = 0.1, ro: () => number, order: number[], ep = 0, pos = 0, hist: { t: number; mp: number; md: number }[] = [], gap = 0, last: ReturnType<typeof O.step> | null = null, cur = -1;
+    function reset() {
+      O.reset(); ro = rng(77); order = epochOrder(songIdx, ro); ep = 0; pos = 0; gap = 0; last = null; cur = -1;
+      hist = [{ t: 0, mp: 1, md: 1 }];
+      draw();
+    }
+    const diverged = () => { const h = hist[hist.length - 1]; return !(h.mp < 1e6); };
+    function stepOne() {
+      if (ep >= EMAX || diverged()) return false;
+      const i = order[pos];
+      last = O.step(i, c, single); cur = i;
+      gap = Math.max(gap, ...last.yp.map((v, k) => Math.abs(v - last!.yd[k]) / Math.max(1, Math.abs(v))));
+      pos++;
+      if (pos >= n) { ep++; pos = 0; if (ep < EMAX) order = epochOrder(songIdx, ro); }
+      if (!last.yp.every(Number.isFinite)) { hist.push({ t: ep + pos / n, mp: Infinity, md: Infinity }); return false; }
+      return true;
+    }
+    const record = () => { const m = O.mse(); gap = Math.max(gap, m.gap); hist.push({ t: ep + pos / n, mp: m.mp, md: m.md }); };
+    const mk = (box: string, label: string, f: () => void) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', f); $(box).appendChild(b); return b; };
+    // boutons d'avance, désactivés après EMAX époques ou une divergence
+    const adv = [
+      mk('ctl', 'phrase suivante', () => { if (stepOne()) record(); draw(); }),
+      mk('ctl', 'époque suivante', () => { const e0 = ep; let ok = true; while (ok && ep === e0) ok = stepOne(); if (ok) record(); draw(); }),
+      mk('ctl', '5 époques', () => { for (let k = 0; k < 5; k++) { const e0 = ep; let ok = true; while (ok && ep === e0) ok = stepOne(); if (!ok) break; record(); } draw(); }),
+    ] as HTMLButtonElement[];
+    mk('ctl', 'tout effacer', reset);
+    [['normalisé', false], ['unique', true]].forEach(([l, v]) => { const b = mk('rate', l as string, () => { if (single !== v) { single = v as boolean; reset(); } }); b.dataset.v = String(v); });
+    CS.forEach((v) => { const b = mk('c', String(v).replace('.', ','), () => { if (c !== v) { c = v; reset(); } }); b.dataset.v = String(v); });
+
+    function plot() {
+      const nar = root.clientWidth < 520, W = nar ? 400 : 600, H = 210, ox = 40, oy = 10, rm = nar ? 88 : 96, pw = W - ox - rm, ph = H - oy - 36, lo = Math.log10(0.2), hi = Math.log10(100);
+      const Xp = (t: number) => ox + (t / EMAX) * pw, Y = (v: number) => oy + ph * (1 - (Math.max(lo, Math.min(hi, Math.log10(Math.max(v, 1e-9)))) - lo) / (hi - lo));
+      let g = '';
+      [0.2, 0.5, 1, 2, 10, 100].forEach((v) => (g += `<line x1="${ox}" x2="${ox + pw}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--border)" ${v === 1 ? '' : 'stroke-dasharray="2 4"'}/><text x="${ox - 5}" y="${Y(v) + 3.5}" text-anchor="end" class="ax">${String(v).replace('.', ',')}</text>`));
+      [0, 5, 10, 15, 20].forEach((e) => (g += `<text x="${Xp(e)}" y="${oy + ph + 14}" text-anchor="middle" class="ax">${e}</text>`));
+      g += `<text x="${ox + pw / 2}" y="${oy + ph + 30}" text-anchor="middle" class="ax">époques${nar ? '' : ' (échelle verticale logarithmique)'}</text>`;
+      if (hist.length > 1) g += `<polyline points="${hist.map((h) => `${Xp(h.t).toFixed(1)},${Y(Number.isFinite(h.mp) ? h.mp : 1e9).toFixed(1)}`).join(' ')}" fill="none" stroke="var(--r-out)" stroke-width="2.2" stroke-linejoin="round"/>`;
+      hist.forEach((h, k) => { if (k > 0) g += `<circle cx="${Xp(h.t).toFixed(1)}" cy="${Y(Number.isFinite(h.md) ? h.md : 1e9).toFixed(1)}" r="4" fill="var(--surface)" fill-opacity="0" stroke="var(--r-out)" stroke-width="1.3"/>`; });
+      const h = hist[hist.length - 1];
+      const labs = hist.length > 1 ? [{ t: 'primal (trait)', y: Y(Number.isFinite(h.mp) ? h.mp : 1e9) - 8 }, { t: 'dual (ronds)', y: Y(Number.isFinite(h.md) ? h.md : 1e9) + 8 }] : [];
+      if (labs.length) { labs[0].y = Math.max(oy + 6, labs[0].y); if (labs[1].y - labs[0].y < 15) labs[1].y = labs[0].y + 15; }
+      labs.forEach((l) => (g += `<text x="${Xp(h.t) + 8}" y="${(l.y + 4).toFixed(1)}" class="lb">${l.t}</text>`));
+      if (diverged()) { const e = Math.floor(Math.log10(h.mp)), v = Number.isFinite(h.mp) ? ` : erreur ${(h.mp / 10 ** e).toFixed(1).replace('.', ',')}·10<tspan baseline-shift="super" font-size="8.5">${e}</tspan>` : ''; g += `<text x="${ox + pw - 4}" y="${oy + 30}" text-anchor="end" class="lb bad">diverge${v}</text>`; }
+      const svg = $('plot') as unknown as SVGSVGElement;
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.innerHTML = g;
+    }
+    function draw() {
+      $('rate').querySelectorAll<HTMLElement>('button').forEach((b) => b.classList.toggle('active', b.dataset.v === String(single)));
+      $('c').querySelectorAll<HTMLElement>('button').forEach((b) => b.classList.toggle('active', +b.dataset.v! === c));
+      plot();
+      if (last && cur >= 0) {
+        const t = T[cur], s = train[cur];
+        $('ln1').innerHTML = `chant ${s.song + 1}, phrase ${s.pos + 1} (${NAMES[s.cur]}) → cible ${NAMES[t]} · (K<sub>c</sub>)<sub>ii</sub> = ‖φ<sub>c</sub>(x<sub>i</sub>)‖² = ${big(last.kii)} · η<sub>i</sub> = ${sci(last.eta)} · η<sub>i</sub>((K<sub>c</sub>)<sub>ii</sub> + 1) = ${fm(last.gain)}`;
+        $('ln2').innerHTML = `sortie ${NAMES[t]} avant la mise à jour : primal ${Number.isFinite(last.yp[t]) ? last.yp[t].toFixed(12).replace('.', ',').replace('-', '−') : '∞'} · dual ${Number.isFinite(last.yd[t]) ? last.yd[t].toFixed(12).replace('.', ',').replace('-', '−') : '∞'}`;
+      } else {
+        $('ln1').innerHTML = 'Clique « phrase suivante » : un pas de NLMS sous les deux formes, sur la même phrase.';
+        $('ln2').innerHTML = '';
+      }
+      const g3 = single ? (c * (O.maxDiag + 1)) / (O.meanDiag + 1) : (c * (O.maxDiag + 1)) / (O.maxDiag + 1);
+      // trois décimales près de 2, pour qu'un dépassement de peu reste visible (taux unique, c = 0,5 : 2,001)
+      const dg = Math.abs(g3 - 2) < 0.05 ? 3 : g3 > 2 ? 1 : 2;
+      $('k3').innerHTML = g3 > 2 ? `<span class="r">${fm(g3, dg)}</span>` : fm(g3, dg);
+      $('k4').innerHTML = last ? sci(gap) : '–';
+      adv.forEach((b) => (b.disabled = ep >= EMAX || diverged()));
+    }
+    let rz = 0;
+    window.addEventListener('resize', () => { cancelAnimationFrame(rz); rz = requestAnimationFrame(draw); });
+    reset();
+  });
+</script>
+
+<style is:global>
+  .o2w .o2top { display: flex; flex-wrap: wrap; gap: 6px 28px; margin-bottom: 8px; }
+  .o2w .o2top .row { margin: 0; }
+  .o2w .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .o2w .seg button { font-size: 13px; padding: 4px 11px; }
+  .o2w .o2ctl > .seg { display: flex; width: 100%; }
+  .o2w .o2ctl > .seg button:last-child { margin-left: auto; }
+  .o2w .calc { margin-top: 2px; padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--text-2) 4.5%, transparent); }
+  .o2w .fm { position: relative; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 1em; font-size: 0.86rem; overflow-x: auto; overflow-y: hidden; margin: 2px 0 4px; }
+  .o2w .seg button:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
+  .o2w .fm .katex { font-size: 1em; }
+  .o2w .ln { font: 11.5px/1.5 var(--mono); color: var(--text-2); min-height: 1.5em; overflow-wrap: anywhere; }
+  .o2w .fcard { margin-top: 10px; }
+  .o2w .fhead b { display: block; font-size: 15px; font-weight: 600; color: var(--text); }
+  .o2w .fhead span { font-size: 12.5px; color: var(--text-2); }
+  .o2w svg { width: 100%; height: auto; display: block; margin: 2px 0 0; }
+  .o2w svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .o2w svg text.lb { font: 11.5px var(--font); fill: var(--r-out); font-weight: 600; }
+  .o2w svg text.lb.bad { fill: var(--h-py); }
+  .o2w .kpis .r { color: var(--h-py); }
+</style>

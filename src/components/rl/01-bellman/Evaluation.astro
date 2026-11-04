@@ -19,7 +19,7 @@ const groups: Row[][] = [
   ],
   [
     { name: 'TD à n pas, TD(λ)', kind: 'mix', labels: ['λ = 1', 'λ = 0'], eq: ['G_t^{(n)} = r_{t+1} + \\dots + \\gamma^{n-1} r_{t+n} + \\gamma^n V(s_{t+n})', 'V(s_t) \\leftarrow V(s_t) + \\alpha\\,\\big(G_t^{(n)} - V(s_t)\\big)', 'G_t^\\lambda = (1-\\lambda)\\sum_{n \\ge 1} \\lambda^{n-1} G_t^{(n)}'], algos: [{ n: 'SARSA(λ)' }] },
-    { glyph: ['mix', 'via l\'avantage, selon λ'], name: 'Critique (acteur-critique)', sub: 'TD à n pas, GAE (λ)', kind: 'mix', labels: ['λ = 1', 'λ = 0'], eq: ['\\delta_t = r_{t+1} + \\gamma V(s_{t+1}) - V(s_t)', '\\hat A_t = \\sum_{l \\ge 0} (\\gamma\\lambda)^l\\, \\delta_{t+l}'], algos: [{ n: 'A2C (n pas)' }, { n: 'NAC (régression linéaire)' }, { n: 'TRPO' }, { n: 'PPO (GAE)' }] },
+    { glyph: ['mix', 'via l\'avantage, selon λ'], name: 'Critique (acteur-critique)', sub: 'TD à n pas, GAE (λ)', kind: 'mix', labels: ['λ = 1', 'λ = 0'], eq: ['\\delta_t = r_{t+1} + \\gamma V(s_{t+1}) - V(s_t)', '\\hat A_t = \\sum_{l \\ge 0} (\\gamma\\lambda)^l\\, \\delta_{t+l}'], algos: [{ n: 'A2C (n pas)' }, { n: 'NAC (LSTD-Q(λ))' }, { n: 'TRPO' }, { n: 'PPO (GAE)' }] },
   ],
   [
     { glyph: ['group', 'politique entière'], name: 'Pas de valeur', sub: 'politique jugée en entier', kind: 'none', eq: [], note: 'stratégie d\'évolution : juge l\'épisode entier, sans crédit par action', algos: [{ n: 'OpenAI-ES' }, { n: 'CMA-ES' }] },

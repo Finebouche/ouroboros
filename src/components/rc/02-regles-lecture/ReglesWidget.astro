@@ -1,0 +1,237 @@
+---
+// Cours Reservoir computing, chapitre 2 : sept règles en ligne apprennent la même lecture, sur les mêmes phrases et dans le même ordre
+// (chants dans un ordre aléatoire à chaque époque, chaque chant dans l'ordre du temps). Référence : ridge, même λ, mêmes états.
+// La règle choisie est en violet (lecture entraînée), les autres en gris ; le calcul chiffré est celui de la dernière phrase vue.
+// « États bruts » : sans standardisation des neurones ; tout est recalculé. Réglages fixés dans regles.ts (RULES), vérifiés sous Node.
+import katex from 'katex';
+const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
+// chaque formule est une suite de morceaux qui passent à la ligne sur un écran étroit
+const pieces = (a: string[]) => a.map((s, i) => `<span class="fp">${tx(s + (i < a.length - 1 ? ',' : ''))}</span>`).join('');
+const UPD = 'W_{out} \\leftarrow W_{out} + \\eta\\, M\\,(z - \\bar z)\\, x^{\\top}', UPDB = 'b \\leftarrow b + \\eta\\, M\\,(z - \\bar z)';
+const FM: Record<string, string> = {
+  rls: pieces(['e = W\\tilde x - d', 'g = \\frac{P \\tilde x}{1 + \\tilde x^{\\top} P \\tilde x}', 'W \\leftarrow W - e\\,g^{\\top}', 'P \\leftarrow P - g\\,\\tilde x^{\\top}P']),
+  lms: pieces(['e = W_{out}x + b - d', 'W_{out} \\leftarrow W_{out} - \\eta\\, e\\, x^{\\top}', 'b \\leftarrow b - \\eta\\, e', '\\eta = c\\,/\\,\\langle \\lVert x \\rVert^2 \\rangle']),
+  nlms: pieces(['e = W_{out}x + b - d', 'W_{out} \\leftarrow W_{out} - \\eta\\, e\\, x^{\\top}', 'b \\leftarrow b - \\eta\\, e', '\\eta = c\\,/\\,(\\lVert x \\rVert^2 + 1)']),
+  eh: pieces(['z = W_{out}x + b + \\xi', 'r = -\\lVert z - d \\rVert^2', '\\bar z, \\bar r \\text{ moyennes glissantes}', 'M = [\\,r > \\bar r\\,]', UPD, UPDB]),
+  eh_np: pieces(['\\bar z = W_{out}x + b \\text{ (sans bruit)}', '\\bar r = -\\lVert \\bar z - d \\rVert^2', 'M = [\\,r > \\bar r\\,]', UPD, UPDB]),
+  eh_np_local: pieces(['M_i = [\\,r_i > \\bar r_i\\,]', 'r_i = -(z_i - d_i)^2', '\\bar z = W_{out}x + b', '\\eta = c\\,/\\,\\langle \\lVert x \\rVert^2 \\rangle']),
+  neh: pieces(['M_i = [\\,r_i > \\bar r_i\\,]', 'r_i = -(z_i - d_i)^2', '\\bar z = W_{out}x + b', '\\eta = c\\,/\\,(\\lVert x \\rVert^2 + 1)']),
+};
+---
+<div class="widget rgw" data-widget="rgw">
+  <div class="rgtop">
+    <div class="row"><span>Règle :</span><span class="seg" data-ref="rule"></span></div>
+    <span class="seg" data-ref="norm"></span>
+  </div>
+  <div class="row rgctl"><span class="seg" data-ref="ctl"></span></div>
+  <div class="calc">
+    {Object.entries(FM).map(([k, h]) => <div class="fm" data-fm={k} set:html={h} hidden={k !== 'lms'} />)}
+    <div class="ln" data-ref="ln1"></div>
+    <div class="ln" data-ref="ln2"></div>
+  </div>
+  <div class="plotrow">
+    <div class="barbox">
+      <div class="bt">Sortie <i>y</i> sur la dernière phrase vue</div>
+      <svg data-ref="bars" role="img" aria-label="Sortie de la lecture sur la dernière phrase vue, avant et après la mise à jour, et cible"></svg>
+    </div>
+    <div class="fcard">
+      <div class="fhead"><b>Atteint-elle la précision du ridge ?</b><span>précision de test, toutes les règles sur les mêmes phrases</span></div>
+      <svg data-ref="plot" role="img" aria-label="Précision de test au fil des époques pour chaque règle, et précision du ridge"></svg>
+    </div>
+  </div>
+  <div class="kpis">
+    <div><span>Précision de test</span><b data-ref="k1">–</b><i>règle choisie, chants jamais vus</i></div>
+    <div><span>Époques</span><b data-ref="k2">0</b><i>passes sur les phrases d'apprentissage</i></div>
+    <div><span>Écart au ridge</span><b data-ref="k3">–</b><i>‖W<sub>out</sub> − W<sub>ridge</sub>‖ / ‖W<sub>ridge</sub>‖, même λ</i></div>
+  </div>
+  <p class="note">Réglages du tableau de la section 2. Barres : sortie avant la mise à jour ; trait : après ; pointillés : cible ; triangle : hors échelle. Changer d'états recommence l'apprentissage.</p>
+</div>
+
+<script>
+  import { dataset, NAMES, NC, N } from './chants';
+  import { stats, feat, dot, ridgeW, accuracy, outW, argmax, makeRule, epochOrder, RULES, LAMBDA, type StepInfo } from './regles';
+  import { rng } from '../esn';
+
+  document.querySelectorAll<HTMLElement>('[data-widget="rgw"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const EMAX = 50;
+    const { train, test } = dataset();
+    const st = stats(train.map((s) => s.x));
+    const Ttr = train.map((s) => s.next), Tte = test.map((s) => s.next), nTr = train.length;
+    const songIdx: number[][] = [];
+    train.forEach((s, n) => (songIdx[s.song] ??= []).push(n));
+    const cnt = new Array(NC).fill(0);
+    Ttr.forEach((t) => cnt[t]++);
+    const majC = cnt.indexOf(Math.max(...cnt)), majAcc = Tte.filter((t) => t === majC).length / Tte.length;
+    const fm = (v: number, d = 2) => (Math.abs(v) < 0.5 * 10 ** -d ? (0).toFixed(d) : v.toFixed(d)).replace('.', ',').replace('-', '−');
+    const sci = (v: number) => { if (!Number.isFinite(v)) return '–'; if (v === 0) return '0'; const e = Math.floor(Math.log10(Math.abs(v))); if (e >= -2 && e < 4) return fm(v, 2); return `${(v / 10 ** e).toFixed(1).replace('.', ',').replace('-', '−')}·10<sup>${String(e).replace('-', '−')}</sup>`; };
+    // valeurs qui peuvent exploser (eh) : notation a·10^b au-delà de 10⁴
+    const fx = (v: number, d = 2) => (Math.abs(v) >= 1e4 ? sci(v) : fm(v, d));
+    const pct = (v: number) => `${Math.round(100 * v)} %`;
+
+    type RState = { id: string; label: string; m: ReturnType<typeof makeRule>; last: StepInfo | null; after: number[] | null; done: boolean };
+    let norm = true, sel = 1;
+    let Ztr: Float64Array[], Zte: Float64Array[], Wr: Float64Array[], ridgeAcc = 0, rules: RState[] = [];
+    let ro: () => number, order: number[], ep = 0, pos = 0, cur = -1, hist: { t: number; acc: number[] }[] = [];
+
+    function reset() {
+      const S = norm ? st : null;
+      Ztr = train.map((s) => feat(s.x, S)); Zte = test.map((s) => feat(s.x, S));
+      const meanZ2 = Ztr.reduce((a, z) => a + dot(z, z), 0) / nTr;
+      Wr = ridgeW(Ztr, Ttr, NC, LAMBDA); ridgeAcc = accuracy(Wr, Zte, Tte);
+      rules = RULES.map((R) => ({ id: R.id, label: R.label, m: makeRule(R.id, NC, N + 1, { ...R.o, meanZ2 }), last: null, after: null, done: false }));
+      ro = rng(77); order = epochOrder(songIdx, ro); ep = 0; pos = 0; cur = -1;
+      hist = [{ t: 0, acc: rules.map((R) => accuracy(R.m.W, Zte, Tte)) }];
+      draw();
+    }
+    const record = () => hist.push({ t: ep + pos / nTr, acc: rules.map((R) => accuracy(R.m.W, Zte, Tte)) });
+    function stepOne() {
+      if (ep >= EMAX) return false;
+      const n = order[pos];
+      rules.forEach((R) => {
+        if (R.done) return;
+        R.last = R.m.step(Ztr[n], Ttr[n]);
+        R.after = outW(R.m.W, Ztr[n]);
+      });
+      cur = n; pos++;
+      if (pos >= nTr) {
+        ep++; pos = 0;
+        rules.forEach((R) => { if (R.id === 'rls') R.done = true; }); // RLS : une seule passe
+        if (ep < EMAX) order = epochOrder(songIdx, ro);
+      }
+      return true;
+    }
+    const mk = (box: string, label: string, f: () => void) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', f); $(box).appendChild(b); return b; };
+    // boutons d'avance, désactivés une fois les EMAX époques faites
+    const adv = [
+      mk('ctl', 'phrase suivante', () => { if (stepOne()) record(); draw(); }),
+      mk('ctl', 'chant suivant', () => {
+        if (ep >= EMAX) return;
+        const s0 = train[order[pos]].song, e0 = ep;
+        do { if (!stepOne()) break; } while (ep === e0 && train[order[pos]].song === s0);
+        record(); draw();
+      }),
+      mk('ctl', 'époque suivante', () => { if (ep >= EMAX) return; const e0 = ep; while (ep === e0 && stepOne()); record(); draw(); }),
+      mk('ctl', '10 époques', () => { for (let k = 0; k < 10 && ep < EMAX; k++) { const e0 = ep; while (ep === e0 && stepOne()); record(); } draw(); }),
+    ] as HTMLButtonElement[];
+    mk('ctl', 'tout effacer', reset);
+    RULES.forEach((R, i) => { const b = mk('rule', R.label, () => { sel = i; draw(); }); b.dataset.i = String(i); });
+    [['états standardisés', true], ['états bruts', false]].forEach(([l, v]) => { const b = mk('norm', l as string, () => { if (norm !== v) { norm = v as boolean; reset(); } }); b.dataset.v = String(v); });
+
+    function bars() {
+      const R = rules[sel], W = 206, H = 150, ox = 20, oy = 10, ph = 108, bw = 22, gap = 8;
+      const lo = -0.4, hi = 1.25, Y = (v: number) => oy + ph * (1 - (Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo));
+      let g = `<line x1="${ox}" x2="${W - 4}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--border)"/><line x1="${ox}" x2="${W - 4}" y1="${Y(1)}" y2="${Y(1)}" stroke="var(--border)" stroke-dasharray="2 3"/>`;
+      g += `<text x="${ox - 4}" y="${Y(1) + 3.5}" text-anchor="end" class="ax">1</text><text x="${ox - 4}" y="${Y(0) + 3.5}" text-anchor="end" class="ax">0</text>`;
+      const t = cur >= 0 ? Ttr[cur] : -1, y = outNow(R), pred = y ? argmax(y) : -1;
+      for (let k = 0; k < NC; k++) {
+        const x = ox + 4 + k * (bw + gap);
+        if (k === t) g += `<rect x="${x - 2}" y="${Y(1)}" width="${bw + 4}" height="${Y(0) - Y(1)}" fill="none" stroke="var(--text)" stroke-dasharray="3 2" rx="2"/>`;
+        if (y) {
+          const v = y[k];
+          g += `<rect x="${x}" y="${Math.min(Y(v), Y(0))}" width="${bw}" height="${Math.abs(Y(v) - Y(0))}" fill="var(--r-out)" fill-opacity="${k === pred ? 0.75 : 0.3}" rx="1.5"/>`;
+          // valeur hors échelle : triangle au bout de la barre coupée
+          const xm = x + bw / 2;
+          if (v > hi) g += `<path d="M${xm - 4},${Y(hi) - 1} L${xm + 4},${Y(hi) - 1} L${xm},${Y(hi) - 7} z" fill="var(--r-out)"/>`;
+          if (v < lo) g += `<path d="M${xm - 4},${Y(lo) + 1} L${xm + 4},${Y(lo) + 1} L${xm},${Y(lo) + 6} z" fill="var(--r-out)"/>`;
+          if (R.after && !R.done) g += `<line x1="${x - 3}" x2="${x + bw + 3}" y1="${Y(R.after[k])}" y2="${Y(R.after[k])}" stroke="var(--r-out)" stroke-width="2"/>`;
+        }
+        g += `<text x="${x + bw / 2}" y="${oy + ph + 14}" text-anchor="middle" class="${k === t ? 'bl b' : 'bl'}">${NAMES[k]}</text>`;
+      }
+      if (!y) g += `<text x="${W / 2}" y="${Y(0.5)}" text-anchor="middle" class="ax">aucune phrase vue</text>`;
+      const svg = $('bars') as unknown as SVGSVGElement;
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.innerHTML = g;
+    }
+    function plot() {
+      const nar = root.clientWidth < 520, W = nar ? 380 : 500, H = 220, ox = 34, oy = 10, rm = nar ? 118 : 142, pw = W - ox - rm, ph = H - oy - 36;
+      const X = (t: number) => ox + (t / EMAX) * pw, Y = (v: number) => oy + ph * (1 - v);
+      let g = '';
+      [0, 0.25, 0.5, 0.75, 1].forEach((v) => (g += `<line x1="${ox}" x2="${ox + pw}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--border)" ${v ? 'stroke-dasharray="2 4"' : ''}/><text x="${ox - 5}" y="${Y(v) + 3.5}" text-anchor="end" class="ax">${String(v).replace('.', ',')}</text>`));
+      [0, 10, 20, 30, 40, 50].forEach((e) => (g += `<text x="${X(e)}" y="${oy + ph + 14}" text-anchor="middle" class="ax">${e}</text>`));
+      g += `<text x="${ox + pw / 2}" y="${oy + ph + 30}" text-anchor="middle" class="ax">époques</text>`;
+      g += `<line x1="${ox}" x2="${ox + pw}" y1="${Y(ridgeAcc)}" y2="${Y(ridgeAcc)}" stroke="var(--text-2)" stroke-width="1.2" stroke-dasharray="5 3"/>`;
+      g += `<line x1="${ox}" x2="${ox + pw}" y1="${Y(majAcc)}" y2="${Y(majAcc)}" stroke="var(--text-2)" stroke-width="1" stroke-dasharray="1.5 3"/>`;
+      const line = (i: number) => hist.map((h) => `${X(h.t).toFixed(1)},${Y(h.acc[i]).toFixed(1)}`).join(' ');
+      rules.forEach((_, i) => { if (i !== sel && hist.length > 1) g += `<polyline points="${line(i)}" fill="none" stroke="var(--text-2)" stroke-opacity="0.35" stroke-width="1.2" stroke-linejoin="round"/>`; });
+      if (hist.length > 1) g += `<polyline points="${line(sel)}" fill="none" stroke="var(--r-out)" stroke-width="2.4" stroke-linejoin="round"/>`;
+      const h = hist[hist.length - 1];
+      g += `<circle cx="${X(h.t)}" cy="${Y(h.acc[sel])}" r="3.5" fill="var(--r-out)"/>`;
+      if (h.t > 0) g += `<line x1="${X(h.t)}" x2="${X(h.t)}" y1="${oy}" y2="${oy + ph}" stroke="var(--hl-stroke)" stroke-width="1" opacity="0.7"/>`;
+      // étiquettes directes à droite, écartées d'au moins 15 px
+      const labs = [
+        { t: rules[sel].label, y: Y(h.acc[sel]), c: 'var(--r-out)', w: 600 },
+        { t: nar ? `ridge : ${fm(ridgeAcc)}` : `ridge (λ = ${LAMBDA}) : ${fm(ridgeAcc)}`, y: Y(ridgeAcc), c: 'var(--text-2)', w: 500 },
+        { t: nar ? 'la plus fréquente' : 'classe la plus fréquente', y: Y(majAcc), c: 'var(--text-2)', w: 400 },
+      ].sort((a, b) => a.y - b.y);
+      for (let i = 1; i < labs.length; i++) if (labs[i].y - labs[i - 1].y < 15) labs[i].y = labs[i - 1].y + 15;
+      labs.forEach((l) => (g += `<text x="${ox + pw + 6}" y="${(l.y + 4).toFixed(1)}" class="lb" style="fill:${l.c};font-weight:${l.w}">${l.t}</text>`));
+      const svg = $('plot') as unknown as SVGSVGElement;
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.innerHTML = g;
+    }
+    function calc() {
+      const R = rules[sel], I = R.last;
+      root.querySelectorAll<HTMLElement>('[data-fm]').forEach((d) => (d.hidden = d.dataset.fm !== R.id));
+      if (cur < 0 || !I) {
+        $('ln1').innerHTML = cur < 0 ? 'W<sub>out</sub> = 0 au départ : sorties égales, la prédiction est A (7 % du test). « phrase suivante » : un pas de chaque règle sur la même phrase.' : '';
+        $('ln2').innerHTML = R.done ? 'RLS : une seule passe, terminée.' : '';
+        return;
+      }
+      const s = train[cur], t = s.next, len = songIdx[s.song].length, y = outNow(R)!, p = argmax(y);
+      $('ln1').innerHTML = `chant ${s.song + 1}, phrase ${s.pos + 1}/${len} (${NAMES[s.cur]}) → cible ${NAMES[t]} · prédite${R.done ? '' : ' avant la mise à jour'} : ${NAMES[p]} ${p === t ? '✓' : '✗'} · y<sub>${NAMES[t]}</sub> = ${fx(y[t])}`;
+      const T = NAMES[t];
+      let l2 = '';
+      if (R.id === 'rls') l2 = R.done ? `passe terminée : W<sub>out</sub> est la solution ridge de λ = α = 1 (écart ${sci(gapRidge(R))})` : `e<sub>${T}</sub> = ${fm(I.e[t])} · 1 + xᵀPx = ${fm(I.den!)} · ‖ΔW<sub>out</sub>‖ = ${fm(I.dW, 3)}`;
+      else if (R.id === 'lms' || R.id === 'nlms') l2 = `η = ${sci(I.eta)} · e<sub>${T}</sub> = ${fx(I.e[t])} · ‖ΔW<sub>out</sub>‖ = ${fx(I.dW, 3)}`;
+      else {
+        const loc = R.id === 'eh_np_local' || R.id === 'neh';
+        l2 = `ξ<sub>${T}</sub> = ${fm(I.xi![t])} · z<sub>${T}</sub> − z̄<sub>${T}</sub> = ${fx(I.zn![t] - I.zref![t])} · `;
+        l2 += loc ? `r<sub>${T}</sub> = ${fx(I.rw![t])} ${I.rw![t] > I.rref![t] ? '>' : '≤'} r̄<sub>${T}</sub> = ${fx(I.rref![t])} · M = (${I.M!.join(' ')})` : `r = ${fx(I.rw![0])} ${I.M![0] ? '>' : '≤'} r̄ = ${fx(I.rref![0])} → M = ${I.M![0]}`;
+        l2 += ` · η = ${sci(I.eta)}`;
+      }
+      $('ln2').innerHTML = l2;
+    }
+    // sortie sur la dernière phrase vue, avant sa mise à jour (RLS terminé : sortie actuelle, sans mise à jour)
+    const outNow = (R: RState) => (cur < 0 ? null : R.done ? outW(R.m.W, Ztr[cur]) : R.last?.y ?? null);
+    function gapRidge(R: RState) { let a = 0, b = 0; R.m.W.forEach((w, k) => w.forEach((v, i) => { a += (v - Wr[k][i]) ** 2; b += Wr[k][i] ** 2; })); return Math.sqrt(a / b); }
+    function draw() {
+      $('rule').querySelectorAll<HTMLElement>('button').forEach((b) => b.classList.toggle('active', +b.dataset.i! === sel));
+      $('norm').querySelectorAll<HTMLElement>('button').forEach((b) => b.classList.toggle('active', b.dataset.v === String(norm)));
+      bars(); plot(); calc();
+      const h = hist[hist.length - 1];
+      $('k1').innerHTML = pct(h.acc[sel]);
+      $('k2').innerHTML = pos ? `${ep} <small>+ ${pos} phrase${pos > 1 ? 's' : ''}</small>` : String(ep);
+      $('k3').innerHTML = sci(gapRidge(rules[sel]));
+      adv.forEach((b) => (b.disabled = ep >= EMAX));
+    }
+    let rz = 0;
+    window.addEventListener('resize', () => { cancelAnimationFrame(rz); rz = requestAnimationFrame(draw); });
+    reset();
+  });
+</script>
+
+<style is:global>
+  .rgw .rgtop { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; margin-bottom: 8px; }
+  .rgw .rgtop .row { margin: 0; }
+  .rgw .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .rgw .seg button { font-size: 13px; padding: 4px 11px; }
+  .rgw .rgctl > .seg { display: flex; width: 100%; }
+  .rgw .rgctl > .seg button:last-child { margin-left: auto; }
+  .rgw .calc { margin-top: 2px; padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--text-2) 4.5%, transparent); }
+  .rgw .fm { position: relative; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 0.9em; font-size: 0.86rem; overflow-x: auto; overflow-y: hidden; margin: 2px 0 4px; }
+  .rgw .fm[hidden] { display: none; }
+  .rgw .seg button:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
+  .rgw .fm .katex { font-size: 1em; }
+  .rgw .ln { font: 11.5px/1.5 var(--mono); color: var(--text-2); min-height: 1.5em; overflow-wrap: anywhere; }
+  .rgw .plotrow { display: flex; gap: 14px; align-items: flex-start; margin-top: 10px; }
+  .rgw .barbox { flex: 0 0 206px; }
+  .rgw .bt { font-size: 12.5px; color: var(--text-2); margin-bottom: 2px; }
+  .rgw .fcard { flex: 1 1 0; min-width: 0; }
+  .rgw .fhead b { display: block; font-size: 15px; font-weight: 600; color: var(--text); }
+  .rgw .fhead span { font-size: 12.5px; color: var(--text-2); }
+  .rgw svg { width: 100%; height: auto; display: block; margin: 2px 0 0; }
+  .rgw svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .rgw svg text.lb { font: 11.5px var(--font); }
+  .rgw svg text.bl { font: 11px var(--font); fill: var(--text-2); }
+  .rgw svg text.bl.b { font-weight: 600; fill: var(--text); }
+  @media (max-width: 640px) { .rgw .plotrow { flex-direction: column; align-items: stretch; } .rgw .barbox { flex-basis: auto; max-width: 260px; } }
+</style>

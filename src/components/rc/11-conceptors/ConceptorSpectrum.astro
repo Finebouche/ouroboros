@@ -1,0 +1,67 @@
+---
+// Cours Reservoir computing, chapitre 11 : valeurs singulières d'un conceptor, s_i = σ_i / (σ_i + α⁻²), selon l'ouverture α.
+// Deux motifs de l'expérience de Jaeger (conceptors.ts) : le sinus de période 8,83 et le motif 5-périodique.
+// Un bouton par ouverture ; une barre par direction principale (les 40 premières sur 100) ; ligne de calcul pour la direction 6.
+import katex from 'katex';
+import { getExperiment, eigSym } from './conceptors';
+const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
+const F = tx('C = R\\,(R + \\alpha^{-2} I)^{-1}, \\qquad s_i = \\dfrac{\\sigma_i}{\\sigma_i + \\alpha^{-2}}');
+const E = getExperiment();
+const sig = [eigSym(E.Rs[0]), eigSym(E.Rs[2])];
+const ALPHAS = [1, 10, 100, 1000];
+---
+<div class="widget rcw cspec" data-widget="cspec">
+  <div class="row"><span>Ouverture α :</span><span class="seg" data-ref="alpha"></span></div>
+  <div class="cfm" set:html={F} />
+  <div class="cpanes">
+    <div><div class="ft">Sinus de période 8,83 <span data-ref="c0"></span></div><svg data-ref="p0" role="img" aria-label="Valeurs singulières du conceptor du sinus"></svg></div>
+    <div><div class="ft">Motif 5-périodique <span data-ref="c1"></span></div><svg data-ref="p1" role="img" aria-label="Valeurs singulières du conceptor du motif 5-périodique"></svg></div>
+  </div>
+  <p class="ln" data-ref="calc"></p>
+  <p class="note">σ<sub>i</sub> : énergie de l'état du réservoir dans sa i-ième direction principale, quand il est conduit par le motif. Une barre par direction, les 40 premières sur 100. Réservoir de 100 neurones tiré au hasard (graine fixe), réglages de Jaeger (2014).</p>
+</div>
+
+<script define:vars={{ sig, ALPHAS }}>
+  document.querySelectorAll('[data-widget="cspec"]').forEach((root) => {
+    const $ = (r) => root.querySelector(`[data-ref="${r}"]`);
+    const f = (v, d = 2) => v.toFixed(d).replace('.', ',');
+    const sci = (v) => { if (v >= 0.01) return f(v, 2); const e = Math.floor(Math.log10(v)); return `${f(v / 10 ** e, 1)}·10<sup>${e}</sup>`; };
+    let alpha = 10;
+    ALPHAS.forEach((a) => { const b = document.createElement('button'); b.textContent = String(a).replace(/\B(?=(\d{3})+$)/g, ' '); b.dataset.v = String(a); b.addEventListener('click', () => { alpha = a; draw(); }); $('alpha').appendChild(b); });
+    const W = 320, H = 130, ox = 26, pw = W - ox - 6, top = 8, ph = H - 30, K = 40;
+    function draw() {
+      $('alpha').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.v === alpha));
+      sig.forEach((sg, p) => {
+        const s = sg.map((v) => v / (v + alpha ** -2));
+        const bw = pw / K, Y = (v) => top + (1 - v) * ph;
+        let g = `<line x1="${ox}" y1="${Y(0)}" x2="${W - 6}" y2="${Y(0)}" stroke="var(--border)"/><line x1="${ox}" y1="${Y(1)}" x2="${W - 6}" y2="${Y(1)}" stroke="var(--border)" stroke-dasharray="2 4"/><line x1="${ox}" y1="${Y(0.5)}" x2="${W - 6}" y2="${Y(0.5)}" stroke="var(--border)" stroke-dasharray="2 4"/>`;
+        g += `<text x="${ox - 4}" y="${Y(1) + 4}" text-anchor="end" class="ax">1</text><text x="${ox - 4}" y="${Y(0.5) + 4}" text-anchor="end" class="ax">0,5</text><text x="${ox - 4}" y="${Y(0) + 4}" text-anchor="end" class="ax">0</text>`;
+        for (let i = 0; i < K; i++) {
+          const h = s[i] * ph;
+          g += `<rect x="${(ox + i * bw + 0.6).toFixed(1)}" y="${(Y(0) - h).toFixed(1)}" width="${(bw - 1.2).toFixed(1)}" height="${Math.max(0.5, h).toFixed(1)}" fill="var(--r-res)" fill-opacity="${i === 5 ? 1 : 0.65}"/>`;
+        }
+        for (const i of [0, 9, 19, 29, 39]) g += `<text x="${ox + (i + 0.5) * bw}" y="${H - 8}" text-anchor="middle" class="ax">${i + 1}</text>`;
+        const svg = $('p' + p);
+        svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+        svg.innerHTML = g;
+        $('c' + p).textContent = `: ${s.filter((v) => v > 0.5).length} directions avec s > 0,5`;
+      });
+      const a2 = alpha ** -2, s0 = sig[0][5], s1 = sig[1][5];
+      $('calc').innerHTML = `Direction 6 (barre foncée), α<sup>−2</sup> = ${sci(a2)} : sinus, σ = ${sci(s0)}, s = ${sci(s0)} / (${sci(s0)} + ${sci(a2)}) = ${f(s0 / (s0 + a2))} ; motif 5-périodique, σ ≈ 0, s ≈ 0.`;
+    }
+    draw();
+  });
+</script>
+
+<style is:global>
+  .cspec .row > .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .cspec .seg button { font-size: 13px; padding: 4px 12px; }
+  .cspec .cfm { font-size: 1rem; overflow-x: auto; overflow-y: hidden; margin: 4px 0 6px; }
+  .cspec .cpanes { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .cspec .ft { font-size: 12.5px; font-weight: 500; margin-bottom: 2px; }
+  .cspec .ft span { font-weight: 400; color: var(--text-2); }
+  .cspec svg { width: 100%; height: auto; display: block; }
+  .cspec svg text.ax { font: 10.5px var(--font); fill: var(--text-2); }
+  .cspec .ln { font: 11.5px/1.5 var(--mono); color: var(--text-2); margin: 8px 0 0; }
+  @media (max-width: 640px) { .cspec .cpanes { grid-template-columns: 1fr; } }
+</style>

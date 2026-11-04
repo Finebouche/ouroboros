@@ -1,0 +1,42 @@
+---
+// Cours Reservoir computing, chapitre 2 : les variantes de la règle EH, même mise en forme que Regles.astro (bandes arrondies).
+// La règle de l'article (eh) et les trois variantes du projet de l'auteur (eh_np, eh_np_local, neh).
+import katex from 'katex';
+const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
+const rows = [
+  { name: 'eh', src: 'Hoerzer et al. (2014), d’après Legenstein et al. (2010)', ref: `${tx('\\bar z')}, ${tx('\\bar r')} : moyennes glissantes dans le temps`, rew: `globale : un seul ${tx('M')}`, rate: tx('c / \\langle \\lVert x \\rVert^2 \\rangle') },
+  { name: 'eh_np', src: 'projet', ref: `${tx('\\bar z')} : sortie sans bruit sur la même phrase, donc ${tx('z - \\bar z = \\xi')} ; ${tx('\\bar r')} : sa récompense`, rew: 'globale', rate: tx('c / \\langle \\lVert x \\rVert^2 \\rangle') },
+  { name: 'eh_np_local', src: 'projet', ref: 'idem', rew: `une par sortie : ${tx('M_i = [\\,r_i > \\bar r_i\\,]')}, ${tx('r_i = -(z_i - d_i)^2')}`, rate: tx('c / \\langle \\lVert x \\rVert^2 \\rangle') },
+  { name: 'neh', src: 'projet (perturbation de nœud de Fiete et Seung, 2006, avec une récompense par sortie)', ref: 'idem', rew: 'une par sortie', rate: `${tx('c / (\\lVert x \\rVert^2 + 1)')} (NLMS)` },
+];
+---
+<figure class="ehv">
+  <div class="evr evhd">
+    <div>variante <span>· origine</span></div>
+    <div>référence</div>
+    <div>récompense</div>
+    <div>taux η</div>
+  </div>
+  {rows.map((r, i) => (
+    <div class={`evr evg${i % 2 ? ' alt' : ''}`}>
+      <div class="evn"><b>{r.name}</b><small>{r.src}</small></div>
+      <div class="evt" data-l="référence" set:html={r.ref} />
+      <div class="evt" data-l="récompense" set:html={r.rew} />
+      <div class="evt" data-l="taux η" set:html={r.rate} />
+    </div>
+  ))}
+</figure>
+
+<style is:global>
+  .ehv { margin: 1.4rem 0; font-family: var(--font); }
+  .ehv .evr { display: grid; grid-template-columns: 110px minmax(0, 1.3fr) minmax(0, 1fr) 120px; column-gap: 14px; align-items: center; }
+  .ehv .evhd { padding: 0 14px 8px; font-size: 11.5px; font-weight: 600; color: var(--text); }
+  .ehv .evhd span { font-weight: 400; color: var(--text-2); }
+  .ehv .evg { border-radius: 8px; background: color-mix(in srgb, var(--text-2) 7%, transparent); padding: 9px 14px; margin-bottom: 6px; }
+  .ehv .evg.alt { background: color-mix(in srgb, var(--text-2) 3.5%, transparent); }
+  .ehv .evn b { display: block; font-size: 13px; font-weight: 600; color: var(--text); }
+  .ehv .evn small { display: block; font-size: 11.5px; color: var(--text-2); margin-top: 2px; }
+  .ehv .evt { position: relative; font-size: 12.5px; color: var(--text); line-height: 1.45; min-width: 0; }
+  .ehv .evt .katex { font-size: 1em; }
+  @media (max-width: 680px) { .ehv .evr { grid-template-columns: 1fr; row-gap: 4px; } .ehv .evhd { display: none; } .ehv .evt::before { content: attr(data-l) ' : '; color: var(--text-2); } }
+</style>

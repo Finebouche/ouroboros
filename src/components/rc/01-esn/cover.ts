@@ -1,5 +1,5 @@
 // Cours Reservoir computing, chapitre 1 : théorème de Cover. Réservoir statique φ(x) = tanh(W x + b), lecture linéaire sans constante.
-// Séparabilité testée par un perceptron : zéro erreur est un certificat (séparable) ; des erreurs restantes ne prouvent pas l'inséparabilité.
+// Séparabilité testée par l'algorithme de Ho-Kashyap (fit) : zéro erreur est un certificat (séparable) ; des erreurs restantes ne prouvent pas l'inséparabilité.
 import { rng, gauss } from '../esn';
 
 export const binom = (n: number, k: number) => { let r = 1; for (let i = 0; i < k; i++) r = (r * (n - i)) / (i + 1); return r; };

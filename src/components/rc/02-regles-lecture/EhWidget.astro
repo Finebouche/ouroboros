@@ -1,0 +1,171 @@
+---
+// Cours Reservoir computing, chapitre 2 : la règle EH sur les six sorties d'une phrase. Chaque sortie reçoit un bruit ξ ;
+// la récompense compare la sortie bruitée à une référence ; si elle est meilleure (M = 1), le poids suit le bruit.
+// Quatre lectures apprennent en parallèle (eh, eh_np, eh_np_local, neh), sur les mêmes phrases et dans le même ordre que ReglesWidget
+// (chants mélangés, rng(77)), chacune avec son bruit ; trois passes au plus (au-delà, les poids d'eh divergent).
+// Flèche, à l'échelle : déplacement de la sortie sur la même phrase dû à la mise à jour, Δy_i = η M_i (z_i − z̄_i) (‖x‖² + 1) (poids et biais) ; rouge si elle s'éloigne de la cible.
+import katex from 'katex';
+const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
+// chaque formule est une suite de morceaux qui passent à la ligne sur un écran étroit
+const pc = (a: string[]) => a.map((s) => `<span class="fp">${tx(s)}</span>`).join('');
+const COMMON = pc(['z = W_{out}x + b + \\xi,\\;\\; \\xi_i \\sim \\mathcal U(-\\sigma, \\sigma)', 'W_{out} \\leftarrow W_{out} + \\eta\\, M\\,(z - \\bar z)\\, x^{\\top},', 'b \\leftarrow b + \\eta\\, M\\,(z - \\bar z)']);
+const FM: Record<string, string> = {
+  eh: pc(['r = -\\lVert z - d \\rVert^2,', '\\bar z \\leftarrow (1 - \\tfrac{1}{\\tau})\\,\\bar z + \\tfrac{1}{\\tau}\\, z,', '\\bar r \\leftarrow (1 - \\tfrac{1}{\\tau})\\,\\bar r + \\tfrac{1}{\\tau}\\, r,', 'M = [\\,r > \\bar r\\,]']),
+  eh_np: pc(['r = -\\lVert z - d \\rVert^2,', '\\bar z = W_{out}x + b \\text{ (même phrase, sans bruit)},', '\\bar r = -\\lVert \\bar z - d \\rVert^2,', 'M = [\\,r > \\bar r\\,]']),
+  eh_np_local: pc(['\\bar z = W_{out}x + b,', 'r_i = -(z_i - d_i)^2,', '\\bar r_i = -(\\bar z_i - d_i)^2,', 'M_i = [\\,r_i > \\bar r_i\\,],', '\\eta = c\\,/\\,\\langle \\lVert x \\rVert^2 \\rangle']),
+  neh: pc(['\\bar z = W_{out}x + b,', 'r_i = -(z_i - d_i)^2,', '\\bar r_i = -(\\bar z_i - d_i)^2,', 'M_i = [\\,r_i > \\bar r_i\\,],', '\\eta = c\\,/\\,(\\lVert x \\rVert^2 + 1)']),
+};
+---
+<div class="widget ehw" data-widget="ehw">
+  <div class="row"><span>Variante :</span><span class="seg" data-ref="var"></span></div>
+  <div class="row ehctl"><span class="seg" data-ref="ctl"></span></div>
+  <div class="calc">
+    <div class="fm" set:html={COMMON} />
+    {Object.entries(FM).map(([k, h]) => <div class="fm" data-fm={k} set:html={h} hidden={k !== 'eh'} />)}
+    <div class="ln" data-ref="ln1"></div>
+    <div class="ln" data-ref="ln2"></div>
+  </div>
+  <div class="ehhead"><b>Le bruit a-t-il aidé, et la sortie se rapproche-t-elle de sa cible ?</b></div>
+  <svg data-ref="svg" role="img" aria-label="Les six sorties de la lecture sur la phrase en cours : cible, sortie sans bruit, sortie bruitée, référence, récompense et déplacement dû à la mise à jour"></svg>
+  <div class="kpis">
+    <div><span>Phrases vues</span><b data-ref="k1">0</b></div>
+    <div><span>Sorties rapprochées de leur cible</span><b data-ref="k2">–</b><i>parmi les sorties mises à jour</i></div>
+    <div><span>Précision de test</span><b data-ref="k3">–</b></div>
+  </div>
+  <p class="note">États standardisés, réglages du tableau de la section 2, phrases dans l'ordre de la section 3 (trois passes au plus). Violet plein : sortie sans bruit ; creux : bruitée ; losange : z̄ filtré (eh) ; pointillés : cible ; flèche : effet de la mise à jour, rouge s'il éloigne de la cible ; triangle : hors échelle.</p>
+</div>
+
+<script>
+  import { dataset, NAMES, NC, N } from './chants';
+  import { stats, feat, dot, accuracy, outW, makeRule, epochOrder, RULES, type StepInfo } from './regles';
+  import { rng } from '../esn';
+
+  document.querySelectorAll<HTMLElement>('[data-widget="ehw"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const { train, test } = dataset();
+    const st = stats(train.map((s) => s.x));
+    const Z = train.map((s) => feat(s.x, st)), T = train.map((s) => s.next), Zt = test.map((s) => feat(s.x, st)), Tt = test.map((s) => s.next);
+    const meanZ2 = Z.reduce((a, z) => a + dot(z, z), 0) / Z.length;
+    // même ordre que ReglesWidget : chants mélangés à chaque passe (rng(77)), trois passes
+    const songIdx: number[][] = [];
+    train.forEach((s, k) => (songIdx[s.song] ??= []).push(k));
+    const ro = rng(77), SEQ = [0, 1, 2].flatMap(() => epochOrder(songIdx, ro)), EMAX = SEQ.length;
+    const VARS = ['eh', 'eh_np', 'eh_np_local', 'neh'] as const;
+    const fm = (v: number, d = 2) => (Math.abs(v) < 0.5 * 10 ** -d ? (0).toFixed(d) : v.toFixed(d)).replace('.', ',').replace('-', '−');
+    type L = { m: ReturnType<typeof makeRule>; last: StepInfo | null; before: number[] | null; after: number[] | null; closer: number; tot: number };
+    let sel = 0, learners: L[] = [], n = -1, seen = 0, trial = 0;
+    function reset() {
+      learners = VARS.map((id) => ({ m: makeRule(id, NC, N + 1, { ...RULES.find((r) => r.id === id)!.o, meanZ2 }), last: null, before: null, after: null, closer: 0, tot: 0 }));
+      n = -1; seen = 0; trial = 0; draw();
+    }
+    function update() {
+      const z = Z[n];
+      learners.forEach((Lr) => {
+        Lr.before = outW(Lr.m.W, z); Lr.last = Lr.m.step(z, T[n]); Lr.after = outW(Lr.m.W, z);
+        for (let k = 0; k < NC; k++) {
+          if (Math.abs(Lr.after[k] - Lr.before[k]) < 1e-12) continue;
+          const d = T[n] === k ? 1 : 0;
+          Lr.tot++; if (Math.abs(Lr.after[k] - d) < Math.abs(Lr.before[k] - d)) Lr.closer++;
+        }
+      });
+    }
+    const next = () => { if (seen >= EMAX) return false; n = SEQ[seen]; seen++; trial = 1; update(); return true; };
+    const mk = (box: string, label: string, f: () => void) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', f); $(box).appendChild(b); return b; };
+    // boutons d'avance, désactivés après trois passes
+    const adv = [
+      mk('ctl', 'nouveau bruit, même phrase', () => { if (seen >= EMAX) return; if (n < 0) next(); else { trial++; update(); } draw(); }),
+      mk('ctl', 'phrase suivante', () => { next(); draw(); }),
+      mk('ctl', 'une passe (382 phrases)', () => { for (let k = 0; k < Z.length; k++) if (!next()) break; draw(); }),
+    ] as HTMLButtonElement[];
+    mk('ctl', 'tout effacer', reset);
+    VARS.forEach((v, i) => { const b = mk('var', v, () => { sel = i; draw(); }); b.dataset.i = String(i); });
+
+    function svg() {
+      const nar = root.clientWidth < 520, Lr = learners[sel], I = Lr.last, W = nar ? 400 : 640, rh = 31, top = 22, ax0 = nar ? 40 : 52, ax1 = nar ? 250 : 410, gx = nar ? 18 : 20, lo = -0.6, hi = 1.6;
+      const X = (v: number) => ax0 + ((Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * (ax1 - ax0);
+      const t = n >= 0 ? T[n] : -1, local = sel >= 2;
+      // flèche à l'échelle : trait puis pointe, la pointe ne dépasse jamais la longueur du déplacement
+      const arrow = (x0: number, x1: number, y: number, col: string) => {
+        const s = Math.sign(x1 - x0), h = Math.min(5, Math.abs(x1 - x0)), xb = x1 - s * h;
+        return (Math.abs(xb - x0) > 0.3 ? `<line x1="${x0}" x2="${xb}" y1="${y}" y2="${y}" stroke="${col}" stroke-width="2.2"/>` : '') + `<path d="M${x1},${y} L${xb},${y - 3.2} L${xb},${y + 3.2} z" fill="${col}"/>`;
+      };
+      let g = '';
+      [0, 1].forEach((v) => (g += `<text x="${X(v)}" y="12" text-anchor="middle" class="ax">${v}</text>`));
+      g += `<text x="${ax1 + gx}" y="12" class="ax">${nar ? 'récompense' : local ? 'récompense de chaque sortie' : 'récompense globale'}</text>`;
+      for (let k = 0; k < NC; k++) {
+        const y = top + k * rh + rh / 2, d = k === t ? 1 : 0;
+        g += `<text x="${ax0 - 18}" y="${y + 4}" text-anchor="end" class="${k === t ? 'rl b' : 'rl'}">${NAMES[k]}</text>`;
+        g += `<line x1="${ax0}" x2="${ax1}" y1="${y}" y2="${y}" stroke="var(--border)"/>`;
+        [0, 1].forEach((v) => (g += `<line x1="${X(v)}" x2="${X(v)}" y1="${y - 3}" y2="${y + 3}" stroke="var(--border)"/>`));
+        if (n < 0) continue;
+        g += `<line x1="${X(d)}" x2="${X(d)}" y1="${y - 11}" y2="${y + 11}" stroke="var(--text)" stroke-dasharray="3 2" stroke-width="1.2"/>`;
+        if (!I || !Lr.before || !Lr.after) continue;
+        const zh = Lr.before[k], zn = I.zn![k];
+        g += `<line x1="${X(zh)}" x2="${X(zn)}" y1="${y}" y2="${y}" stroke="var(--r-out)" stroke-width="1.6" stroke-opacity="0.45"/>`;
+        if (sel === 0) { const xr = X(I.zref![k]); g += `<path d="M${xr},${y - 6} L${xr + 6},${y} L${xr},${y + 6} L${xr - 6},${y} z" fill="none" stroke="var(--text-2)" stroke-width="1.3"/>`; }
+        g += `<circle cx="${X(zh)}" cy="${y}" r="4.5" fill="var(--r-out)"/><circle cx="${X(zn)}" cy="${y}" r="4.5" fill="none" stroke="var(--r-out)" stroke-width="1.6"/>`;
+        // valeurs hors de l'axe : triangle gris au bord
+        const vs = sel === 0 ? [zh, zn, I.zref![k]] : [zh, zn];
+        if (vs.some((v) => v < lo)) g += `<path d="M${ax0 - 13},${y} L${ax0 - 7},${y - 4} L${ax0 - 7},${y + 4} z" fill="var(--text-2)"/>`;
+        if (vs.some((v) => v > hi)) g += `<path d="M${ax1 + 13},${y} L${ax1 + 7},${y - 4} L${ax1 + 7},${y + 4} z" fill="var(--text-2)"/>`;
+        const za = Lr.after[k];
+        if (Math.abs(za - zh) > 1e-9) {
+          const bad = Math.abs(za - d) > Math.abs(zh - d), x0 = X(zh), x1 = X(za), col = bad ? 'var(--h-py)' : 'var(--r-out)';
+          if (Math.abs(x1 - x0) > 1.5) g += arrow(x0, x1, y - 10, col);
+          else g += `<circle cx="${x1}" cy="${y - 10}" r="2" fill="${col}"/>`;
+        }
+        if (local) g += `<text x="${ax1 + gx}" y="${y + 4}" class="rv">${fm(I.rw![k])} ${I.M![k] ? '>' : '≤'} ${fm(I.rref![k])}</text><text x="${W - 8}" y="${y + 4}" text-anchor="end" class="${I.M![k] ? 'mv on' : 'mv'}">M = ${I.M![k]}</text>`;
+      }
+      if (n >= 0 && I && !local) {
+        const y0 = top + 6, y1 = top + NC * rh - 6, ym = (y0 + y1) / 2;
+        g += `<path d="M${ax1 + gx - 4},${y0} h4 V${y1} h-4" fill="none" stroke="var(--text-2)"/>`;
+        g += `<text x="${ax1 + gx + 8}" y="${ym - 14}" class="rv">r = ${fm(I.rw![0])}</text><text x="${ax1 + gx + 8}" y="${ym + 2}" class="rv">r̄ = ${fm(I.rref![0])}</text><text x="${ax1 + gx + 8}" y="${ym + 20}" class="${I.M![0] ? 'mv on' : 'mv'}">M = ${I.M![0]}${nar ? '' : ' pour toutes'}</text>`;
+      }
+      if (n < 0) g += `<text x="${(ax0 + ax1) / 2}" y="${top + 3 * rh + 4}" text-anchor="middle" class="ax">W<tspan baseline-shift="sub" font-size="8">out</tspan> = 0 : clique « phrase suivante »</text>`;
+      const el = $('svg') as unknown as SVGSVGElement;
+      el.setAttribute('viewBox', `0 0 ${W} ${top + NC * rh + 4}`); el.innerHTML = g;
+    }
+    function draw() {
+      $('var').querySelectorAll<HTMLElement>('button').forEach((b) => b.classList.toggle('active', +b.dataset.i! === sel));
+      root.querySelectorAll<HTMLElement>('[data-fm]').forEach((d) => (d.hidden = d.dataset.fm !== VARS[sel]));
+      svg();
+      const Lr = learners[sel], I = Lr.last;
+      if (n < 0 || !I) { $('ln1').innerHTML = 'W<sub>out</sub> = 0 au départ : sorties égales, la prédiction est A (7 % du test).'; $('ln2').textContent = ''; }
+      else {
+        const s = train[n], t = T[n], c = NAMES[t];
+        $('ln1').innerHTML = `chant ${s.song + 1}, phrase ${s.pos + 1} (${NAMES[s.cur]}) → cible ${c} · essai ${trial} sur cette phrase`;
+        const dz = I.zn![t] - I.zref![t], z2 = dot(Z[n], Z[n]);
+        $('ln2').innerHTML = `sortie ${c} : ξ = ${fm(I.xi![t])} · z − z̄ = ${fm(dz)} · M = ${I.M![t]} · Δy = η M (z − z̄) (‖x‖² + 1) = ${fm(I.eta * I.M![t] * dz * z2, 3)}`;
+      }
+      $('k1').textContent = String(seen);
+      $('k2').textContent = Lr.tot ? `${Math.round((100 * Lr.closer) / Lr.tot)} %` : '–';
+      $('k3').textContent = `${Math.round(100 * accuracy(Lr.m.W, Zt, Tt))} %`;
+      adv.forEach((b) => (b.disabled = seen >= EMAX));
+    }
+    let rz = 0;
+    window.addEventListener('resize', () => { cancelAnimationFrame(rz); rz = requestAnimationFrame(draw); });
+    reset();
+  });
+</script>
+
+<style is:global>
+  .ehw .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .ehw .seg button { font-size: 13px; padding: 4px 11px; }
+  .ehw .ehctl > .seg { display: flex; width: 100%; }
+  .ehw .ehctl > .seg button:last-child { margin-left: auto; }
+  .ehw .calc { margin-top: 2px; padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--text-2) 4.5%, transparent); }
+  .ehw .fm { position: relative; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 0.9em; font-size: 0.86rem; overflow-x: auto; overflow-y: hidden; margin: 2px 0 4px; }
+  .ehw .fm[hidden] { display: none; }
+  .ehw .seg button:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
+  .ehw .fm .katex { font-size: 1em; }
+  .ehw .ln { font: 11.5px/1.5 var(--mono); color: var(--text-2); min-height: 1.5em; overflow-wrap: anywhere; }
+  .ehw .ehhead { margin-top: 10px; }
+  .ehw .ehhead b { font-size: 15px; font-weight: 600; color: var(--text); }
+  .ehw svg { width: 100%; height: auto; display: block; margin: 4px 0 0; }
+  .ehw svg text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .ehw svg text.rl { font: 11.5px var(--font); fill: var(--text-2); }
+  .ehw svg text.rl.b { font-weight: 600; fill: var(--text); }
+  .ehw svg text.rv { font: 11px var(--mono); fill: var(--text-2); }
+  .ehw svg text.mv { font: 11.5px var(--font); fill: var(--text-2); }
+  .ehw svg text.mv.on { font-weight: 600; fill: var(--text); }
+</style>

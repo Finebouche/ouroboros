@@ -1,0 +1,55 @@
+---
+// Cours Reservoir computing, chapitre 11 : les dix modes du banc de poissons (widget Banc), ce que dit la littérature de chacun,
+// et en quel sens certains sont « entre » deux autres. Même mise en forme que rl/01-bellman/Families.astro (bandes arrondies).
+// Statut du dessin : « documenté » (forme décrite dans les sources), « modèle » (état d'un modèle de banc), « stylisé » (forme dessinée
+// peu ou pas documentée, même si le comportement l'est).
+type Row = { name: string; en: string; what: string; between: string; status: 'documenté' | 'modèle' | 'stylisé'; pred?: boolean };
+const rows: Row[] = [
+  { name: 'banc polarisé', en: 'school', what: 'tous nagent alignés et synchronisés, le groupe avance d’un bloc (P > 0,65 et M < 0,35 chez Tunstrøm et al., 2013)', between: '—', status: 'documenté' },
+  { name: 'banc lâche', en: 'shoal', what: 'groupe qui reste uni pour des raisons sociales, coordination lâche ; chez le zébrafish, moins polarisé, plus lent et plus dense que le banc polarisé (Miller et Gerlai, 2012)', between: 'non : un banc polarisé est un banc lâche aligné (inclusion) ; les poissons basculent de l’un à l’autre, les formes intermédiaires sont rares (Miller et Gerlai, 2012)', status: 'stylisé' },
+  { name: 'essaim', en: 'swarm', what: 'agrégat cohésif, ni alignement ni rotation (P et M < 0,35) ; poissons lents, groupe dense (Tunstrøm et al., 2013)', between: 'non : c’est l’état lent, pas un passage entre tourbillon et banc polarisé (Tunstrøm et al., 2013)', status: 'stylisé' },
+  { name: 'tourbillon', en: 'milling, torus', what: 'tous tournent autour du centre du groupe, vide dans les modèles (M > 0,65) ; rare avec 30 poissons (3 % du temps chez le méné jaune, Tunstrøm et al., 2013)', between: 'oui, dans deux modèles : entre essaim et banc polarisé quand la zone d’alignement s’élargit, si la zone d’attraction est assez grande (Couzin et al., 2002) ; entre ligne et banc polarisé quand l’alignement augmente (Calovi et al., 2014)', status: 'documenté' },
+  { name: 'cordon (ligne)', en: 'line, winding', what: 'deux colonnes qui nagent en sens opposé, reliées par un demi-tour ; P et M faibles, voisins éloignés (Calovi et al., 2014). Dessin : une boucle fermée très allongée', between: 'Calovi et al. (2014) le rapprochent d’un tourbillon très allongé, mais il tourne très peu. « Cordon » n’est pas un terme établi ; un banc entier en file indienne n’a pas été trouvé', status: 'modèle' },
+  { name: 'coin (V)', en: 'wedge', what: 'deux bras en V, pointe en avant ; documenté seulement comme une rangée de thons côte à côte, en parabole ou en ligne (Lutcavage et Kraus, 1995)', between: 'aucune source', status: 'stylisé' },
+  { name: 'boule d’appât', en: 'bait ball', what: 'boule très dense que des prédateurs encerclent et maintiennent serrée, par exemple des orques autour de harengs (Similä et Ugarte, 1993)', between: '« tourbillon resserré » : interprétation (la rotation interne n’est pas documentée)', status: 'documenté', pred: true },
+  { name: 'vacuole', en: 'vacuole', what: 'vide autour d’un prédateur lent ou immobile dans le banc, qui se referme quand il repart (Pitcher et Wyche, 1983 ; Hulsman et Tularam, 2021)', between: 'succède à l’expansion éclair quand le prédateur reste dans le banc (Hulsman et Tularam, 2021) : une suite dans le temps', status: 'documenté', pred: true },
+  { name: 'effet fontaine', en: 'fountain effect', what: 'devant un prédateur rapide, le banc se scinde, longe ses flancs et se referme derrière lui (Hall et al., 1986 ; Bartashevich et al., 2024)', between: '« vacuole qui avance avec le prédateur » : interprétation', status: 'documenté', pred: true },
+  { name: 'expansion éclair', en: 'flash expansion', what: 'à la frappe, les poissons de la zone visée fuient tous à la fois et se tassent contre le reste du banc (Hulsman et Tularam, 2021)', between: 'arrive au même stade que l’effet fontaine, la frappe (vairons face au brochet, Magurran et Pitcher, 1987)', status: 'documenté', pred: true },
+];
+---
+<figure class="bm">
+  <div class="bmr bmhd">
+    <div>mode <span>· terme anglais</span></div>
+    <div>à quoi il ressemble</div>
+    <div>intermédiaire entre deux autres ?</div>
+    <div>dessin</div>
+  </div>
+  {rows.map((r, i) => (
+    <div class={`bmr bmg${i % 2 ? ' alt' : ''}`}>
+      <div class="bmn"><b>{r.name}</b><small>{r.en}{r.pred ? ' · avec prédateur' : ''}</small></div>
+      <div class="bmw">{r.what}</div>
+      <div class="bmb">{r.between}</div>
+      <div><span class={`bms ${r.status === 'documenté' ? 'on' : r.status === 'stylisé' ? 'off' : ''}`}>{r.status}</span></div>
+    </div>
+  ))}
+</figure>
+
+<style is:global>
+  .bm { margin: 1.4rem 0; font-family: var(--font); }
+  .bm .bmr { display: grid; grid-template-columns: 130px minmax(0, 1.15fr) minmax(0, 1fr) 82px; column-gap: 14px; align-items: center; }
+  .bm .bmhd { padding: 0 14px 8px; font-size: 11.5px; font-weight: 600; color: var(--text); }
+  .bm .bmhd span { font-weight: 400; color: var(--text-2); }
+  .bm .bmg { border-radius: 8px; background: color-mix(in srgb, var(--text-2) 7%, transparent); padding: 9px 14px; margin-bottom: 6px; }
+  .bm .bmg.alt { background: color-mix(in srgb, var(--text-2) 3.5%, transparent); }
+  .bm .bmn b { display: block; font-size: 13px; font-weight: 600; color: var(--text); }
+  .bm .bmn small { display: block; font-size: 11.5px; color: var(--text-2); margin-top: 2px; line-height: 1.35; }
+  .bm .bmw { font-size: 12.5px; color: var(--text); line-height: 1.45; }
+  .bm .bmb { font-size: 12px; color: var(--text-2); line-height: 1.4; }
+  .bm .bms { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-2); text-align: center; line-height: 1.3; }
+  .bm .bms.on { color: var(--text); border-color: var(--text-2); }
+  .bm .bms.off { border-style: dashed; }
+  @media (max-width: 640px) {
+    .bm .bmhd { display: none; }
+    .bm .bmr { grid-template-columns: 1fr; row-gap: 4px; }
+  }
+</style>

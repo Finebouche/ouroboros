@@ -10,6 +10,7 @@ import Refs from '@/components/shared/Refs.astro';
 import EsnSchema from '@/components/rc/01-esn/EsnSchema.astro';
 import EsnWidget from '@/components/rc/01-esn/EsnWidget.astro';
 import CoverWidget from '@/components/rc/01-esn/CoverWidget.astro';
+import CoverComptage from '@/components/rc/01-esn/CoverComptage.astro';
 import JlWidget from '@/components/rc/01-esn/JlWidget.astro';
 
 <EsnSchema />
@@ -18,7 +19,7 @@ import JlWidget from '@/components/rc/01-esn/JlWidget.astro';
 
 Un réseau récurrent (RNN) garde un **état** $x(n)$, mis à jour à chaque pas $n$ à partir de l'entrée $u(n)$ et de l'état précédent. Entraîner ses poids récurrents par rétropropagation dans le temps est lent, et le gradient s'évanouit ou explose sur les longues séquences ([Post-Transformer, chapitre 2](/post-transformer/02-recurrence-temps/)).
 
-Le **reservoir computing** contourne le problème : on tire les poids récurrents $W$ et les poids d'entrée $W_{in}$ au hasard, et on ne les touche plus. Ce RNN figé est le **réservoir**. Seule une **lecture** (*readout*) linéaire $W_{out}$, de l'état vers la sortie, est entraînée. L'idée a été proposée indépendamment sous deux noms : *echo state network* (ESN, Jaeger) et *liquid state machine* (Maass et al., avec des neurones à impulsions, chapitre 8).
+Le **reservoir computing** contourne le problème : on tire les poids récurrents $W$ et les poids d'entrée $W_{in}$ au hasard, et on ne les touche plus. Ce RNN figé est le **réservoir**. Seule une **lecture** (*readout*) linéaire $W_{out}$, de l'état vers la sortie, est entraînée. L'idée a été proposée indépendamment sous deux noms : *echo state network* (ESN, Jaeger) et *liquid state machine* (Maass et al., avec des neurones à impulsions, chapitre 9).
 
 $$
 x(n) = \tanh\big(W\,x(n-1) + W_{in}\,u(n) + b\big), \qquad y(n) = W_{out}\,[x(n)\,;\,1]
@@ -55,15 +56,15 @@ Avec ces réglages (60 neurones, entrée faible), vérifiés sur deux tirages du
 
 - **Retard de 5 pas** : réussi (erreur de test autour de 0,01) pour $\rho$ entre 0,5 et 1.
 - **Retard de 15 pas** : en partie seulement (erreur de 0,25 à 0,45), et seulement si $\rho$ est proche de 1 (0,8 à 1) ; avec $\rho \le 0{,}5$, échec complet. Avec un petit $\rho$, l'état oublie vite : la trace de $u(n-k)$ décroît en gros comme $\rho^k$.
-- **Retard de 40 pas** : jamais. La mémoire d'un réservoir est bornée par sa taille (chapitre 3).
-- **Produit $u(n)\,u(n-2)$** : meilleur à petit $\rho$. Il demande de la non-linéarité et un peu de mémoire ; un grand $\rho$ donne plus de mémoire mais moins de non-linéarité utile. C'est le compromis mémoire / non-linéarité (chapitre 3).
-- **$\rho > 1$** : les erreurs montent, fortement pour l'un des deux tirages, modérément pour l'autre. L'état risque de ne plus dépendre seulement de l'entrée : c'est la propriété d'écho (chapitre 2).
+- **Retard de 40 pas** : jamais. La mémoire d'un réservoir est bornée par sa taille (chapitre 4).
+- **Produit $u(n)\,u(n-2)$** : meilleur à petit $\rho$. Il demande de la non-linéarité et un peu de mémoire ; un grand $\rho$ donne plus de mémoire mais moins de non-linéarité utile. C'est le compromis mémoire / non-linéarité (chapitre 4).
+- **$\rho > 1$** : les erreurs montent, fortement pour l'un des deux tirages, modérément pour l'autre. L'état risque de ne plus dépendre seulement de l'entrée : c'est la propriété d'écho (chapitre 3).
 
 ## 4. Pourquoi cela suffit
 
-- **Une mémoire** : l'état est un écho de l'histoire de l'entrée, $x(n) = E\big(u(n), u(n-1), \dots\big)$, si le réservoir oublie son état initial (propriété d'écho, chapitre 2).
-- **Beaucoup de fonctions non linéaires du passé** : chaque neurone calcule une fonction différente de l'histoire de l'entrée. La lecture n'a qu'à les combiner linéairement, comme une méthode à noyaux combine des caractéristiques fixes (chapitre 7).
-- **Le prix** : $W$ n'est pas optimisé pour la tâche, donc il faut souvent beaucoup de neurones. En échange, l'entraînement se réduit à un système linéaire, et le réservoir peut être n'importe quel système dynamique, y compris physique (chapitre 9).
+- **Une mémoire** : l'état est un écho de l'histoire de l'entrée, $x(n) = E\big(u(n), u(n-1), \dots\big)$, si le réservoir oublie son état initial (propriété d'écho, chapitre 3).
+- **Beaucoup de fonctions non linéaires du passé** : chaque neurone calcule une fonction différente de l'histoire de l'entrée. La lecture n'a qu'à les combiner linéairement, comme une méthode à noyaux combine des caractéristiques fixes (chapitre 8).
+- **Le prix** : $W$ n'est pas optimisé pour la tâche, donc il faut souvent beaucoup de neurones. En échange, l'entraînement se réduit à un système linéaire, et le réservoir peut être n'importe quel système dynamique, y compris physique (chapitre 10).
 
 ## 5. Pourquoi projeter au hasard dans un grand espace
 
@@ -81,6 +82,10 @@ $$
 C(P,N) = 2\sum_{j=0}^{N-1} \binom{P-1}{j}
 $$
 
+Dans le plan ($N = 2$), on peut les compter à la main : des points fixes, tous les étiquetages, et la droite par l'origine qui sépare chacun, quand elle existe. On trouve $2P$ étiquetages séparables, ce que donne la formule.
+
+<CoverComptage />
+
 - $P \le N$ : $C = 2^P$, tous les étiquetages sont séparables.
 - $P = 2N$ : $C = 2^{P-1}$, la moitié. C'est la capacité de la lecture ; au-delà, la part séparable tombe vers 0. Avec une constante dans la lecture (hyperplan affine, section 1), remplacer $N$ par $N+1$.
 - Courbe du widget : $C(P,N)/2^P$, probabilité de séparer des étiquettes tirées au hasard.
@@ -94,7 +99,7 @@ Cover agrandit l'espace. Johnson et Lindenstrauss (1984) montrent qu'une project
 
 <JlWidget />
 
-**Lemme** (Dasgupta et Gupta, 2003) : pour $P$ points de $\mathbb{R}^d$ et $0 < \varepsilon < 1$, si $k \ge 4\ln P\,/\,(\varepsilon^2/2 - \varepsilon^3/3)$, une projection aléatoire conserve toutes les distances au carré à un facteur $1 \pm \varepsilon$ près, pour toutes les paires simultanément avec probabilité au moins $1/P$ (une constante plus grande donne une forte probabilité). Leur énoncé projette sur un sous-espace aléatoire ; la forme gaussienne $f(u) = \tfrac{1}{\sqrt{k}}\,G\,u$ du widget en est une variante classique. Le $k$ nécessaire croît comme $\varepsilon^{-2}\ln P$ et **ne dépend pas de $d$**. Cet ordre est optimal (Larsen et Nelson, 2016) pour $\varepsilon$ pas trop petit et $d$ assez grand.
+**Lemme** (Dasgupta et Gupta, 2003) : pour $P$ points de $\mathbb{R}^d$ et $0 < \varepsilon < 1$, si $k \ge 4\ln P\,/\,(\varepsilon^2/2 - \varepsilon^3/3)$, une projection aléatoire conserve toutes les distances au carré à un facteur $1 \pm \varepsilon$ près, pour toutes les paires simultanément avec probabilité au moins $1/P$ (une constante plus grande donne une forte probabilité). Leur preuve projette sur un sous-espace aléatoire, à l'échelle $\sqrt{d/k}$ ; la forme gaussienne $f(u) = \tfrac{1}{\sqrt{k}}\,G\,u$ du widget en est une variante classique. Le $k$ nécessaire croît comme $\varepsilon^{-2}\ln P$ et **ne dépend pas de $d$**. Cet ordre est optimal (Larsen et Nelson, 2017) : pour $\min(P,d)^{-0{,}4999} < \varepsilon < 1$, il existe $P$ points de $\mathbb{R}^d$ pour lesquels toute application, même non linéaire, demande $k = \Omega(\varepsilon^{-2}\ln P)$.
 
 Avec ces réglages ($P = 40$, $d = 200$), en moyenne sur 8 tirages de $G$ (le widget en montre un) : la distorsion mesurée passe de 2 à 4 pour $k = 5$ à 0,2 à 0,3 pour $k = 400$, en gros en $1/\sqrt{k}$. La borne n'a de sens qu'à partir de $k = 89$ et reste au-dessus de la distorsion mesurée (0,79 contre 0,47 à $k = 100$) : valide mais pas serrée. Elle est probabiliste : dépassée 4 fois sur 300 tirages ($k = 100, 200, 400$).
 
@@ -102,8 +107,8 @@ Avec ces réglages ($P = 40$, $d = 200$), en moyenne sur 8 tirages de $G$ (le wi
 
 - **Cover : expansion non linéaire.** Démontré pour des points en position générale. Appliqué à un réservoir, c'est une **analogie** : la position générale n'est pas établie pour les états d'un réservoir récurrent.
 - **Johnson-Lindenstrauss : géométrie conservée.** Démontré pour une projection gaussienne de $P$ points fixés. Un réservoir **linéaire** à poids gaussiens en est une : tirer $W_{in}$ au hasard n'abîme pas la géométrie de l'entrée, avec $N \gtrsim \varepsilon^{-2}\ln P$ quel que soit $d$. Cette lecture du réservoir est une analogie, pas un énoncé cité.
-- **Complémentaires, pas équivalents.** JL ne sépare rien : des classes mêlées le restent après une projection linéaire. Expansion non linéaire pour séparer, géométrie conservée pour ne pas détruire ce qui est séparable (rapprochement non sourcé).
-- **Limite.** Ces résultats portent sur des points fixes. Un réservoir est **dynamique** : son état résume tout le passé de l'entrée. La mémoire est ce qu'ils ne disent pas (chapitre 3).
+- **Complémentaires, pas équivalents.** JL ne sépare rien : des classes mêlées le restent après une projection linéaire. Expansion non linéaire pour séparer, géométrie conservée pour ne pas détruire ce qui est séparable (Shen et al., 2021, citent Cover et JL ensemble pour justifier des couches aléatoires figées, sans cette articulation).
+- **Limite.** Ces résultats portent sur des points fixes. Un réservoir est **dynamique** : son état résume tout le passé de l'entrée. La mémoire est ce qu'ils ne disent pas (chapitre 4).
 
 <div class="retain">
 
@@ -118,7 +123,7 @@ Avec ces réglages ($P = 40$, $d = 200$), en moyenne sur 8 tirages de $G$ (le wi
 
 </div>
 
-<Refs items={[["The “echo state” approach to analysing and training recurrent neural networks (GMD Report 148, version corrigée de 2010)", "Jaeger", 2001, "https://www.ai.rug.nl/minds/uploads/EchoStatesTechRep.pdf"], ["Real-Time Computing Without Stable States: A New Framework for Neural Computation Based on Perturbations (Neural Computation 14, 2531–2560)", "Maass, Natschläger & Markram", 2002, "10.1162/089976602760407955"], ["Harnessing Nonlinearity: Predicting Chaotic Systems and Saving Energy in Wireless Communication (Science 304, 78–80)", "Jaeger & Haas", 2004, "10.1126/science.1091277"], ["Reservoir computing approaches to recurrent neural network training (Computer Science Review 3, 127–149)", "Lukoševičius & Jaeger", 2009, "10.1016/j.cosrev.2009.03.005"], ["A Practical Guide to Applying Echo State Networks", "Lukoševičius", 2012, "10.1007/978-3-642-35289-8_36"], ["Geometrical and Statistical Properties of Systems of Linear Inequalities with Applications in Pattern Recognition (IEEE Trans. Electronic Computers EC-14, 326–334)", "Cover", 1965, "10.1109/PGEC.1965.264137"], ["Extensions of Lipschitz mappings into a Hilbert space (Contemporary Mathematics 26, AMS, 189–206)", "Johnson & Lindenstrauss", 1984, "10.1090/conm/026/737400"], ["An elementary proof of a theorem of Johnson and Lindenstrauss (Random Structures & Algorithms 22, 60–65)", "Dasgupta & Gupta", 2003, "10.1002/rsa.10073"], ["Optimality of the Johnson-Lindenstrauss Lemma", "Larsen & Nelson", 2016, "1609.02094"]]} />
+<Refs items={[["The “echo state” approach to analysing and training recurrent neural networks (GMD Report 148, version corrigée de 2010)", "Jaeger", 2001, "https://www.ai.rug.nl/minds/uploads/EchoStatesTechRep.pdf"], ["Real-Time Computing Without Stable States: A New Framework for Neural Computation Based on Perturbations (Neural Computation 14, 2531–2560)", "Maass, Natschläger & Markram", 2002, "10.1162/089976602760407955"], ["Harnessing Nonlinearity: Predicting Chaotic Systems and Saving Energy in Wireless Communication (Science 304, 78–80)", "Jaeger & Haas", 2004, "10.1126/science.1091277"], ["Reservoir computing approaches to recurrent neural network training (Computer Science Review 3, 127–149)", "Lukoševičius & Jaeger", 2009, "10.1016/j.cosrev.2009.03.005"], ["A Practical Guide to Applying Echo State Networks", "Lukoševičius", 2012, "10.1007/978-3-642-35289-8_36"], ["Geometrical and Statistical Properties of Systems of Linear Inequalities with Applications in Pattern Recognition (IEEE Trans. Electronic Computers EC-14, 326–334)", "Cover", 1965, "10.1109/PGEC.1965.264137"], ["Extensions of Lipschitz mappings into a Hilbert space (Contemporary Mathematics 26, AMS, 189–206)", "Johnson & Lindenstrauss", 1984, "10.1090/conm/026/737400"], ["An elementary proof of a theorem of Johnson and Lindenstrauss (Random Structures & Algorithms 22, 60–65)", "Dasgupta & Gupta", 2003, "10.1002/rsa.10073"], ["Optimality of the Johnson-Lindenstrauss Lemma (FOCS 2017, 633–638)", "Larsen & Nelson", 2017, "1609.02094"], ["Reservoir Transformers (ACL-IJCNLP 2021, 4294–4309)", "Shen, Baevski, Morcos, Keutzer, Auli & Kiela", 2021, "10.18653/v1/2021.acl-long.331"]]} />
 
 <Quiz>
 
