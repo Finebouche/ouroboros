@@ -24,11 +24,11 @@ const DATA: Record<string, Row[]> = {
   ],
   apprentissage: [
     { name: 'Gymnasium', org: 'Farama Foundation', what: 'le contrat environnement-agent : reset, step, espaces', base: 'NumPy' },
-    { name: 'Stable Baselines3', org: 'DLR-RM', what: 'PPO, SAC, DQN… en une ligne : PPO("MlpPolicy", env).learn()', base: 'PyTorch, Gymnasium' },
-    { name: 'mjlab', org: 'mujocolab', what: 'tâches de robots, milliers de copies en parallèle, randomisation', base: 'MuJoCo Warp (GPU NVIDIA), RSL-RL' },
+    { name: 'Stable Baselines3', org: 'DLR-RM', what: 'PPO, SAC, DQN… en une ligne : PPO("MlpPolicy", env).learn(10_000)', base: 'PyTorch, Gymnasium' },
+    { name: 'mjlab', org: 'mujocolab', what: 'tâches de robots, milliers de copies en parallèle, randomisation', base: 'MuJoCo Warp (GPU NVIDIA pour l\'entraînement), RSL-RL' },
   ],
   identification: [
-    { name: 'BAM', org: 'Rhoban', what: 'modèles de servo-actionneurs (moteur, firmware, six frottements) ajustés sur les positions par CMA-ES ; actionneur pour MuJoCo', base: 'MuJoCo, Optuna' },
+    { name: 'BAM', org: 'Rhoban', what: 'modèles de servo-actionneurs (moteur, firmware, six modèles de frottement) ajustés sur les positions par CMA-ES ; actionneur pour MuJoCo', base: 'MuJoCo, Optuna' },
   ],
   corps: [
     { name: 'TSID', org: 'Del Prete, Carpentier et al.', what: 'dynamique inverse : un QP par pas de commande (tâches PD en accélération, contacts), couples en sortie', base: 'Pinocchio, eiquadprog' },
