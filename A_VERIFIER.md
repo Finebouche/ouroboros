@@ -2,7 +2,7 @@
 
 Affirmations écrites dans les cours mais pas encore vérifiées dans une source. Un agent qui vérifie un point le retire de cette liste (et corrige le cours si besoin) ; un agent qui écrit une affirmation non vérifiée l'ajoute ici.
 
-Dernière vérification complète : 3 novembre 2026. Les points confirmés (source primaire, code ou simulation) ont été retirés et le cours corrigé ; restent ceux ci-dessous.
+Dernière vérification complète : 4 novembre 2026 ; les 196 références du site ont été contrôlées automatiquement (Crossref, DataCite, arXiv, statut HTTP) : titres, années et auteurs conformes. Les points confirmés (source primaire, code ou simulation) ont été retirés et le cours corrigé ; restent ceux ci-dessous.
 
 ## Post-Transformer
 
@@ -25,7 +25,7 @@ Dernière vérification complète : 3 novembre 2026. Les points confirmés (sour
   - Explication de l'extinction des mélanges sans horloge commune (directions non partagées), dite « possible, partielle » dans le texte. Simulé (graines 1 à 3) : une horloge propre à chaque mode laisse 27 à 32 extinctions sur 135, contre 0 avec l'horloge commune et 73 à 86 sans horloge, ce qui appuie le rôle du partage ; mais sans horloge, le recouvrement des conceptors d'une paire ne prédit pas son extinction (Spearman −0,12 à −0,34), et la somme C_a + C_b, qui n'affaiblit aucune direction, s'éteint encore pour 15 paires sur 45.
   - Frontière entre banc lâche et essaim : aucune source ne la fixe, ni ne décrit la forme globale d'un essaim (choix de dessin).
 - **Chapitre 2 (règles d'apprentissage de la lecture)** :
-  - Références d'ordre 2. Confirmés : Saunders et al. (1998, ridge dual, section 2 ; ANOVA par sommes de puissances, section 5) et Shawe-Taylor et Cristianini (2004, section 9.2, Computation 9.18), lus ; KLMS de Liu et al. (2008), d'après le résumé. Non lus : le texte intégral de Liu et al. (2008), les équations du KNLMS de Richard et al. (2009) (images dans le PDF auteur) et la section 2.8 de Liu, Príncipe et Haykin (2010), connue par la table des matières et deux extraits Google Livres.
+  - Références d'ordre 2. Confirmés : Saunders et al. (1998, ridge dual, section 2 ; ANOVA par sommes de puissances, section 5) et Shawe-Taylor et Cristianini (2004, section 9.2, Computation 9.18), lus ; KLMS de Liu et al. (2008), d'après le résumé ; KNLMS de Richard et al. (2009, éq. 31-32, p. 1063, PDF auteur) : tout le vecteur de coefficients du dictionnaire est mis à jour le long de h_n, pas η/(ε + ‖h_n‖²). Non lus : le texte intégral de Liu et al. (2008), la section 2.8 de Liu, Príncipe et Haykin (2010), connue par la table des matières et deux extraits Google Livres.
   - Chiffres « sur les données du projet » : 0,16 et 0,01 sont bien dans la docstring de `canopy/next_phrase_prediction/readout_rules.py` (l. 27-28), mais non recalculés ; 561 et 44 viennent d'un log de script cité par l'utilisateur, non relu.
   - Figure Ohkubo et Inubushi (section 5) : entrée à chaque pas Δt = 0,02 et cible 0,2 plus loin, déduits de leur figure 2 (finement échantillonnée) et de leur programme publié (Δt = 0,02, 100 unités de temps d'apprentissage) ; le texte de l'article (cible x_{t+1} = φ^τ(x_t)) se lit aussi comme un échantillonnage tous les τ. Nos grilles de réglages diffèrent des leurs.
 
