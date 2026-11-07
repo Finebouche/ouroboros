@@ -1,0 +1,69 @@
+---
+// Cours Reservoir computing, chapitre 1 : réponse impulsionnelle du réservoir, en trois petites figures répétées (ρ = 0,3 ; 0,9 ; 1,2).
+// Même réservoir que EsnWidget (memoire.ts : 60 neurones, graine 7, σ = 0,1). Après 3 000 pas d'entrée nulle, une copie reçoit u(0) = 1,
+// l'autre rien ; on trace l'écart δx_j(n) entre les deux pour 5 neurones. Calculé au build, statique.
+// Vérifié (Node) : écart sous 5 % de son maximum à partir de n = 3 (ρ = 0,3) et n = 14 (ρ = 0,9). À ρ = 1,2, avec ce tirage, le réservoir
+// oscille seul sans entrée (pas de période trouvée sur 300 pas, exposant de Lyapunov ≈ 0 : pas de chaos) et l'écart ne s'éteint pas :
+// encore ≈ 10 % du maximum entre n = 200 et 400. Avec d'autres tirages, ρ = 1,2 donne un point fixe ou une oscillation de période 2.
+import katex from 'katex';
+import { reservoir, impulse, KMAX } from './memoire.ts';
+const tex = (s: string) => katex.renderToString(s, { throwOnError: false });
+const RHOS = [0.3, 0.9, 1.2], NEUR = [0, 1, 2, 3, 4], PRE = 2, THR = 0.05;
+const res = reservoir();
+const runs = RHOS.map((rho) => impulse(res, rho, NEUR, KMAX + 1));
+const peak = Math.max(...runs.flat(2).map(Math.abs));
+const LIM = Math.ceil((peak * 1.1) / 0.01) * 0.01;
+// premier pas à partir duquel tous les écarts restent sous THR × maximum ; null si jamais sur la fenêtre
+const offAt = (d: number[][]) => { for (let n = 0; n <= KMAX; n++) if (d.every((r) => r.slice(n).every((v) => Math.abs(v) < THR * peak))) return n; return null; };
+const fm = (v: number) => String(+v.toFixed(2)).replace('.', ',').replace('-', '−');
+const VW = 230, VH = 176, ox = 36, rx = 8, pw = VW - ox - rx;
+const X = (n: number) => ox + ((n + PRE) / (KMAX + PRE)) * pw;
+const uTop = 26, uBase = 42, dTop = 54, dH = 90, dMid = dTop + dH / 2;
+const Yd = (v: number) => dMid - (v / LIM) * (dH / 2);
+const vigs = RHOS.map((rho, i) => {
+  const d = runs[i], off = offAt(d);
+  return {
+    title: `ρ = ${fm(rho)}`,
+    note: off === null ? `pas éteint à ${KMAX} pas` : `éteint en ${off} pas`,
+    lines: d.map((r) => [...Array(PRE).fill(0), ...r].map((v, k) => `${X(k - PRE).toFixed(1)},${Yd(v).toFixed(1)}`).join(' ')),
+  };
+});
+const ticks = [-0.05, 0, 0.05].filter((v) => Math.abs(v) < LIM);
+const cap = tex('\\delta x_j(n)');
+---
+<figure class="impf">
+  <div class="vigs">
+    {vigs.map((v) => (
+      <svg viewBox={`0 0 ${VW} ${VH}`} data-impf role="img" aria-label={`Réponse impulsionnelle de 5 neurones, ${v.title}`}>
+        <text x={ox} y="14" class="tt">{v.title}</text>
+        <text x={VW - rx} y="14" text-anchor="end" class="an">{v.note}</text>
+        <line x1={ox} y1={uBase} x2={ox + pw} y2={uBase} stroke="var(--border)" />
+        <line x1={X(0)} y1={uBase} x2={X(0)} y2={uTop} stroke="var(--text-2)" stroke-width="2" />
+        <text x={ox - 6} y={uBase - 3} text-anchor="end" class="ax">u</text>
+        {ticks.map((t) => (
+          <>
+            <line x1={ox} y1={Yd(t)} x2={ox + pw} y2={Yd(t)} stroke="var(--border)" stroke-dasharray={t === 0 ? '' : '2 4'} />
+            <text x={ox - 5} y={Yd(t) + 3.5} text-anchor="end" class="ax">{fm(t)}</text>
+          </>
+        ))}
+        {v.lines.map((p) => <polyline points={p} fill="none" stroke="var(--r-res)" stroke-width="1.1" stroke-linejoin="round" />)}
+        {[0, 20, 40].map((n) => <text x={X(n)} y={dTop + dH + 14} text-anchor="middle" class="ax">{n}</text>)}
+        <text x={ox + pw / 2} y={dTop + dH + 27} text-anchor="middle" class="ax">pas n</text>
+      </svg>
+    ))}
+  </div>
+  <figcaption>Impulsion u(0) = 1 (gris), entrée nulle sinon ; en dessous, l'écart <span set:html={cap} /> de 5 des 60 neurones avec une copie du réservoir qui n'a rien reçu. Même réservoir que le widget. « Éteint » : sous 5 % du maximum.</figcaption>
+</figure>
+
+<style is:global>
+  .impf { margin: 1.5rem 0; }
+  .impf .vigs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .impf svg[data-impf] { width: 100%; height: auto; display: block; }
+  .impf svg[data-impf] text.tt { font: 600 12.5px var(--font); fill: var(--text); }
+  .impf svg[data-impf] text.an { font: 11px var(--font); fill: var(--text-2); }
+  .impf svg[data-impf] text.ax { font: 11px var(--font); fill: var(--text-2); }
+  @media (max-width: 600px) {
+    .impf .vigs { grid-template-columns: minmax(0, 1fr); }
+    .impf svg[data-impf] { max-width: 290px; margin: 0 auto; }
+  }
+</style>

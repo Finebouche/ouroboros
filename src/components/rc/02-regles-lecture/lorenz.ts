@@ -1,9 +1,11 @@
 // Cours Reservoir computing, chapitre 2 : l'expérience « open-loop » d'Ohkubo et Inubushi (2024), en petit.
-// Lorenz (σ = 10, ρ = 28, β = 8/3) intégré par RK4 (dt = 0,02) ; entrée x(t) à chaque pas, cible x(t + τ), τ = 0,2 = H pas
+// Notations du cours (entre parenthèses, celles de l'article) : l'état de Lorenz est l'entrée u(n) = (u_1, u_2, u_3) (x_t),
+// l'état du réservoir x(n) (r_t), les poids W (A) et W_in (B), la régularisation ridge α (β).
+// Lorenz (paramètres usuels 10, 28, 8/3) intégré par RK4 (dt = 0,02) ; entrée u(n) à chaque pas, cible u(n + H), 0,2 plus loin
 // (leur figure 2 est échantillonnée finement ; leur programme publié apprend sur 100 unités de temps à dt = 0,02).
-// ESN sans fuite r_{t+1} = tanh(A r_t + B x_t), A ~ U(−σ_A, σ_A), B ~ U(−σ_B, σ_B) ; lecture ridge sans biais (comme l'article),
-// d'ordre 1 (r) ou 2 (r et les r_j r_k, j ≤ k : φ de ordre2.ts). Comme dans leur supplément, σ_A, σ_B et β sont choisis sur une grille
-// pour chaque ordre et chaque N (tune(), validation, graines 1 à 3, environ 2 min, non lancé à la construction) ; nos grilles diffèrent.
+// ESN sans fuite ni biais x(n) = tanh(W x(n−1) + W_in u(n)), W ~ U(−s_W, s_W), W_in ~ U(−s_in, s_in) ; lecture ridge sans biais (comme
+// l'article), d'ordre 1 (x) ou 2 (x et les x_j x_j', j ≤ j' : φ de ordre2.ts). Comme dans leur supplément, s_W, s_in et α sont choisis sur
+// une grille pour chaque ordre et chaque N (tune(), validation, graines 1 à 3, environ 2 min, non lancé à la construction) ; nos grilles diffèrent.
 import { rng } from '../esn';
 import { phi } from './ordre2';
 
@@ -23,26 +25,26 @@ export function lorenz(n: number) {
   return out;
 }
 
-function states(X: number[][], N: number, sA: number, sB: number, seed: number) {
+function states(U: number[][], N: number, sW: number, sIn: number, seed: number) {
   const r = rng(seed);
-  const A = Array.from({ length: N }, () => Float64Array.from({ length: N }, () => sA * (2 * r() - 1)));
-  const B = Array.from({ length: N }, () => Float64Array.from({ length: 3 }, () => sB * (2 * r() - 1)));
+  const W = Array.from({ length: N }, () => Float64Array.from({ length: N }, () => sW * (2 * r() - 1)));
+  const Win = Array.from({ length: N }, () => Float64Array.from({ length: 3 }, () => sIn * (2 * r() - 1)));
   let x = new Float64Array(N);
-  return X.map((u) => {
+  return U.map((u) => {
     const nx = new Float64Array(N);
-    for (let i = 0; i < N; i++) { let s = B[i][0] * u[0] + B[i][1] * u[1] + B[i][2] * u[2]; const a = A[i]; for (let j = 0; j < N; j++) s += a[j] * x[j]; nx[i] = Math.tanh(s); }
+    for (let i = 0; i < N; i++) { let s = Win[i][0] * u[0] + Win[i][1] * u[1] + Win[i][2] * u[2]; const w = W[i]; for (let j = 0; j < N; j++) s += w[j] * x[j]; nx[i] = Math.tanh(s); }
     return (x = nx);
   });
 }
 
-// ridge à plusieurs sorties : (FᵀF + βI) W = FᵀY, par Cholesky
-function ridge(F: Float64Array[], Y: number[][], beta: number) {
+// ridge à plusieurs sorties : (FᵀF + αI) W_out = FᵀY, par Cholesky
+function ridge(F: Float64Array[], Y: number[][], alpha: number) {
   const D = F[0].length, K = Y[0].length;
   const G = Array.from({ length: D }, () => new Float64Array(D)), R = Array.from({ length: D }, () => new Float64Array(K));
   F.forEach((f, t) => { for (let i = 0; i < D; i++) { const fi = f[i], Gi = G[i]; for (let j = 0; j <= i; j++) Gi[j] += fi * f[j]; for (let k = 0; k < K; k++) R[i][k] += fi * Y[t][k]; } });
   const L = Array.from({ length: D }, () => new Float64Array(D));
   for (let i = 0; i < D; i++) for (let j = 0; j <= i; j++) {
-    let s = G[i][j] + (i === j ? beta : 0);
+    let s = G[i][j] + (i === j ? alpha : 0);
     for (let k = 0; k < j; k++) s -= L[i][k] * L[j][k];
     L[i][j] = i === j ? Math.sqrt(Math.max(s, 1e-300)) : s / L[j][j];
   }
@@ -54,29 +56,30 @@ function ridge(F: Float64Array[], Y: number[][], beta: number) {
   });
 }
 
-export type Run = { N: number; order: 1 | 2; sA: number; sB: number; beta: number; seed: number };
+export type Run = { N: number; order: 1 | 2; sW: number; sIn: number; alpha: number; seed: number };
 // apprend sur l'apprentissage ; renvoie la RMSE (3 composantes) et les prédictions sur la validation (test = false) ou le test
 export function fitPredict(X: number[][], o: Run, test = true) {
   const { wash, ntr, nval, nte } = SPLIT;
-  const S = states(X, o.N, o.sA, o.sB, o.seed);
+  const S = states(X, o.N, o.sW, o.sIn, o.seed);
   const feat = (t: number) => (o.order === 1 ? S[t] : phi(S[t]));
   const F: Float64Array[] = [], Y: number[][] = [];
   for (let t = wash; t < wash + ntr; t++) { F.push(feat(t)); Y.push(X[t + H]); }
-  const W = ridge(F, Y, o.beta);
+  const Wout = ridge(F, Y, o.alpha);
   const t0 = wash + ntr + (test ? nval : 0), n = test ? nte : nval;
   const P: number[][] = [], T: number[][] = [];
   let se = 0;
   for (let t = t0; t < t0 + n; t++) {
-    const f = feat(t), p = W.map((w) => w.reduce((s, v, i) => s + v * f[i], 0));
+    const f = feat(t), p = Wout.map((w) => w.reduce((s, v, i) => s + v * f[i], 0));
     P.push(p); T.push(X[t + H]);
     p.forEach((v, k) => (se += (v - X[t + H][k]) ** 2));
   }
   return { rmse: Math.sqrt(se / (3 * n)), P, T };
 }
 
-export const nParams = (order: 1 | 2, N: number) => 3 * (order === 1 ? N : N + (N * (N + 1)) / 2);
+// nombre de poids appris : 3 sorties × (monômes)
+export const nWeights = (order: 1 | 2, N: number) => 3 * (order === 1 ? N : N + (N * (N + 1)) / 2);
 
-// réglages choisis par tune() : [ordre, N, σ_A, σ_B, β]
+// réglages choisis par tune() : [ordre, N, s_W, s_in, α]
 export const TUNED: [1 | 2, number, number, number, number][] = [
   [1, 3, 0.01, 0.2, 1e-10], [1, 5, 0.3, 0.2, 1e-6], [1, 10, 0.3, 0.1, 1e-10], [1, 20, 0.1, 0.1, 1e-10], [1, 40, 0.1, 0.2, 1e-6],
   [1, 65, 0.03, 0.2, 1e-6], [1, 120, 0.03, 0.1, 1e-10], [1, 230, 0.03, 0.1, 1e-10],
@@ -84,11 +87,11 @@ export const TUNED: [1 | 2, number, number, number, number][] = [
   [2, 14, 0.03, 0.1, 1e-10], [2, 20, 0.1, 0.1, 1e-10],
 ];
 export function tune(X: number[][], order: 1 | 2, N: number) {
-  let best = { v: Infinity, sA: 0, sB: 0, beta: 0 };
-  for (const sA of [0.01, 0.03, 0.1, 0.3]) for (const sB of [0.05, 0.1, 0.2]) for (const beta of [1e-10, 1e-6]) {
+  let best = { v: Infinity, sW: 0, sIn: 0, alpha: 0 };
+  for (const sW of [0.01, 0.03, 0.1, 0.3]) for (const sIn of [0.05, 0.1, 0.2]) for (const alpha of [1e-10, 1e-6]) {
     let v = 0;
-    for (let seed = 1; seed <= 3; seed++) v += fitPredict(X, { N, order, sA, sB, beta, seed }, false).rmse / 3;
-    if (v < best.v) best = { v, sA, sB, beta };
+    for (let seed = 1; seed <= 3; seed++) v += fitPredict(X, { N, order, sW, sIn, alpha, seed }, false).rmse / 3;
+    if (v < best.v) best = { v, sW, sIn, alpha };
   }
   return best;
 }
@@ -99,12 +102,12 @@ function compute() {
   const { wash, ntr, nval, nte } = SPLIT;
   const X = lorenz(wash + ntr + nval + nte + H);
   // mêmes états (N = 10, réglages retenus pour l'ordre 1), deux lectures
-  const same = { N: 10, sA: 0.3, sB: 0.1, beta: 1e-10, seed: TEST_SEEDS[0] };
-  const pair = ([1, 2] as const).map((order) => ({ order, M: nParams(order, 10), ...fitPredict(X, { ...same, order }) }));
-  // erreur de test contre le nombre de paramètres appris : médiane sur cinq tirages de A et B
-  const curve = TUNED.map(([order, N, sA, sB, beta]) => {
-    const r = TEST_SEEDS.map((seed) => fitPredict(X, { N, order, sA, sB, beta, seed }).rmse).sort((a, b) => a - b);
-    return { order, N, M: nParams(order, N), med: r[2], lo: r[0], hi: r[4] };
+  const same = { N: 10, sW: 0.3, sIn: 0.1, alpha: 1e-10, seed: TEST_SEEDS[0] };
+  const pair = ([1, 2] as const).map((order) => ({ order, nw: nWeights(order, 10), ...fitPredict(X, { ...same, order }) }));
+  // erreur de test contre le nombre de poids appris : médiane sur cinq tirages de W et W_in
+  const curve = TUNED.map(([order, N, sW, sIn, alpha]) => {
+    const r = TEST_SEEDS.map((seed) => fitPredict(X, { N, order, sW, sIn, alpha, seed }).rmse).sort((a, b) => a - b);
+    return { order, N, nw: nWeights(order, N), med: r[2], lo: r[0], hi: r[4] };
   });
   return { same, pair, curve };
 }

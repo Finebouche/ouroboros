@@ -47,7 +47,7 @@ const half = (w: number) => {
       </div>
     </div>
   ))}
-  <figcaption>Mêmes points, tous les étiquetages (plein : +, creux : −, teinte : côté + de la droite). Une croix rouge : aucune droite passant par l'origine ne sépare ces étiquettes. Le compte suit la formule : 6 sur 8 pour P = 3, 8 sur 16 pour P = 4, soit 2P dans le plan.</figcaption>
+  <figcaption>Mêmes points, tous les étiquetages (plein : +, creux : −, teinte : côté + de la droite). Croix rouge : aucune droite passant par l'origine ne sépare ces étiquettes.</figcaption>
 </figure>
 
 <style is:global>
@@ -57,8 +57,7 @@ const half = (w: number) => {
   .cnf .cnft b { color: var(--text); font-size: 13px; }
   .cnf .cnft em { font-style: normal; font-weight: 600; color: var(--text); }
   .cnf .cnfg { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; }
-  .cnf .cnfg svg { width: 100%; height: auto; display: block; }
-  .cnf .cnfg svg.no { opacity: 0.85; }
+  .cnf .cnfg > svg { width: 100%; height: auto; display: block; }
   @media (max-width: 560px) { .cnf .cnfg { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
   .cnf figcaption { font-size: 12.5px; color: var(--text-2); line-height: 1.5; margin-top: 10px; }
 </style>

@@ -1,83 +1,73 @@
 ---
-// Cours Reservoir computing, chapitre 2 : les règles d'ordre 1 (ridge, RLS, LMS, NLMS, eh, neh) et leurs versions d'ordre 2 (lecture généralisée, en dual), même mise en forme que Families.astro (cours RL) :
-// bandes arrondies, en-têtes, petits schémas de ce que reçoit la règle (toutes les données, l'erreur de chaque sortie, une récompense).
+// Cours Reservoir computing, chapitre 2 : les six règles d'ordre 1 (ridge, RLS, LMS, NLMS, eh, neh), même mise en forme que Families.astro (cours RL) :
+// bandes arrondies, en-têtes, une ligne de mise à jour par règle, un petit schéma de ce que reçoit la règle.
+// Toutes les règles sont écrites sur x̃ = [x ; 1] et W̃ = [W_out, b_out] (le biais de la lecture est appris comme un poids).
+// Sources dans les Refs du chapitre ; lecture d'ordre 2 en section 5 ; réglages dans les notes des widgets.
 import katex from 'katex';
+// String.raw : les antislashs passent tels quels à KaTeX
 const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
-type Glyph = 'batch' | 'err' | 'rew';
-// petits schémas en gris : une grille d'exemples (tout le lot), six barres signées (l'erreur de chaque sortie), un seul rond (une récompense 0 / 1)
+type Glyph = 'batch' | 'err' | 'rew' | 'rews';
+// petits schémas en gris : une grille d'exemples (tout le lot), six barres signées (l'erreur de chaque sortie),
+// un rond M (une récompense commune aux six sorties), six petits ronds (une récompense par sortie)
 const glyph = (g: Glyph) => {
   const T2 = 'var(--text-2)';
-  let o = `<svg viewBox="0 0 84 20" class="rggl" aria-hidden="true">`;
-  if (g === 'batch') for (let r = 0; r < 3; r++) for (let c = 0; c < 8; c++) o += `<circle cx="${6 + c * 10}" cy="${4 + r * 6}" r="2" fill="${T2}" fill-opacity="0.55"/>`;
-  if (g === 'err') [0.7, -0.4, 0.2, -0.8, 0.5, -0.2].forEach((v, k) => { const x = 6 + k * 12, h = Math.abs(v) * 8; o += `<rect x="${x}" y="${v > 0 ? 10 - h : 10}" width="7" height="${h}" rx="1" fill="${T2}" fill-opacity="0.6"/>`; });
-  if (g === 'err') o += `<line x1="2" x2="80" y1="10" y2="10" stroke="${T2}" stroke-width="0.8"/>`;
-  if (g === 'rew') o += `<circle cx="10" cy="10" r="6.5" fill="none" stroke="${T2}" stroke-width="1.4"/><text x="10" y="13.5" text-anchor="middle" style="font:600 9.5px var(--font);fill:${T2}">M</text>`;
+  let o = `<svg viewBox="0 0 64 18" class="rggl" aria-hidden="true">`;
+  if (g === 'batch') for (let r = 0; r < 3; r++) for (let c = 0; c < 7; c++) o += `<circle cx="${5 + c * 9}" cy="${3.5 + r * 5.5}" r="1.8" fill="${T2}" fill-opacity="0.55"/>`;
+  if (g === 'err') {
+    [0.7, -0.4, 0.2, -0.8, 0.5, -0.2].forEach((v, k) => { const x = 3 + k * 10, h = Math.abs(v) * 7.5; o += `<rect x="${x}" y="${(v > 0 ? 9 - h : 9).toFixed(1)}" width="6" height="${h.toFixed(1)}" rx="1" fill="${T2}" fill-opacity="0.6"/>`; });
+    o += `<line x1="1" x2="63" y1="9" y2="9" stroke="${T2}" stroke-width="0.8"/>`;
+  }
+  if (g === 'rew') o += `<circle cx="9" cy="9" r="7" fill="none" stroke="${T2}" stroke-width="1.3"/><text x="9" y="12.3" text-anchor="middle" style="font:600 9.5px var(--font);fill:${T2}">M</text>`;
+  if (g === 'rews') for (let k = 0; k < 6; k++) o += `<circle cx="${5 + k * 10}" cy="9" r="3.4" fill="none" stroke="${T2}" stroke-width="1.2"/>`;
   return o + '</svg>';
 };
-const rows: { name: string; src: string; how: string; upd: string; loc: string; sig: Glyph; sigt: string; hp: string }[] = [
-  { name: 'Ridge', src: 'régression ridge (Hoerl et Kennard, 1970)', how: 'hors ligne : tous les états à la fois', upd: tx('W = Y \\tilde X^{\\top}\\big(\\tilde X \\tilde X^{\\top} + \\lambda I\\big)^{-1}'), loc: 'non : un système linéaire global', sig: 'batch', sigt: 'toutes les cibles', hp: 'λ (ici 1)' },
-  { name: 'RLS', src: 'moindres carrés récursifs (Plackett, 1950) ; en boucle fermée (sortie renvoyée par des poids figés), règle d’origine de FORCE (Sussillo et Abbott, 2009)', how: 'en ligne, une passe', upd: tx('g = \\frac{P \\tilde x}{1 + \\tilde x^{\\top} P \\tilde x}') + '<br/>' + tx('W \\leftarrow W - e\\,g^{\\top},\; P \\leftarrow P - g\\,\\tilde x^{\\top} P'), loc: 'non : chaque poids passe par P, de taille (N+1)²', sig: 'err', sigt: 'erreur exacte de chaque sortie', hp: 'α, P(0) = I/α (ici 1)' },
-  { name: 'LMS', src: 'Widrow et Hoff (1960)', how: 'en ligne, plusieurs époques', upd: tx('W_{out} \\leftarrow W_{out} - \\eta\\, e\\, x^{\\top},\; b \\leftarrow b - \\eta\\, e') + '<br/>' + tx('\\eta = c\\,/\\,(\\langle \\lVert x \\rVert^2 \\rangle + 1)'), loc: 'oui : le poids de j vers i n’utilise que xⱼ et eᵢ', sig: 'err', sigt: 'erreur exacte de chaque sortie', hp: 'c (ici 0,1)' },
-  { name: 'NLMS', src: 'LMS normalisé (Nagumo et Noda, 1967 ; Albert et Gardner, 1967)', how: 'en ligne, plusieurs époques', upd: tx('W_{out} \\leftarrow W_{out} - \\eta\\, e\\, x^{\\top},\; b \\leftarrow b - \\eta\\, e') + '<br/>' + tx('\\eta = c\\,/\\,\\big(\\lVert x \\rVert^2 + 1\\big)'), loc: 'oui, plus un scalaire commun : ‖x‖²', sig: 'err', sigt: 'erreur exacte de chaque sortie', hp: 'c (ici 0,1)' },
-  { name: 'eh', src: 'Hoerzer et al. (2014), d’après Legenstein et al. (2010)', how: 'en ligne, plusieurs époques', upd: tx('z = W_{out}\\,x + b + \\xi,\; \\xi_i \\sim \\mathcal U(-\\sigma, \\sigma)') + '<br/>' + tx('r = -\\lVert z - d \\rVert^2,\; M = [\\,r > \\bar r\\,]') + '<br/>' + tx('\\bar z \\leftarrow (1 - \\alpha)\\,\\bar z + \\alpha z,\; \\bar r \\leftarrow (1 - \\alpha)\\,\\bar r + \\alpha r') + '<br/>' + tx('W_{out} \\leftarrow W_{out} + \\eta\\, M\\,(z - \\bar z)\\, x^{\\top},\; b \\leftarrow b + \\eta\\, M\\,(z - \\bar z)') + '<br/>' + tx('\\eta = c\\,/\\,(\\langle \\lVert x \\rVert^2 \\rangle + 1)'), loc: 'oui, plus un scalaire commun : M', sig: 'rew', sigt: 'une récompense M ∈ {0, 1} pour toutes les sorties, calculée avec la cible', hp: 'σ = 0,5, c = 0,03, α = 0,2 (soit 5 phrases)' },
-  { name: 'neh', src: 'perturbation de nœud (Fiete et Seung, 2006) ; récompense par sortie et taux normalisé (« n ») : variante du projet', how: 'en ligne, plusieurs époques', upd: tx('\\bar z = W_{out}\\,x + b \\text{ (même phrase, sans bruit)}') + '<br/>' + tx('M_i = \\big[\\,(z_i - d_i)^2 < (\\bar z_i - d_i)^2\\,\\big]') + '<br/>' + tx('W_{out} \\leftarrow W_{out} + \\eta\\, M \\odot (z - \\bar z)\\, x^{\\top},\; b \\leftarrow b + \\eta\\, M \\odot (z - \\bar z)') + '<br/>' + tx('\\eta = c\\,/\\,\\big(\\lVert x \\rVert^2 + 1\\big)'), loc: 'oui : Mᵢ est propre à la sortie i, plus ‖x‖²', sig: 'rew', sigt: 'une récompense par sortie (M vecteur), calculée avec la cible', hp: 'σ = 0,5, c = 0,1' },
-];
-// lecture généralisée (Ohkubo et Inubushi, 2024) : les mêmes règles sur les monômes φ(x), écrites en dual (un coefficient a_j par phrase, noyau K_c)
-const rows2: typeof rows = [
-  { name: 'ridge:2', src: 'ridge en variables duales (Saunders, Gammerman et Vovk, 1998)', how: 'hors ligne : tous les états à la fois', upd: tx('A = Y_c\\,(K_c + \\lambda I)^{-1}'), loc: 'non : un système linéaire global, n × n', sig: 'batch', sigt: 'toutes les cibles', hp: 'λ (ici 0,1 à 10⁴)' },
-  { name: 'nlms:2', src: 'kernel LMS (Liu, Pokharel et Príncipe, 2008), normalisé (Liu, Príncipe et Haykin, 2010, § 2.8) ; le KNLMS de Richard, Bermudez et Honeine (2009) met à jour tous les coefficients d’un dictionnaire', how: 'en ligne, plusieurs époques', upd: tx('a_i \\leftarrow a_i - \\eta_i\\, e_i,\; \\eta_i = c\\,/\\,\\big((K_c)_{ii} + 1\\big)'), loc: 'en φ, comme NLMS ; en dual, la sortie lit tous les aⱼ', sig: 'err', sigt: 'erreur exacte de chaque sortie', hp: 'c (ici 0,1)' },
-  { name: 'neh:2', src: 'neh en dual : pas de référence connue (projet)', how: 'en ligne, plusieurs époques', upd: tx('a_i \\leftarrow a_i + \\eta_i\\, M \\odot (z - \\bar z)'), loc: 'en φ, comme neh ; en dual, la sortie lit tous les aⱼ', sig: 'rew', sigt: 'une récompense par sortie, calculée avec la cible', hp: 'c = 0,1, σ = 0,5' },
-];
-const out2 = tx('y = W_{out}\\,\\varphi_c(x) + b_{out},\\; W_{out} = \\textstyle\\sum_j a_j\\,\\varphi_c(x_j)^{\\top}');
+// mise à jour : morceaux de formule, qui passent à la ligne entre eux si la place manque (jamais de coupure)
+const rows: { name: string; upd: string[]; sig: Glyph; sigt: string; loc: string }[] = [
+  { name: 'Ridge', upd: [String.raw`\tilde W = Y\,\tilde X^{\top}\big(\tilde X\tilde X^{\top} + \alpha I\big)^{-1}`], sig: 'batch', sigt: 'tout le lot', loc: 'non : système global' },
+  { name: 'RLS', upd: [String.raw`\tilde W \leftarrow \tilde W - e\,g^{\top},`, String.raw`g = P\tilde x\,/\,(1 + \tilde x^{\top} P\,\tilde x)`], sig: 'err', sigt: 'erreur par sortie', loc: 'non : tout passe par P' },
+  { name: 'LMS', upd: [String.raw`\tilde W \leftarrow \tilde W - \eta\,e\,\tilde x^{\top},`, String.raw`\eta = c\,/\,\langle \lVert \tilde x \rVert^2 \rangle`], sig: 'err', sigt: 'erreur par sortie', loc: 'oui : xⱼ et eᵢ' },
+  { name: 'NLMS', upd: [String.raw`\tilde W \leftarrow \tilde W - \eta\,e\,\tilde x^{\top},`, String.raw`\eta = c\,/\,\lVert \tilde x \rVert^2`], sig: 'err', sigt: 'erreur par sortie', loc: 'oui, plus ‖x̃‖²' },
+  { name: 'eh', upd: [String.raw`\tilde W \leftarrow \tilde W + \eta\,M\,(z - \bar z)\,\tilde x^{\top},`, String.raw`M = [\,r > \bar r\,]`], sig: 'rew', sigt: 'récompense commune', loc: 'oui, plus M' },
+  { name: 'neh', upd: [String.raw`\tilde W \leftarrow \tilde W + \eta\,M \odot (z - \bar z)\,\tilde x^{\top},`, String.raw`M_i = \big[(z_i - d_i)^2 < (\bar z_i - d_i)^2\big]`], sig: 'rews', sigt: 'récompense par sortie', loc: 'oui : Mᵢ, plus ‖x̃‖²' },
+].map((r) => ({ ...r, upd: r.upd.map(tx) }));
 ---
 <figure class="rg">
   <div class="rgr rghd">
-    <div>règle <span>· source</span></div>
-    <div>apprentissage <span>· mise à jour</span></div>
-    <div>locale ?</div>
+    <div>règle</div>
+    <div>mise à jour</div>
     <div>ce qu'elle reçoit</div>
-    <div>réglages</div>
+    <div>locale ?</div>
   </div>
   {rows.map((r, i) => (
     <div class={`rgr rgg${i % 2 ? ' alt' : ''}`}>
-      <div class="rgn"><b>{r.name}</b><small>{r.src}</small></div>
-      <div class="rgh"><span>{r.how}</span><div class="rgf" set:html={r.upd} /></div>
+      <div class="rgn">{r.name}</div>
+      <div class="rgf">{r.upd.map((h) => <span set:html={h} />)}</div>
+      <div class="rgs"><Fragment set:html={glyph(r.sig)} /><span>{r.sigt}</span></div>
       <div class="rgl">{r.loc}</div>
-      <div class="rgs"><div set:html={glyph(r.sig)} /><span>{r.sigt}</span></div>
-      <div class="rgp">{r.hp}</div>
     </div>
   ))}
-  <div class="rgsep"><b>Lecture généralisée</b> (<i>generalized readout</i>, ordre 2 ; Ohkubo et Inubushi, 2024) : les mêmes règles sur les monômes φ(x), apprises en dual (section 5)<div class="rgf" set:html={out2} /></div>
-  {rows2.map((r, i) => (
-    <div class={`rgr rgg${i % 2 ? ' alt' : ''}`}>
-      <div class="rgn"><b>{r.name}</b><small>{r.src}</small></div>
-      <div class="rgh"><span>{r.how}</span><div class="rgf" set:html={r.upd} /></div>
-      <div class="rgl">{r.loc}</div>
-      <div class="rgs"><div set:html={glyph(r.sig)} /><span>{r.sigt}</span></div>
-      <div class="rgp">{r.hp}</div>
-    </div>
-  ))}
-  <figcaption>Règles en ligne (LMS, NLMS, eh, neh) : <i>x</i> est l'état standardisé neurone par neurone et le biais <i>b</i> est appris par la même règle. Ridge et RLS : <i>x̃</i> = [<i>x</i> ; 1] et <i>W</i> = [<i>W</i><sub>out</sub>, <i>b</i>], le biais est pénalisé comme un poids. Les synapses d'eh et de neh ne reçoivent pas l'erreur, mais la récompense est calculée avec la cible <i>d</i> : l'apprentissage reste supervisé, par un signal scalaire (eh) ou un par sortie (neh).</figcaption>
+  <figcaption><i>x̃</i> = [<i>x</i> ; 1], <i>W̃</i> = [<i>W</i><sub>out</sub>, <i>b</i><sub>out</sub>] : le biais est appris comme un poids (pénalisé comme eux par ridge et RLS). <i>e</i>&nbsp;=&nbsp;<i>y</i>&nbsp;−&nbsp;<i>d</i>.</figcaption>
 </figure>
 
 <style is:global>
   .rg { margin: 1.4rem 0; font-family: var(--font); }
-  .rg .rgr { display: grid; grid-template-columns: 118px minmax(0, 1fr) 118px 112px 92px; column-gap: 14px; align-items: center; }
-  .rg .rghd { padding: 0 14px 8px; font-size: 11.5px; font-weight: 600; color: var(--text); }
-  .rg .rghd span { font-weight: 400; color: var(--text-2); }
-  .rg .rgg { border-radius: 8px; background: color-mix(in srgb, var(--text-2) 7%, transparent); padding: 10px 14px; margin-bottom: 6px; }
+  .rg .rgr { display: grid; grid-template-columns: 52px minmax(0, 1fr) 200px 128px; column-gap: 12px; align-items: center; }
+  .rg .rghd { padding: 0 12px 6px; font-size: 11.5px; font-weight: 600; color: var(--text); }
+  .rg .rgg { border-radius: 8px; background: color-mix(in srgb, var(--text-2) 7%, transparent); padding: 6px 12px; margin-bottom: 4px; min-height: 36px; }
   .rg .rgg.alt { background: color-mix(in srgb, var(--text-2) 3.5%, transparent); }
-  .rg .rgn b { display: block; font-size: 13px; font-weight: 600; color: var(--text); }
-  .rg .rgn small { display: block; font-size: 11.5px; color: var(--text-2); margin-top: 2px; line-height: 1.35; }
-  .rg .rgh > span { display: block; font-size: 12.5px; color: var(--text); line-height: 1.4; }
-  .rg .rgf { position: relative; font-size: 0.86rem; overflow-x: auto; overflow-y: hidden; margin-top: 3px; }
+  .rg .rgn { font-size: 13px; font-weight: 600; color: var(--text); }
+  .rg .rgf { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 0.9em; font-size: 0.84rem; }
+  .rg .rgf > span { white-space: nowrap; }
   .rg .rgf .katex { font-size: 1em; }
-  .rg .rgl, .rg .rgp { font-size: 11.5px; color: var(--text-2); line-height: 1.35; }
-  .rg .rggl { display: block; width: 84px; height: auto; margin-bottom: 3px; }
-  .rg .rgs span { display: block; font-size: 11.5px; color: var(--text-2); line-height: 1.35; }
-  .rg figcaption { margin-top: 8px; padding: 0 14px; font-size: 12.5px; color: var(--text-2); line-height: 1.5; }
-  .rg .rgsep { margin: 14px 0 8px; padding: 0 14px; font-size: 12.5px; color: var(--text-2); line-height: 1.45; }
-  .rg .rgsep b { color: var(--text); font-weight: 600; }
-  .rg .rgsep .rgf { margin-top: 4px; }
-  @media (max-width: 720px) { .rg .rgr { grid-template-columns: 1fr; row-gap: 6px; } .rg .rghd { display: none; } }
+  .rg .rgs { display: flex; align-items: center; gap: 8px; }
+  .rg .rggl { flex: none; display: block; width: 64px; height: 18px; }
+  .rg .rgs span, .rg .rgl { font-size: 11.5px; color: var(--text-2); line-height: 1.3; white-space: nowrap; }
+  .rg figcaption { margin-top: 6px; padding: 0 12px; font-size: 12.5px; color: var(--text-2); line-height: 1.5; }
+  @media (max-width: 640px) {
+    .rg .rgr { grid-template-columns: 44px minmax(0, 1.15fr) minmax(0, 1fr); grid-template-areas: "n s l" "f f f"; row-gap: 4px; }
+    .rg .rgs span, .rg .rgl { white-space: normal; }
+    .rg .rggl { width: 46px; height: 13px; }
+    .rg .rghd { display: none; }
+    .rg .rgn { grid-area: n; } .rg .rgs { grid-area: s; } .rg .rgl { grid-area: l; text-align: right; } .rg .rgf { grid-area: f; }
+  }
 </style>

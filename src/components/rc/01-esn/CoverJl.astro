@@ -1,0 +1,93 @@
+---
+// Cours Reservoir computing, chapitre 1 : ce que Cover et Johnson-Lindenstrauss justifient pour un réservoir, en deux bandes
+// (mise en forme de rl/01-mdp/Families.astro). Contenu repris de la sous-section « Ce que chacun justifie » et des énoncés du chapitre.
+// Petits schémas : gris pointillé = application tirée au hasard et figée ; violet = lecture (frontière qui sépare).
+import katex from 'katex';
+const md = (s: string) => s.replace(/\$([^$]+)\$/g, (_, m) => katex.renderToString(m, { throwOnError: false }));
+// lignes 0 et 1 : réponse courte en pastille (pills) ; lignes 2 et 3 : texte (cells, vide pour les lignes à pastille)
+type Col = { name: string; sub: string; glyph: 'cover' | 'jl'; cells: string[]; pills: [string, boolean][] };
+const Q = ['sépare ?', 'conserve la géométrie ?', 'hypothèse', 'limite pour un réservoir récurrent'];
+const cols: Col[] = [
+  {
+    name: 'Cover (1965)', sub: 'expansion non linéaire vers $N$ neurones', glyph: 'cover',
+    pills: [['oui, après expansion en dimension $N \\ge P$', true], ['non garanti', false]],
+    cells: [
+      '',
+      '',
+      '$P$ points en position générale, transformation non linéaire. Réservoir statique à poids tirés selon une densité : position générale presque sûre (déduit pour ce cours du rang plein démontré par Nguyen et Hein, 2017).',
+      'Position générale non garantie : une entrée périodique répète les états. Analogie.',
+    ],
+  },
+  {
+    name: 'Johnson-Lindenstrauss (1984)', sub: 'projection aléatoire de $\\mathbb{R}^d$ vers $\\mathbb{R}^m$', glyph: 'jl',
+    pills: [['non : ne fait que conserver les distances', false], ['oui, à $1 \\pm \\varepsilon$ près', true]],
+    cells: [
+      '',
+      '',
+      '$P$ points fixés, projection gaussienne (linéaire).',
+      'Un réservoir linéaire à poids gaussiens s\'en rapproche : analogie propre à ce cours, pas un énoncé cité.',
+    ],
+  },
+];
+// schéma : boîte de départ, flèche pointillée (tirée au hasard, figée), boîte d'arrivée ; Cover agrandit, JL réduit
+const dot = (x: number, y: number, full: boolean) => full
+  ? `<circle cx="${x}" cy="${y}" r="2.6" fill="var(--text)"/>`
+  : `<circle cx="${x}" cy="${y}" r="2.3" fill="var(--surface)" stroke="var(--text)" stroke-width="1.1"/>`;
+const box = (x: number, y: number, w: number, h: number) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="none" stroke="var(--border)"/>`;
+const arrow = (x1: number, x2: number) => `<line x1="${x1}" y1="17" x2="${x2 - 4}" y2="17" stroke="var(--text-2)" stroke-width="1.1" stroke-dasharray="2.5 2"/><path d="M${x2 - 5},13.5 L${x2},17 L${x2 - 5},20.5" fill="none" stroke="var(--text-2)" stroke-width="1.1"/>`;
+const glyph = (g: 'cover' | 'jl') => {
+  let o = '<svg data-g="cj" viewBox="0 0 100 34" aria-hidden="true">';
+  if (g === 'cover') {
+    o += box(2, 6, 22, 22) + dot(8, 12, true) + dot(18, 22, true) + dot(18, 12, false) + dot(8, 22, false);
+    o += arrow(29, 54);
+    o += box(58, 2, 40, 30) + dot(66, 10, true) + dot(84, 12, true) + dot(70, 24, false) + dot(89, 25, false);
+    o += '<line x1="60" y1="20" x2="96" y2="15" stroke="var(--r-out)" stroke-width="1.6"/>';
+  } else {
+    o += box(2, 2, 40, 30) + dot(12, 10, true) + dot(30, 9, false) + dot(16, 24, false) + dot(33, 23, true);
+    o += arrow(46, 68);
+    o += box(72, 6, 26, 22) + dot(77, 11, true) + dot(90, 10.5, false) + dot(80, 21.5, false) + dot(92, 20.5, true);
+  }
+  return o + '</svg>';
+};
+---
+<figure class="cjl">
+  {Q.map((q, i) => <div class="cjq" style={`grid-row:${i + 2}`}>{q}</div>)}
+  {cols.map((c, k) => (
+    <>
+      <div class="cjb cjh" style={`grid-column:${k + 2};grid-row:1`}>
+        <div set:html={glyph(c.glyph)} />
+        <b>{c.name}</b><small set:html={md(c.sub)} />
+      </div>
+      {c.cells.map((t, i) => (
+        <div class={`cjb${i === Q.length - 1 ? ' cjz' : ''}`} style={`grid-column:${k + 2};grid-row:${i + 2}`}>
+          <span class="cjm">{Q[i]}</span>
+          {i < c.pills.length ? <span class={`cjp${c.pills[i][1] ? ' on' : ''}`} set:html={md(c.pills[i][0])} /> : <p set:html={md(t)} />}
+        </div>
+      ))}
+    </>
+  ))}
+  <div class="cjf" style={`grid-row:${Q.length + 2}`}>Les deux portent sur des points fixes : rien sur la mémoire d'un réservoir dynamique (chapitre 4). Ensemble : l'expansion non linéaire sépare, la projection garde la géométrie de ce qui est séparable.</div>
+</figure>
+
+<style is:global>
+  .cjl { margin: 1.4rem 0; font-family: var(--font); display: grid; grid-template-columns: 112px minmax(0, 1fr) minmax(0, 1fr); column-gap: 10px; row-gap: 0; }
+  .cjl .cjq { grid-column: 1; font-size: 11.5px; font-weight: 600; color: var(--text); padding: 10px 0; align-self: start; line-height: 1.35; }
+  .cjl .cjb { background: color-mix(in srgb, var(--text-2) 6%, transparent); padding: 10px 14px; border-top: 1px solid color-mix(in srgb, var(--text-2) 12%, transparent); }
+  .cjl .cjb.cjh { border-top: 0; border-radius: 8px 8px 0 0; padding-top: 12px; }
+  .cjl .cjb.cjz { border-radius: 0 0 8px 8px; padding-bottom: 12px; }
+  .cjl .cjh b { display: block; font-size: 13px; font-weight: 600; color: var(--text); margin-top: 6px; }
+  .cjl .cjh small { display: block; font-size: 11.5px; color: var(--text-2); margin-top: 2px; line-height: 1.35; }
+  .cjl svg[data-g="cj"] { display: block; width: 100px; height: auto; }
+  .cjl .cjb p { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--text); }
+  .cjl .cjb .katex { font-size: 1.02em; }
+  .cjl .cjm { display: none; }
+  .cjl .cjp { display: inline-block; font-size: 11.5px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-2); line-height: 1.4; }
+  .cjl .cjp.on { color: var(--text); border-color: var(--text-2); }
+  .cjl .cjf { grid-column: 1 / -1; font-size: 12.5px; color: var(--text-2); line-height: 1.5; margin-top: 10px; }
+  @media (max-width: 600px) {
+    .cjl { display: block; }
+    .cjl .cjq { display: none; }
+    .cjl .cjb.cjz { margin-bottom: 10px; }
+    .cjl .cjm { display: block; font-size: 11.5px; font-weight: 600; color: var(--text-2); margin-bottom: 3px; }
+  }
+</style>

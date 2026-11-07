@@ -1,89 +1,121 @@
 ---
-// Cours Reservoir computing, chapitre 1 : lemme de Johnson-Lindenstrauss. P = 40 points de R^200 à des échelles différentes, projetés par G/√k.
-// Chaque point du nuage est une paire : distance avant (x), après (y). Distorsion et borne calculées ici (jl.ts). Réglages vérifiés par simulation (Node).
+// Cours Reservoir computing, chapitre 1 : lemme de Johnson-Lindenstrauss. P = 40 points de ℝ^200 (d = 200), projetés par f(u) = G u / √m.
+// Pour chacune des 780 paires : rapport d1²/d0² (distance au carré après / avant), paires triées par rapport croissant, axe vertical fixe de 0 à 3.
+// Bande fixe 1 ± ε avec ε = 0,5 pour tous les m ; la borne de Dasgupta et Gupta est calculée pour ce même ε (jl.ts). Réglages vérifiés par simulation (Node).
 import katex from 'katex';
+import { MS, P, D, EPS, mMin } from './jl';
 const tex = (s: string) => katex.renderToString(s, { throwOnError: false });
-const F1 = tex('f(u) = \\tfrac{1}{\\sqrt{k}}\\,G\\,u, \\quad G_{ij} \\sim \\mathcal{N}(0,1)');
-const F1b = tex('(1-\\varepsilon)\\,\\|u-v\\|^2 \\le \\|f(u)-f(v)\\|^2 \\le (1+\\varepsilon)\\,\\|u-v\\|^2');
-const F2 = tex('k \\ge \\frac{4\\ln P}{\\varepsilon^2/2 - \\varepsilon^3/3}');
+const F1 = tex('f(u) = \\tfrac{1}{\\sqrt{m}}\\,G\\,u,');
+const F1b = tex('G \\in \\mathbb{R}^{m \\times d},\\ G_{ij} \\sim \\mathcal{N}(0,1)');
+const F2 = tex('1-\\varepsilon \\;\\le\\; \\dfrac{\\|f(u)-f(v)\\|^2}{\\|u-v\\|^2} \\;\\le\\; 1+\\varepsilon');
+const F3 = tex('m \\ge \\dfrac{4\\ln P}{\\varepsilon^2/2 - \\varepsilon^3/3}');
+// borne pour l'ε de la bande : 4 ln 40 / (0,125 − 0,0417) = 177,1, donc m ≥ 178
+const den = EPS * EPS / 2 - EPS ** 3 / 3, mEps = (4 * Math.log(P)) / den;
+const fr = (v: number, d: number) => v.toFixed(d).replace('.', ',');
+const L3 = `ε = ${fr(EPS, 1)}, P = ${P} : m ≥ 4 ln ${P} / ${fr(den, 4)} = ${fr(mEps, 1)}, donc m ≥ ${Math.ceil(mEps)} suffit. Pour ε < 1, il faut m ≥ ${mMin()}.`;
+const RM = Object.fromEntries(MS.map((m) => [m, tex(`\\mathbb{R}^{${D}} \\to \\mathbb{R}^{${m}}`)]));
+const RD = tex(`\\mathbb{R}^{${D}}`);
 ---
 <div class="widget rcw jlw" data-widget="jlw">
+  <div class="jlhead">
+    <div class="jltitle"><b>Une projection aléatoire conserve-t-elle les distances ?</b>{MS.map((m) => <span class="jlsub" data-m={m} hidden set:html={RM[m]} />)}</div>
+    <div class="jlstat"><span>paires hors bande</span><b data-ref="out"></b></div>
+  </div>
   <div class="jlrow">
-    <span class="jlk">Dimension k <span class="seg" data-ref="ks"></span></span>
+    <span class="jlk">Dimension d'arrivée m <span class="seg" data-ref="ms"></span></span>
     <button data-ref="draw">nouveau tirage de G</button>
   </div>
+  <div class="jlplot" data-ref="box"><svg data-ref="svg" role="img" aria-label="Rapport des distances au carré après et avant projection, pour chacune des 780 paires triées, avec la bande 1 ± ε"></svg></div>
   <div class="calc">
-    <div class="fm" set:html={F1} />
-    <div class="fm" set:html={F1b} />
+    <div class="fm fmw"><span set:html={F1} /><span set:html={F1b} /></div>
     <div class="fm" set:html={F2} />
     <div class="ln" data-ref="line"></div>
+    <div class="fm" set:html={F3} />
+    <div class="ln">{L3}</div>
   </div>
-  <div class="scr"><svg data-ref="svg" role="img" aria-label="Distance entre deux points après projection selon la distance avant projection, pour toutes les paires"></svg></div>
-  <div class="kpis">
-    <div><span>Distorsion mesurée ε</span><b data-ref="k1"></b><i>plus grand écart des distances au carré, sur les 780 paires</i></div>
-    <div><span>Distorsion de la borne</span><b data-ref="k2"></b><i data-ref="k2i"></i></div>
-  </div>
-  <p class="note">P = 40 points de R<sup>200</sup>, composantes gaussiennes d'échelles différentes (0,3 à 2). Les k lignes de G sont les k premières d'une même matrice : passer à k plus grand ajoute des lignes. La borne est probabiliste, pas garantie à tout coup.</p>
+  <p class="note">P = {P} points de <Fragment set:html={RD} />, {P * (P - 1) / 2} paires ; d<sub>0</sub>, d<sub>1</sub> : distance d'une paire avant et après projection. Les m lignes de G sont les m premières d'une même matrice : passer à m plus grand ajoute des lignes. La borne est probabiliste (probabilité au moins 1/P), pas garantie à tout coup.</p>
 </div>
 
 <script>
-  import { KS, M, D, makeCloud, makeG, pairs, distortion, epsBound } from './jl';
+  import { MS, P, EPS, makeCloud, makeG, ratios, distortion } from './jl';
 
   document.querySelectorAll<HTMLElement>('[data-widget="jlw"]').forEach((root) => {
     const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
     const X = makeCloud(5);
-    let gseed = 1, G = makeG(gseed), k = 50;
+    let gseed = 1, G = makeG(gseed), m = 20;
     const fm = (v: number, d = 2) => v.toFixed(d).replace('.', ',');
-    KS.forEach((kk) => {
-      const b = document.createElement('button'); b.textContent = String(kk); b.dataset.v = String(kk);
-      b.addEventListener('click', () => { k = kk; draw(); });
-      $('ks').appendChild(b);
+    MS.forEach((mm) => {
+      const b = document.createElement('button'); b.textContent = String(mm); b.dataset.v = String(mm);
+      b.addEventListener('click', () => { m = mm; draw(); });
+      $('ms').appendChild(b);
     });
     $('draw').addEventListener('click', () => { G = makeG(++gseed); draw(); });
 
     function draw() {
-      $('ks').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +(b as HTMLElement).dataset.v! === k));
-      const ps = pairs(X, G, k), eps = distortion(ps), eb = epsBound(k, M);
-      const W = 640, S = 240, ox = 52, oy = 12;
-      const mx = Math.max(...ps.map((p) => Math.max(p.d0, p.d1))) * 1.04;
-      const sx = (v: number) => ox + (v / mx) * S, sy = (v: number) => oy + S - (v / mx) * S;
-      let g = `<rect x="${ox}" y="${oy}" width="${S}" height="${S}" fill="none" stroke="var(--border)"/>`;
-      if (eb !== null) {
-        const lo = Math.sqrt(1 - eb), hi = Math.sqrt(1 + eb);
-        // bande entre les droites y = x√(1+ε) et y = x√(1−ε), coupée au cadre
-        g += `<path d="M${sx(0)},${sy(0)} L${sx(mx / hi)},${sy(mx)} L${sx(mx)},${sy(mx)} L${sx(mx)},${sy(mx * lo)} Z" fill="var(--text-2)" fill-opacity="0.07" stroke="var(--text-2)" stroke-width="1" stroke-dasharray="4 3"/>`;
-        g += `<text x="${ox + S + 6}" y="${sy(mx * lo) + 3}" class="zl">borne ±ε</text><line x1="${sx(mx)}" y1="${sy(mx * lo)}" x2="${ox + S + 4}" y2="${sy(mx * lo)}" stroke="var(--text-2)" stroke-width="0.8"/>`;
-      }
-      g += `<line x1="${sx(0)}" y1="${sy(0)}" x2="${sx(mx)}" y2="${sy(mx)}" stroke="var(--text-2)" stroke-width="1.2"/>`;
-      g += `<line x1="${sx(mx)}" y1="${sy(mx)}" x2="${ox + S + 4}" y2="${sy(mx)}" stroke="var(--text-2)" stroke-width="0.8"/><text x="${ox + S + 6}" y="${sy(mx) + 3}" class="zl">y = x : distances conservées</text>`;
-      ps.forEach((p) => (g += `<circle cx="${sx(p.d0).toFixed(1)}" cy="${sy(Math.min(p.d1, mx)).toFixed(1)}" r="2.3" fill="var(--text-2)" fill-opacity="0.6"/>`));
-      const ticks = [0, 0.5, 1].map((t) => Math.round(t * mx));
-      ticks.forEach((t) => (g += `<text x="${sx(t)}" y="${oy + S + 14}" text-anchor="middle" class="zl">${t}</text><text x="${ox - 5}" y="${sy(t) + 3}" text-anchor="end" class="zl">${t}</text>`));
-      g += `<text x="${ox + S / 2}" y="${oy + S + 28}" text-anchor="middle" class="zl">distance avant projection (R^${D})</text>`;
-      g += `<text transform="translate(12 ${oy + S / 2}) rotate(-90)" text-anchor="middle" class="zl">après (R^${k})</text>`;
+      $('ms').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +(b as HTMLElement).dataset.v! === m));
+      root.querySelectorAll<HTMLElement>('.jlsub').forEach((s) => (s.hidden = +s.dataset.m! !== m));
+      const rs = ratios(X, G, m), n = rs.length;
+      const out = rs.filter((r) => Math.abs(r - 1) > EPS).length, above = rs.filter((r) => r > 3).length;
+      // le repère suit la largeur du conteneur (1 unité = 1 px) : le texte garde sa taille sur mobile
+      const W = Math.max(320, Math.min(720, $('box').clientWidth || 640));
+      const narrow = W < 480;
+      const ox = 30, oy = 22, rm = narrow ? 74 : 132, pw = W - ox - rm, ph = 220, H = oy + ph + 30;
+      const sx = (i: number) => ox + ((i + 0.5) / n) * pw, sy = (v: number) => oy + ph - (Math.min(v, 3) / 3) * ph;
+      let g = '';
+      // bande 1 ± ε (gris), grille, ligne à 1
+      g += `<rect x="${ox}" y="${sy(1 + EPS)}" width="${pw}" height="${sy(1 - EPS) - sy(1 + EPS)}" fill="var(--text-2)" fill-opacity="0.12"/>`;
+      [0, 1, 2, 3].forEach((t) => {
+        if (t !== 1) g += `<line x1="${ox}" y1="${sy(t)}" x2="${ox + pw}" y2="${sy(t)}" stroke="var(--border)" stroke-dasharray="${t === 0 ? '' : '2 4'}"/>`;
+        g += `<text x="${ox - 6}" y="${sy(t) + 3.5}" text-anchor="end" class="ax">${t}</text>`;
+      });
+      g += `<line x1="${ox}" y1="${sy(1)}" x2="${ox + pw}" y2="${sy(1)}" stroke="var(--text-2)" stroke-width="1.2"/>`;
+      // paires : un point par paire ; au-dessus de 3, un triangle sur le bord haut
+      rs.forEach((r, i) => {
+        const x = sx(i).toFixed(1);
+        g += r > 3
+          ? `<path d="M${x},${oy - 4} l-2.6,4.5 h5.2 z" fill="var(--text)"/>`
+          : `<circle cx="${x}" cy="${sy(r).toFixed(1)}" r="1.9" fill="var(--text)" fill-opacity="0.75"/>`;
+      });
+      // étiquettes directes à droite
+      const lx = ox + pw + 8;
+      g += `<text x="${lx}" y="${sy(1) + 4}" class="lb">${narrow ? 'conservée' : 'distance conservée'}</text>`;
+      g += `<text x="${lx}" y="${sy(1 + EPS) + 4}" class="lb">${narrow ? '' : 'bande '}1 + ε</text><text x="${lx}" y="${sy(1 - EPS) + 4}" class="lb">${narrow ? '' : 'bande '}1 − ε</text>`;
+      if (above) g += `<text x="${lx}" y="${oy + 2}" class="lb">${above} ${narrow ? '> 3' : 'au-dessus de 3'}</text>`;
+      g += `<text x="${ox}" y="${oy - 8}" class="ax">d<tspan dy="3" font-size="8">1</tspan><tspan dy="-8" font-size="8">2</tspan><tspan dy="5"> / d</tspan><tspan dy="3" font-size="8">0</tspan><tspan dy="-8" font-size="8">2</tspan></text>`;
+      g += `<text x="${ox + pw / 2}" y="${oy + ph + 18}" text-anchor="middle" class="ax">les ${n} paires, triées par rapport croissant</text>`;
       const svg = $('svg') as unknown as SVGSVGElement;
-      svg.setAttribute('viewBox', `0 0 ${W} ${oy + S + 34}`); svg.innerHTML = g;
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.innerHTML = g;
 
-      $('line').textContent = `P = ${M} points, d = ${D} → k = ${k} : ${ps.length} paires. Distorsion mesurée ε = ${fm(eps)}.`;
-      $('k1').innerHTML = eps > 1 ? `<span class="r">${fm(eps)}</span>` : fm(eps);
-      $('k2').textContent = eb === null ? 'aucune' : fm(eb);
-      $('k2i').textContent = eb === null ? `la borne ne garantit rien : il faut k ≥ ${Math.ceil(24 * Math.log(M))} pour avoir ε < 1` : 'plus petit ε garanti par la formule pour ce k';
+      $('out').textContent = `${out} / ${n}`;
+      $('line').textContent = `m = ${m}, ε = ${fm(EPS, 1)} : rapport de ${fm(rs[0])} à ${fm(rs[n - 1])}, distorsion max ${fm(distortion(rs))} ; ${out} paire${out > 1 ? 's' : ''} sur ${n} hors de la bande.`;
     }
     draw();
+    let w0 = $('box').clientWidth;
+    new ResizeObserver(() => { const w = $('box').clientWidth; if (Math.abs(w - w0) > 4) { w0 = w; draw(); } }).observe($('box'));
   });
 </script>
 
 <style is:global>
-  .jlw .jlrow { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-bottom: 8px; }
+  .jlw .jlhead { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .jlw .jltitle { line-height: 1.35; }
+  .jlw .jltitle b { font-size: 15px; font-weight: 600; margin-right: 10px; }
+  .jlw .jltitle .jlsub { font-size: 12.5px; color: var(--text-2); white-space: nowrap; }
+  .jlw .jlstat { display: flex; align-items: baseline; gap: 8px; background: var(--surface-2); border-radius: 8px; padding: 4px 10px; }
+  .jlw .jlstat span { font-size: 12px; color: var(--text-2); }
+  .jlw .jlstat b { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .jlw .jlrow { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-bottom: 6px; }
   .jlw .jlk { display: inline-flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 13px; color: var(--text-2); }
   .jlw .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
-  .jlw .jlrow > button[data-ref="draw"] { margin-left: auto; }
+  .jlw .seg button { font-size: 13px; padding: 4px 10px; }
+  .jlw .jlrow > button[data-ref="draw"] { margin-left: auto; font-size: 13px; }
+  .jlw .jlplot { width: 100%; }
+  .jlw svg[data-ref="svg"] { width: 100%; height: auto; display: block; margin: 4px 0 0; }
+  .jlw svg[data-ref="svg"] text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .jlw svg[data-ref="svg"] text.lb { font: 11.5px var(--font); fill: var(--text-2); }
   .jlw .calc { margin-top: 10px; padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--text-2) 4.5%, transparent); }
   .jlw .fm { font-size: 0.92rem; overflow-x: auto; overflow-y: hidden; margin: 2px 0; }
-  .jlw .ln { font: 11.5px/1.5 var(--mono); color: var(--text-2); min-height: 1.5em; margin-top: 4px; }
-  .jlw .scr { overflow-x: auto; }
-  .jlw svg { min-width: 600px; width: 100%; height: auto; display: block; margin: 8px auto 0; max-width: 680px; }
-  .jlw svg text.zl { font: 11px var(--font); fill: var(--text-2); }
-  .jlw .kpis .r { color: var(--h-py); }
+  .jlw .fmw { display: flex; flex-wrap: wrap; gap: 0 1.2em; }
+  .jlw .ln { font: 11.5px/1.5 var(--mono); color: var(--text-2); min-height: 1.5em; margin: 2px 0 6px; }
+  .jlw .ln:last-child { margin-bottom: 0; }
   .jlw .note { font-size: 12.5px; color: var(--text-2); line-height: 1.5; margin: 8px 0 0; }
 </style>
