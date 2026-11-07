@@ -1,0 +1,70 @@
+---
+// Cours Reservoir computing, chapitre 2 : à quoi sert la boucle fermée (FORCE). Quatre cas précalculés à la construction (force.ts) sur le
+// même réseau chaotique sans entrée : la sortie z (violet) et sa cible (pointillés) pendant l'apprentissage puis une fois l'apprentissage
+// coupé, et trois neurones (bleu-vert). Un bouton par cas, pas d'animation.
+import { runs, target, TTRAIN, TTEST, type Case } from './force';
+
+const R = runs();
+const CASES: [Case, string, string][] = [
+  ['none', 'sans retour', 'la lecture apprend (RLS) sur un réservoir chaotique, sans rien lui renvoyer'],
+  ['teacher', 'retour de la cible', 'pendant l’apprentissage, on renvoie la cible d ; ensuite, la sortie z'],
+  ['force', 'FORCE (RLS)', 'on renvoie z dès le début ; RLS la garde proche de la cible'],
+  ['lms', 'LMS en boucle fermée', 'on renvoie z ; LMS, pas de 0,02'],
+];
+const fm = (v: number, d = 2) => v.toFixed(d).replace('.', ',');
+const W = 680, ox = 44, pw = W - ox - 10, T = TTRAIN + TTEST, X = (t: number) => ox + (t / T) * pw;
+const top = { y: 22, h: 140 }, Yz = (v: number) => top.y + top.h / 2 - (Math.max(-1.5, Math.min(1.5, v)) / 1.5) * (top.h / 2);
+const nb = { y: top.y + top.h + 24, h: 26, gap: 6 }, H = nb.y + 3 * (nb.h + nb.gap) + 6;
+const poly = (pts: [number, number][]) => pts.map(([a, b]) => `${a.toFixed(1)},${b.toFixed(1)}`).join(' ');
+let base = `<rect x="${ox}" y="${top.y}" width="${X(TTRAIN) - ox}" height="${H - top.y - 4}" fill="var(--text-2)" fill-opacity="0.06"/>`;
+base += `<line x1="${X(TTRAIN)}" x2="${X(TTRAIN)}" y1="${top.y - 6}" y2="${H - 4}" stroke="var(--text-2)" stroke-dasharray="3 3"/>`;
+base += `<text x="${ox + 4}" y="${top.y - 8}" class="fa">apprentissage : la règle corrige W_out</text><text x="${X(TTRAIN) + 4}" y="${top.y - 8}" class="fa">coupé : la boucle tourne seule</text>`;
+[-1, 0, 1].forEach((v) => (base += `<line x1="${ox}" x2="${ox + pw}" y1="${Yz(v)}" y2="${Yz(v)}" stroke="var(--border)"${v ? ' stroke-dasharray="2 4"' : ''}/><text x="${ox - 6}" y="${Yz(v) + 3.5}" text-anchor="end" class="fa">${v}</text>`));
+base += `<polyline points="${poly(Array.from({ length: T + 1 }, (_, t) => [X(t), Yz(target(t))]))}" fill="none" stroke="var(--text)" stroke-width="1.2" stroke-dasharray="4 3"/>`;
+base += `<text x="${ox + 4}" y="${nb.y - 6}" class="fa">3 neurones du réservoir</text>`;
+[0, 300, 600, 900].forEach((t) => (base += `<text x="${X(t)}" y="${H + 8}" text-anchor="middle" class="fa">${t}</text>`));
+const groups = CASES.map(([c]) => {
+  const r = R[c];
+  let g = `<polyline points="${poly(r.z.map((v, t) => [X(t), Yz(Number.isFinite(v) ? v : 0)]))}" fill="none" stroke="var(--r-out)" stroke-width="1.7"/>`;
+  r.neu.forEach((a, k) => { const y0 = nb.y + k * (nb.h + nb.gap) + nb.h / 2; g += `<polyline points="${poly(a.map((v, t) => [X(t), y0 - (v * nb.h) / 2]))}" fill="none" stroke="var(--r-res)" stroke-width="1"/>`; });
+  return { c, g };
+});
+const KPI = Object.fromEntries(CASES.map(([c]) => [c, { tr: fm(R[c].rmseTrain, 3), te: fm(R[c].rmseTest, 3) }]));
+---
+<div class="widget fcw" data-widget="fcw" data-kpi={JSON.stringify(KPI)} data-desc={JSON.stringify(Object.fromEntries(CASES.map(([c, , d]) => [c, d])))}>
+  <div class="fchead"><b>La sortie tient-elle quand on coupe l'apprentissage ?</b></div>
+  <div class="row"><span class="seg" data-ref="cases">{CASES.map(([c, l]) => <button data-c={c} class={c === 'force' ? 'active' : ''}>{l}</button>)}</span></div>
+  <p class="fcdesc" data-ref="desc">{CASES[2][2]}</p>
+  <svg viewBox={`0 0 ${W} ${H + 14}`} role="img" aria-label="Sortie et cible pendant puis après l'apprentissage, et trois neurones du réservoir">
+    <Fragment set:html={base} />
+    {groups.map(({ c, g }) => <g data-g={c} set:html={g} style={c === 'force' ? '' : 'display:none'} />)}
+  </svg>
+  <div class="kpis">
+    <div><span>RMSE pendant l'apprentissage</span><b data-ref="tr">{KPI.force.tr}</b><i>écart-type de la cible : 0,49</i></div>
+    <div><span>RMSE après, boucle seule</span><b data-ref="te">{KPI.force.te}</b><i>apprentissage coupé, la sortie revient dans le réservoir</i></div>
+  </div>
+  <p class="note">200 neurones, réseau chaotique (g = 1,5), aucune entrée ; retour par des poids figés tirés dans [−1, 1] ; temps en unités de τ.</p>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-widget="fcw"]').forEach((root) => {
+    const kpi = JSON.parse(root.dataset.kpi!), desc = JSON.parse(root.dataset.desc!);
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    root.querySelectorAll<HTMLButtonElement>('[data-c]').forEach((b) => b.addEventListener('click', () => {
+      const c = b.dataset.c!;
+      root.querySelectorAll<HTMLElement>('[data-c]').forEach((x) => x.classList.toggle('active', x === b));
+      root.querySelectorAll<SVGGElement>('[data-g]').forEach((g) => (g.style.display = g.dataset.g === c ? '' : 'none'));
+      $('tr').textContent = kpi[c].tr; $('te').textContent = kpi[c].te; $('desc').textContent = desc[c];
+    }));
+  });
+</script>
+
+<style is:global>
+  .fcw .fchead b { display: block; font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+  .fcw .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .fcw .seg button { font-size: 13px; padding: 4px 11px; }
+  .fcw .fcdesc { font-size: 13px; color: var(--text-2); margin: 6px 0 0; min-height: 1.5em; }
+  .fcw svg { width: 100%; height: auto; display: block; margin-top: 6px; }
+  .fcw svg text.fa { font: 11px var(--font); fill: var(--text-2); }
+  .fcw .note { font-size: 12.5px; color: var(--text-2); margin: 6px 0 0; }
+</style>

@@ -16,7 +16,7 @@ Dernière vérification complète : 4 novembre 2026 ; les 196 références du si
 
 - **Chapitre 1, section 5** : position générale des états d'un réservoir statique, déduite pour ce cours des lemmes 4.3-4.4 de Nguyen et Hein (2017) (numérotation PMLR non vérifiée) ; réservoir récurrent : aucun résultat trouvé, réserve gardée dans le texte.
 - **Chapitre 2** :
-  - Chiffres « sur les données du projet » : 0,16 et 0,01 viennent de la docstring de `readout_rules.py`, non recalculés ; 561 et 44 d'un log de script cité par l'utilisateur, non relu.
+  - Chiffres « sur les données du projet » : 561 et 44 viennent d'un log de script cité par l'utilisateur, non relu.
   - Figure Ohkubo et Inubushi : entrée à chaque pas Δt = 0,02 et cible 0,2 plus loin, déduits de leur figure 2 et de leur programme ; le texte de l'article se lit aussi comme un échantillonnage tous les τ.
 - **Chapitre 11, banc de poissons** :
   - Sans source (choix de dessin) : rotation interne d'une boule d'appât, rayon de la vacuole, frontière entre banc lâche et essaim, forme globale d'un essaim.

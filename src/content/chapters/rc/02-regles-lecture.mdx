@@ -1,7 +1,7 @@
 ---
 num: 2
 title: "Apprendre la lecture : mêmes états, règles différentes"
-summary: "Une lecture qui prédit la phrase suivante d'un chant, apprise de plusieurs façons sur les mêmes états : ridge, RLS, LMS, NLMS, règle hebbienne modulée par une récompense (EH) et ses variantes, pourquoi standardiser les neurones, puis une lecture d'ordre 2 apprise en dual par un noyau."
+summary: "Une lecture qui prédit la phrase suivante d'un chant, apprise de plusieurs façons sur les mêmes états : ridge, RLS, LMS, NLMS, règle hebbienne modulée par une récompense (EH) et ses variantes, à quoi sert la boucle fermée de FORCE, puis une lecture d'ordre 2 apprise en dual par un noyau."
 status: premier-jet
 ---
 import Reveal from '@/components/shared/Reveal.astro';
@@ -9,13 +9,12 @@ import Quiz from '@/components/shared/Quiz.astro';
 import Refs from '@/components/shared/Refs.astro';
 import ChantFigure from '@/components/rc/02-regles-lecture/ChantFigure.astro';
 import Regles from '@/components/rc/02-regles-lecture/Regles.astro';
-import ReglesWidget from '@/components/rc/02-regles-lecture/ReglesWidget.astro';
 import EhWidget from '@/components/rc/02-regles-lecture/EhWidget.astro';
 import Ordre2Widget from '@/components/rc/02-regles-lecture/Ordre2Widget.astro';
 import OhkuboFigure from '@/components/rc/02-regles-lecture/OhkuboFigure.astro';
 import Variantes from '@/components/rc/02-regles-lecture/Variantes.astro';
-import FluxWidget from '@/components/rc/02-regles-lecture/FluxWidget.astro';
 import BillesWidget from '@/components/rc/02-regles-lecture/BillesWidget.astro';
+import ForceWidget from '@/components/rc/02-regles-lecture/ForceWidget.astro';
 
 Toutes les lectures du chapitre lisent les mêmes états et visent les mêmes cibles. Seule change la façon d'apprendre les poids $W_{out}$.
 
@@ -52,45 +51,32 @@ Ordre 1 : la sortie est linéaire en $x$. La lecture généralisée applique les
 
 <Regles />
 
-Le même trajet pour toutes les règles : l'entrée traverse le réservoir, la lecture somme les neurones ; seule la dernière étape change.
+Le même trajet pour toutes les règles : l'entrée traverse le réservoir, la lecture somme les neurones ; seule la dernière étape change. L'erreur ne modifie que les poids de lecture : rien ne revient dans le réservoir. Avec « boucle fermée » (principe de FORCE), c'est la sortie $z$ qui revient, par $W_{fb}$ figé. Avec ces réglages (12 neurones, échelle du retour 0,6), la RMSE après 100 pas vaut 0,05 pour RLS en boucle fermée (0,08 en boucle ouverte), 0,22 pour LMS (0,19) et 0,34 pour eh_np (0,25).
 
 <BillesWidget />
 
 - **Ridge** : la solution du chapitre 1, en un système linéaire. Ici la constante est pénalisée comme les autres poids, pour comparer exactement avec RLS.
-- **RLS** (*recursive least squares*) : $P$ est l'inverse de $\sum \tilde x\,\tilde x^{\top} + \alpha I$ sur les phrases déjà vues, tenu à jour par la formule de Sherman-Morrison. Parti de $W_{out} = 0$, après **une passe**, $W_{out}$ est exactement la solution ridge de coefficient $\lambda = \alpha$, quel que soit l'ordre des phrases (sans facteur d'oubli, *forgetting factor*). Une deuxième passe compte chaque phrase deux fois : ridge de coefficient $\alpha/2$. FORCE est RLS appliqué pendant que la sortie est renvoyée dans le réservoir (chapitre 6, section 6) ; ici, pas de retour.
+- **RLS** (*recursive least squares*) : $P$ est l'inverse de $\sum \tilde x\,\tilde x^{\top} + \alpha I$ sur les phrases déjà vues, tenu à jour par la formule de Sherman-Morrison. Parti de $W_{out} = 0$, après **une passe**, $W_{out}$ est exactement la solution ridge de coefficient $\lambda = \alpha$, quel que soit l'ordre des phrases (sans facteur d'oubli, *forgetting factor*). Une deuxième passe compte chaque phrase deux fois : ridge de coefficient $\alpha/2$. **FORCE** (Sussillo et Abbott, 2009) n'est pas une règle mais un principe : apprendre en ligne **en boucle fermée**, assez vite pour garder l'erreur petite dès le départ (*First-Order Reduced and Controlled Error*). La sortie $z$ est renvoyée dans le réservoir par des poids $W_{fb}$ tirés au hasard et **figés** ; dans la version de base, seul $W_{out}$ apprend, et c'est $z$, pas l'erreur, qui revient. Sussillo et Abbott utilisent RLS ; des variantes utilisent LMS, qui converge plus lentement (Li et al., 2022). Ce chapitre est en boucle ouverte, sauf l'interrupteur « boucle fermée » de l'animation ci-dessous ; la boucle fermée sert surtout à générer une dynamique (section 3, et chapitre 6, section 6).
 - **LMS** (*least mean squares*) : descente de gradient stochastique sur $\tfrac12 \lVert e \rVert^2$, un exemple à la fois. Il minimise l'erreur quadratique **sans pénalité** : il ne vise aucun ridge. Parti de $W_{out} = 0$, il passe près des solutions ridge de $\lambda$ de plus en plus petit ; l'arrêt précoce (*early stopping*) joue le rôle de $\lambda$.
 - **NLMS** (*normalized LMS*) : le pas est divisé par $\lVert x \rVert^2 + 1$ de l'exemple (le 1 vient du biais). L'erreur sur cet exemple est alors multipliée par exactement $1 - c$ : elle diminue si $0 < c < 2$, sans changer de signe si $c \le 1$.
 - **Ordre des données** des règles en ligne : les chants un par un, chacun dans l'ordre du temps ; les chants dans un ordre aléatoire à chaque époque.
 
 Avec ces réglages (états standardisés, $c = 0{,}1$, $\lambda$ sur une grille fine de 0,001 à 1 000), LMS est le plus proche de la solution ridge de $\lambda \approx 400$ après 1 époque, 40 après 10, 1,6 après 300, 0,5 après 1 000, 0,25 après 2 000 : $\lambda$ décroît à peu près comme l'inverse du nombre d'époques (écart relatif au ridge le plus proche : 10 à 17 %). C'est la correspondance du gradient continu, $\lambda \approx 1/(\eta \times \text{époques})$ (Ali, Kolter et Tibshirani, 2019), à un facteur 1,2 à 1,5 près : ici $1/\eta \approx 610$, contre $\lambda \times$ époques entre 400 et 500.
 
-## 3. Les règles côte à côte
+## 3. Boucle fermée : à quoi sert FORCE
 
-<ReglesWidget />
+Une lecture apprise en boucle ouverte répond à une entrée. Pour qu'un réservoir **génère** seul un signal (un motif, une mémoire), il faut lui renvoyer sa sortie $z$ : c'est la boucle fermée. Apprendre dans cette boucle pose un problème, que FORCE résout.
 
-Avec ces réglages, précision de test sur 50 époques :
+<ForceWidget />
 
-- **RLS** : 68 % après sa passe, la valeur du ridge ; écart relatif à la solution ridge $6 \cdot 10^{-13}$.
-- **LMS et NLMS** : 66-67 % dès la première époque, puis entre 61 et 70 %.
-- **eh_np_local et neh** : 64-65 % après une époque, 55-56 % après deux, puis entre 60 et 71 %. **eh_np** : 47 % après une époque, 61 % après trois, puis entre 59 et 71 %.
-- **eh** (la variante de Hoerzer et al.) : 60 % après une époque, 53 % après deux, puis entre 30 et 43 % (section 4). Ses poids divergent : écart au ridge 770 après 10 époques, $2 \cdot 10^{21}$ après 50.
+Avec ces réglages (200 neurones, réseau chaotique de gain 1,5, aucune entrée, cible de période 60) :
 
-### Où chaque règle écrit sa mise à jour
+- **Sans retour** : la lecture s'ajuste un peu pendant l'apprentissage (RMSE 0,29), puis échoue (0,72) : le réservoir chaotique ne repasse jamais par les mêmes états.
+- **Retour de la cible** (*teacher forcing*) : pendant l'apprentissage, le réservoir reçoit la cible exacte, et la lecture l'apprend presque parfaitement (0,005). Une fois la boucle refermée sur sa propre sortie, ses petites erreurs reviennent dans le réservoir et s'accumulent (0,36) : elle n'a jamais appris dans ces conditions.
+- **FORCE** : c'est la sortie réelle $z$ qui revient dès le début. RLS la garde assez proche de la cible pour que le réservoir apprenne dans les conditions où il tournera seul. L'activité des neurones devient périodique, le chaos est maîtrisé, et la sortie tient une fois l'apprentissage coupé (0,009).
+- **LMS en boucle fermée** : avec un pas assez grand pour suivre la cible (0,007 pendant l'apprentissage), ses poids bougent encore cinq fois plus que ceux de RLS en fin d'apprentissage ; figés, ils laissent une boucle instable (1,25).
 
-À chaque phrase, la mise à jour $\Delta W$ est le produit d'un nombre par sortie (facteur de ligne) et d'un nombre par neurone (facteur de colonne). Le bouton « lecture » enchaîne les phrases.
-
-<FluxWidget />
-
-### Pourquoi standardiser les neurones
-
-Le widget utilise des états standardisés. Sans standardisation (états bruts), les neurones à taux positifs ont une **moyenne forte et des variations faibles**. Moyenne d'un neurone : 0,50 en moyenne (de 0,03 à 0,97 selon le neurone) ; écart-type : 0,014 (de 0,002 à 0,035).
-
-- **LMS et NLMS** restent à 31-33 % (31 % : la classe la plus fréquente) pendant 11 époques, puis oscillent entre 31 et 63 %. eh reste à 31 % pendant 50 époques, eh_np entre 13 et 42 % (31 % le plus souvent) ; eh_np_local et neh y remontent par moments (60 et 57 % au mieux).
-- **Le mécanisme** : la matrice $\langle x\,x^{\top} \rangle$ a une valeur propre de 20, dans la direction de l'activité moyenne ; la suivante vaut 0,005, 4 000 fois moins. Le pas $\eta = c / (\langle \lVert x \rVert^2 \rangle + 1) \approx 0{,}1/20$ est réglé sur la première. Dans une direction de valeur propre $\nu$, une époque de $n$ phrases réduit la distance restante d'un facteur $\approx e^{-n \eta \nu}$ : ici $e^{-382 \times 0{,}005 \times 0{,}005} \approx 0{,}99$, 1 % par époque. La règle n'apprend que la direction moyenne : après 5 époques, $W_{out}$ figé donne presque la même sortie pour toutes les phrases, proche de la fréquence de chaque classe (0,28 pour B, écart-type d'une phrase à l'autre au plus 0,013), et l'argmax répond toujours B. Pendant l'apprentissage, la sortie dérive d'un pas à l'autre ($y_B$ de 0,23 à 0,38 pendant l'époque 6).
-- **Standardiser** chaque neurone (moyenne et écart-type sur les chants d'apprentissage) remplace ces valeurs propres par 20, 16, 9, 6… : la direction moyenne n'écrase plus les autres.
-- **NLMS ne corrige pas** : il divise par $\lVert x \rVert^2 + 1$, un seul nombre, dominé par la moyenne.
-- **RLS et ridge** trouvent quand même la solution exacte : $P$ corrige la géométrie. Mais $\lambda$ dépend de l'échelle : sur les états bruts, $\lambda = 1$ pèse beaucoup plus (62 % contre 68 %). Dans le projet, centrage ou standardisation sont choisis pour RLS par validation croisée.
-- Sur les données du projet (`random_ee` : 500 neurones, poids récurrents tirés dans $\mathcal U(0, 1)$, tous excitateurs) : activité moyenne 0,16 et écart-type 0,01 par neurone sur les états bruts, et les règles en ligne restent au niveau du hasard sans standardisation.
+La boucle fermée sert à **générer** sans entrée. Pour une tâche pilotée par une entrée, comme le jeu jouet du chapitre, elle apporte peu (interrupteur « boucle fermée » de l'animation, section 2).
 
 ## 4. EH : apprendre avec une récompense
 
@@ -106,8 +92,8 @@ Trois temps :
 
 <Variantes />
 
-- **Chez Hoerzer et al.** : bruit uniforme sur $[-0{,}5 ; 0{,}5]$ ajouté à chaque sortie, mise à jour toutes les 1 ms, $\bar z$ et $\bar r$ filtrés avec une constante de 5 ms, $M$ binaire, $\eta$ décroissant. La sortie sans bruit change peu à l'échelle de ces 5 ms.
-- **Ici, une mise à jour par phrase** : $z - \bar z$ mêle le bruit et le changement de sortie d'une phrase à l'autre. Avec ces réglages, sur trois passes, seules 38 % des sorties mises à jour se rapprochent de leur cible, et la précision de test baisse à chaque passe (section 3).
+- **Chez Hoerzer et al.** : bruit uniforme sur $[-0{,}5 ; 0{,}5]$ ajouté à chaque sortie, mise à jour toutes les 1 ms, $\bar z$ et $\bar r$ filtrés avec une constante de 5 ms, $M$ binaire, $\eta$ décroissant. La sortie sans bruit change peu à l'échelle de ces 5 ms. Leurs réseaux sont en boucle fermée, comme FORCE : la sortie est renvoyée dans le réservoir par des poids figés, tirés dans $[-1 ; 1]$ ; EH y remplace RLS. Ici, pas de retour.
+- **Ici, une mise à jour par phrase** : $z - \bar z$ mêle le bruit et le changement de sortie d'une phrase à l'autre. Avec ces réglages, sur trois passes, seules 38 % des sorties mises à jour se rapprochent de leur cible, et la précision de test baisse à chaque passe.
 - **eh_np** est une **perturbation de nœud** (*node perturbation*, d'où le « np ») : perturber la sortie d'un neurone et corréler la perturbation à la récompense. Fiete et Seung (2006) l'étendent aux réseaux à impulsions ; l'idée est plus ancienne (Widrow et Lehr, 1990). Elle demande de connaître le bruit $\xi$. eh_np l'obtient en calculant la sortie deux fois, avec et sans bruit, et prend pour $\bar r$ la récompense sans bruit (Fiete et Seung admettent toute référence non corrélée au bruit de l'essai). 61 % des sorties mises à jour se rapprochent de leur cible : un $M$ global peut récompenser une sortie parce que les autres se sont améliorées.
 - **Une récompense par sortie** (eh_np_local, neh) : 100 %. Si $M_i = 1$, le bruit $\xi_i$ a rapproché $z_i$ de $d_i$ ; déplacer la sortie d'une fraction de $\xi_i$ ($\eta\,(\lVert x \rVert^2 + 1) \le 1$) la rapproche aussi.
 - **En moyenne sur le bruit** (une récompense par sortie) :
@@ -164,19 +150,18 @@ Avec ces réglages :
 
 **À retenir**
 
-- Mêmes états, mêmes cibles : les règles ne diffèrent que par l'apprentissage. RLS en une passe, parti de zéro, donne exactement le ridge de $\lambda = \alpha$ ; LMS et NLMS demandent l'erreur de chaque sortie ; EH, seulement une récompense.
-- Standardiser chaque neurone avant une règle en ligne : sinon la direction de l'activité moyenne écrase les autres et la lecture prédit la classe la plus fréquente.
+- Mêmes états, mêmes cibles : les règles ne diffèrent que par l'apprentissage. RLS en une passe, parti de zéro, donne exactement le ridge de $\lambda = \alpha$ ; FORCE, c'est apprendre en ligne en boucle fermée (la sortie revient par des poids figés, seul $W_{out}$ apprend), avec RLS à l'origine, ou LMS ; LMS et NLMS demandent l'erreur de chaque sortie ; EH, seulement une récompense.
 - LMS vise les moindres carrés sans pénalité ; l'arrêt précoce tient lieu de $\lambda$.
 - EH : bruit sur la sortie, récompense binaire, $W_{out} \leftarrow W_{out} + \eta M (z - \bar z) x^{\top}$. Avec une mise à jour par phrase, il faut $\bar z$ = sortie sans bruit (perturbation de nœud), et une récompense par sortie aide.
 - Ordre 2 : $N + N(N+1)/2$ monômes, jamais formés ; noyau $k = p_1 + (p_1^2 + p_2)/2$, forme duale $a_i \leftarrow a_i - \eta_i e_i$, taux $c/\big((K_c)_{ii} + 1\big)$ indispensable.
 
 </div>
 
-<Refs items={[["Generating Coherent Patterns of Activity from Chaotic Neural Networks (Neuron 63, 544–557)", "Sussillo & Abbott", 2009, "10.1016/j.neuron.2009.07.018"], ["A Reward-Modulated Hebbian Learning Rule Can Explain Experimentally Observed Network Reorganization in a Brain Control Task (J. Neurosci. 30, 8400–8410)", "Legenstein, Chase, Schwartz & Maass", 2010, "10.1523/JNEUROSCI.4284-09.2010"], ["Emergence of Complex Computational Structures From Chaotic Neural Networks Through Reward-Modulated Hebbian Learning (Cerebral Cortex 24, 677–690)", "Hoerzer, Legenstein & Maass", 2014, "10.1093/cercor/bhs348"], ["Gradient Learning in Spiking Neural Networks by Dynamic Perturbation of Conductances (Phys. Rev. Lett. 97, 048104)", "Fiete & Seung", 2006, "10.1103/PhysRevLett.97.048104"], ["30 years of adaptive neural networks: perceptron, Madaline, and backpropagation (Proc. IEEE 78, 1415–1442)", "Widrow & Lehr", 1990, "10.1109/5.58323"], ["Adaptive switching circuits (rapport technique, Stanford Electronics Laboratories)", "Widrow & Hoff", 1960, "10.21236/AD0241531"], ["A learning method for system identification (IEEE Trans. Automatic Control 12, 282–287)", "Nagumo & Noda", 1967, "10.1109/TAC.1967.1098599"], ["Reservoir computing with generalized readout based on generalized synchronization (Scientific Reports 14, 30918)", "Ohkubo & Inubushi", 2024, "10.1038/s41598-024-81880-3"], ["Ridge Regression: Biased Estimation for Nonorthogonal Problems (Technometrics 12, 55–67)", "Hoerl & Kennard", 1970, "10.1080/00401706.1970.10488634"], ["Some Theorems in Least Squares (Biometrika 37, 149–157)", "Plackett", 1950, "10.1093/biomet/37.1-2.149"], ["Stochastic Approximation and Nonlinear Regression (MIT Press, Research Monograph 42)", "Albert & Gardner", 1967, "https://archive.org/details/stochasticapprox0000arth"], ["Ridge Regression Learning Algorithm in Dual Variables (ICML 1998, 515–521)", "Saunders, Gammerman & Vovk", 1998, "https://eprints.soton.ac.uk/258942/"], ["The Kernel Least-Mean-Square Algorithm (IEEE Trans. Signal Processing 56, 543–554)", "Liu, Pokharel & Príncipe", 2008, "10.1109/TSP.2007.907881"], ["Online Prediction of Time Series Data With Kernels (IEEE Trans. Signal Processing 57, 1058–1067)", "Richard, Bermudez & Honeine", 2009, "10.1109/TSP.2008.2009895"], ["Kernel Adaptive Filtering: A Comprehensive Introduction", "Liu, Príncipe & Haykin", 2010, "10.1002/9780470608593"], ["Kernel Methods for Pattern Analysis", "Shawe-Taylor & Cristianini", 2004, "10.1017/CBO9780511809682"], ["A Continuous-Time View of Early Stopping for Least Squares Regression (AISTATS 2019, PMLR 89)", "Ali, Kolter & Tibshirani", 2019, "1810.10082"]]} />
+<Refs items={[["Generating Coherent Patterns of Activity from Chaotic Neural Networks (Neuron 63, 544–557)", "Sussillo & Abbott", 2009, "10.1016/j.neuron.2009.07.018"], ["Composite FORCE learning of chaotic echo state networks for time-series prediction", "Li, Hu, Nakajima & Pan", 2022, "2207.02420"], ["A Reward-Modulated Hebbian Learning Rule Can Explain Experimentally Observed Network Reorganization in a Brain Control Task (J. Neurosci. 30, 8400–8410)", "Legenstein, Chase, Schwartz & Maass", 2010, "10.1523/JNEUROSCI.4284-09.2010"], ["Emergence of Complex Computational Structures From Chaotic Neural Networks Through Reward-Modulated Hebbian Learning (Cerebral Cortex 24, 677–690)", "Hoerzer, Legenstein & Maass", 2014, "10.1093/cercor/bhs348"], ["Gradient Learning in Spiking Neural Networks by Dynamic Perturbation of Conductances (Phys. Rev. Lett. 97, 048104)", "Fiete & Seung", 2006, "10.1103/PhysRevLett.97.048104"], ["30 years of adaptive neural networks: perceptron, Madaline, and backpropagation (Proc. IEEE 78, 1415–1442)", "Widrow & Lehr", 1990, "10.1109/5.58323"], ["Adaptive switching circuits (rapport technique, Stanford Electronics Laboratories)", "Widrow & Hoff", 1960, "10.21236/AD0241531"], ["A learning method for system identification (IEEE Trans. Automatic Control 12, 282–287)", "Nagumo & Noda", 1967, "10.1109/TAC.1967.1098599"], ["Reservoir computing with generalized readout based on generalized synchronization (Scientific Reports 14, 30918)", "Ohkubo & Inubushi", 2024, "10.1038/s41598-024-81880-3"], ["Ridge Regression: Biased Estimation for Nonorthogonal Problems (Technometrics 12, 55–67)", "Hoerl & Kennard", 1970, "10.1080/00401706.1970.10488634"], ["Some Theorems in Least Squares (Biometrika 37, 149–157)", "Plackett", 1950, "10.1093/biomet/37.1-2.149"], ["Stochastic Approximation and Nonlinear Regression (MIT Press, Research Monograph 42)", "Albert & Gardner", 1967, "https://archive.org/details/stochasticapprox0000arth"], ["Ridge Regression Learning Algorithm in Dual Variables (ICML 1998, 515–521)", "Saunders, Gammerman & Vovk", 1998, "https://eprints.soton.ac.uk/258942/"], ["The Kernel Least-Mean-Square Algorithm (IEEE Trans. Signal Processing 56, 543–554)", "Liu, Pokharel & Príncipe", 2008, "10.1109/TSP.2007.907881"], ["Online Prediction of Time Series Data With Kernels (IEEE Trans. Signal Processing 57, 1058–1067)", "Richard, Bermudez & Honeine", 2009, "10.1109/TSP.2008.2009895"], ["Kernel Adaptive Filtering: A Comprehensive Introduction", "Liu, Príncipe & Haykin", 2010, "10.1002/9780470608593"], ["Kernel Methods for Pattern Analysis", "Shawe-Taylor & Cristianini", 2004, "10.1017/CBO9780511809682"], ["A Continuous-Time View of Early Stopping for Least Squares Regression (AISTATS 2019, PMLR 89)", "Ali, Kolter & Tibshirani", 2019, "1810.10082"]]} />
 
 <Quiz>
 
-**Q1.** Dans le widget de la section 3, RLS s'arrête après une époque. Que vaut alors $W_{out}$, et que donnerait une deuxième passe ?
+**Q1.** RLS fait une passe sur les phrases, parti de $W_{out} = 0$. Que vaut alors $W_{out}$, et que donnerait une deuxième passe ?
 
 <Reveal>
 
@@ -184,11 +169,11 @@ La solution ridge de $\lambda = \alpha = 1$, à $10^{-12}$ près : $P$ vaut $(\s
 
 </Reveal>
 
-**Q2.** Avec les états bruts, LMS prédit B pour presque toutes les phrases pendant une dizaine d'époques. Pourquoi ? Et pourquoi NLMS n'y change rien ?
+**Q2.** Dans le widget de la section 3, la lecture apprise avec le retour de la cible (*teacher forcing*) échoue une fois la boucle refermée, alors que FORCE tient. Pourquoi ?
 
 <Reveal>
 
-Les états ont une forte moyenne commune : $\langle x\,x^{\top}\rangle$ a une valeur propre de 20 dans sa direction, et 0,005 au plus dans les autres. Le pas, réglé sur la première, avance d'environ 1 % par époque dans les autres. La lecture apprend seulement la fréquence de chaque classe : B, la plus fréquente, gagne partout. NLMS divise par $\lVert x \rVert^2 + 1$, un seul nombre : le rapport entre directions ne change pas.
+Avec le retour de la cible, le réservoir n'a vu pendant l'apprentissage que la cible exacte. Une fois la boucle refermée, il reçoit la sortie z, avec ses petites erreurs, qui l'emmènent dans des états jamais vus, et les erreurs s'accumulent. FORCE renvoie z dès le début, en la gardant proche de la cible : la lecture apprend dans les conditions où elle tournera seule.
 
 </Reveal>
 

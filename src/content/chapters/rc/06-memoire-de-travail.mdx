@@ -61,7 +61,7 @@ Avec trois neurones, l'espace d'état a trois axes : on voit les attracteurs, le
 
 ## 6. Dans un réservoir
 
-- **Il faut un retour** : un réservoir à propriété d'écho n'a qu'un état sans entrée. On ajoute une boucle qui réinjecte la sortie de la lecture dans le réservoir. Entraîner cette lecture modifie alors la dynamique du système bouclé.
+- **Il faut un retour** : un réservoir à propriété d'écho n'a qu'un état sans entrée. On ajoute une boucle qui réinjecte la sortie de la lecture dans le réservoir, par des poids de retour figés. Entraîner cette lecture modifie alors la dynamique du système bouclé ; l'entraîner en ligne (RLS, ou LMS) pendant que la boucle tourne, c'est FORCE (chapitre 2, section 3).
 - **Pascanu et Jaeger (2011)** entraînent ainsi un ESN à stocker, maintenir, retrouver et effacer des informations. Les états de mémoire y sont des attracteurs d'un système piloté par l'entrée ; l'article propose une définition formelle de tels attracteurs, au-delà des systèmes autonomes.
 - **Strock, Hinaut et Rougier (2020)** : un réservoir apprend une mémoire de travail « à porte » qui garde une valeur réelle arbitraire, mise à jour à tout moment. Sa dynamique est un attracteur en ligne, appris grâce à la réentrée (le retour) et à la non-linéarité, avec seulement quelques valeurs d'entraînement ; le résultat tient sur une large plage d'hyperparamètres.
 - **Ouvrir la boîte noire** : dans un RNN entraîné, on trouve numériquement les points fixes et les points lents en minimisant la vitesse au carré, $q(x) = \tfrac12 \lVert \dot x \rVert^2$, puis on linéarise autour d'eux. Sussillo et Barak montrent ainsi des dynamiques de faible dimension dans de grands réseaux.

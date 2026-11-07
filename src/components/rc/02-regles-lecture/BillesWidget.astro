@@ -8,6 +8,8 @@
 // Un seul bouton : lecture / pause (la pause fige le pas en cours).
 import katex from 'katex';
 const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
+// boucle fermée (FORCE) : la sortie du pas précédent revient dans le réservoir par W_fb, figé
+const FB = tx('\\text{boucle fermée : } x(n) = \\tanh\\big(W x(n{-}1) + W_{in} u(n) + W_{fb}\\, z(n{-}1)\\big), \\; W_{fb} \\text{ figé}');
 const FM: Record<string, string> = {
   ridge: tx('W = D\\,X^{\\top} (X X^{\\top} + \\lambda I)^{-1} \\quad \\text{(une fois, sur 20 états et cibles mis de côté)}'),
   rls: tx('g = \\frac{P x}{1 + x^{\\top} P x}, \\qquad W \\leftarrow W - e\\, g^{\\top}, \\qquad P \\leftarrow P - g\\, x^{\\top} P'),
@@ -20,11 +22,9 @@ const FM: Record<string, string> = {
   <div class="row blctl"><span>Règle :</span><span class="seg" data-ref="rule"></span><span class="seg" data-ref="ctl"></span></div>
   <div class="calc">
     {Object.entries(FM).map(([k, h]) => <div class="fm" data-fm={k} set:html={h} hidden={k !== 'lms'} />)}
-    <div class="ln l1" data-ref="ln1"></div>
-    <div class="ln" data-ref="ln2"></div>
+    <div class="fm" data-fb set:html={FB} hidden />
   </div>
   <canvas data-ref="cv" role="img" aria-label="Animation : une entrée traverse le réservoir, la lecture somme les neurones en trois sorties, puis la règle choisie envoie son signal d'apprentissage sur chaque poids"></canvas>
-  <p class="note">Bille : activité (grise depuis l'entrée, bleu-vert depuis les neurones), taille |valeur| ; anneaux pâles autour d'un neurone : son activité aux 3 pas précédents (mémoire). Sur grand écran, à droite des cibles : y_k (violet) et sa cible (pointillés) sur les 20 derniers pas. Trait noir : signal d'apprentissage (erreur e, gain g, bruit ξ, récompense M). Trait violet : poids appris, épaisseur selon |w|, pointillé si w &lt; 0. Lecture sans biais ; réservoir de 12 neurones, connexions figées en gris.</p>
 </div>
 
 <script>
@@ -34,7 +34,10 @@ const FM: Record<string, string> = {
     const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
     const cv = $('cv') as unknown as HTMLCanvasElement, ctx = cv.getContext('2d')!;
     const net = makeNet();
+    // règles, et interrupteur « boucle fermée » (principe de FORCE) : la sortie z revient dans le réservoir par W_fb, figé ;
+    // il vaut pour les règles en ligne (RLS, LMS, eh_np), pas pour ridge qui apprend hors ligne
     const RULES: [Rule, string][] = [['ridge', 'ridge'], ['rls', 'RLS'], ['lms', 'LMS'], ['eh', 'eh_np']];
+    const SFB = 0.6; // échelle du retour, choisie par simulation (FORCE converge, la boucle reste stable)
     const fm = (v: number, d = 2) => (Math.abs(v) < 0.5 * 10 ** -d ? (0).toFixed(d) : v.toFixed(d)).replace('.', ',').replace('-', '−');
     const SUB = ['₁', '₂', '₃'], DUR = { prop: 800, read: 550, learn: 2600 };
     // échelle d'épaisseur des poids, par règle (|w| typiques très différents : ridge jusqu'à 15, LMS et eh_np vers 0,4)
@@ -46,13 +49,18 @@ const FM: Record<string, string> = {
     const zeros = () => Array.from({ length: NK }, () => new Array(NR).fill(0));
 
     type Pt = [number, number];
-    type Ball = { a: () => Pt; b: () => Pt; c?: () => Pt; t0: number; dur: number; r: number; col: 'in' | 'res' | 'ink' };
-    let rule: Rule = 'lms', L = makeLearner(rule), n = 0, x = new Array(NR).fill(0), xPrev = x.slice();
+    type Ball = { a: () => Pt; b: () => Pt; c?: () => Pt; t0: number; dur: number; r: number; col: 'in' | 'res' | 'ink' | 'out' };
+    const learner = (r: Rule) => makeLearner(r, r === 'eh' ? 10 : 9);
+    let closed = false, rule: Rule = 'lms', L = learner(rule), n = 0, x = new Array(NR).fill(0), xPrev = x.slice();
     let wShow = zeros(), wFrom = zeros(), wTo = zeros();
-    let echo: number[][] = [], hist: { y: number[]; d: number[] }[] = [];
+    let echo: number[][] = [], zPrev = new Array(NK).fill(0);
+    // poids suivi : [sortie k, neurone i] (clic sur un fil violet), aucun au départ
+    let sel: [number, number] | null = null;
+    // valeurs affichées de y et d : gardées d'un pas à l'autre jusqu'à l'arrivée des nouvelles (pas de clignotement)
+    let yDisp: number[] | null = null, dDisp: number[] | null = null;
     let balls: Ball[] = [], phase: 'idle' | 'prop' | 'read' | 'learn' = 'idle', info: Learn | null = null, verdict = false;
     // horloge propre : elle n'avance que pendant la lecture, si bien que la pause fige le pas en cours
-    let running = false, once = false, T = 0, tPhase = 0, lastNow = performance.now(), dirty = true;
+    let tProp = 0, running = false, once = false, T = 0, tPhase = 0, lastNow = performance.now(), dirty = true;
     const fastRidge = () => rule === 'ridge' && !L.isSolved();
     const pNow = () => (phase === 'idle' ? 0 : (T - tPhase) / DUR[phase]);
 
@@ -60,14 +68,16 @@ const FM: Record<string, string> = {
     let W = 600, H = 300;
     const P = {
       u: (): Pt => [W < 500 ? 14 : Math.max(0.06 * W, 26), H / 2],
-      n: (i: number): Pt => { const R = Math.min((W < 500 ? 0.22 : 0.19) * W, 0.4 * H), a = -Math.PI / 2 + (i * 2 * Math.PI) / NR + JA[i]; return [(W < 500 ? 0.37 : 0.33) * W + R * JR[i] * Math.cos(a), H / 2 + R * JR[i] * Math.sin(a)]; },
+      n: (i: number): Pt => { const R = Math.min((W < 500 ? 0.25 : 0.19) * W, 0.4 * H), a = -Math.PI / 2 + (i * 2 * Math.PI) / NR + JA[i]; return [(W < 500 ? 0.37 : 0.33) * W + R * JR[i] * Math.cos(a), H / 2 + R * JR[i] * Math.sin(a)]; },
       c: (): Pt => [(W < 500 ? 0.37 : 0.33) * W, H / 2],
       y: (k: number): Pt => [0.73 * W, H * (0.27 + 0.23 * k)],
-      d: (k: number): Pt => [(W < 500 ? 0.9 : 0.85) * W, H * (0.27 + 0.23 * k)],
-      box: (): Pt => [0.6 * W, (rule === 'ridge' ? 0.9 : 0.12) * H],
-      m: (): Pt => [0.82 * W, 0.08 * H],
+      d: (k: number): Pt => [0.9 * W, H * (0.27 + 0.23 * k)],
+      box: (): Pt => [0.6 * W, 0.12 * H],
+      m: (): Pt => [0.82 * W, Math.max(12, 0.05 * H)],
     };
     const mid = (k: number, i: number): Pt => { const a = P.n(i), b = P.y(k); return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; };
+    // fil de retour W_fb : courbe qui passe sous le dessin, nettement distincte des fils de lecture
+    const fbc = (k: number, i: number): Pt => { const a = P.y(k), b = P.n(i); return [(a[0] + b[0]) / 2, H * 1.02 + 6 * k]; };
     const bend = (a: Pt, b: Pt): Pt => { const c = P.c(), m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; return [m[0] + 0.35 * (c[0] - m[0]), m[1] + 0.35 * (c[1] - m[1])]; };
     const pos = (bl: Ball, p: number): Pt => {
       const a = bl.a(), b = bl.b();
@@ -76,6 +86,14 @@ const FM: Record<string, string> = {
       return [q * q * a[0] + 2 * q * p * c[0] + p * p * b[0], q * q * a[1] + 2 * q * p * c[1] + p * p * b[1]];
     };
     const size = (v: number, m: number) => 1.6 + 3.4 * Math.min(1, Math.abs(v) / m);
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // départs étalés : une bille met un temps proportionnel à la longueur de son fil, et part avec un petit décalage
+    const hash = (j: number) => { const s = Math.sin(j * 12.9898) * 43758.5453; return s - Math.floor(s); };
+    const spread = (list: Ball[]) => {
+      const lens = list.map((b) => { const a = b.a(), c = b.b(); return Math.hypot(c[0] - a[0], c[1] - a[1]); }), lm = Math.max(1, ...lens);
+      list.forEach((b, j) => { b.dur = 0.55 + 0.4 * lens[j] / lm; b.t0 = (1 - b.dur) * 0.8 * hash(j + 1); });
+      return list;
+    };
     // départ lent, accélération, freinage à l'arrivée
     const ease = (q: number) => (q < 0.5 ? 2 * q * q : 1 - (-2 * q + 2) ** 2 / 2);
     // ressort : dépasse un peu la valeur d'arrivée puis s'y pose ; élastique : oscille autour de l'arrivée en s'amortissant
@@ -83,28 +101,32 @@ const FM: Record<string, string> = {
     const elastic = (q: number) => (q <= 0 ? 0 : q >= 1 ? 1 : 1 - Math.pow(2, -9 * q) * Math.cos(q * 3.2 * Math.PI));
     function resize() {
       const dpr = window.devicePixelRatio || 1;
-      W = Math.max(200, cv.clientWidth); H = Math.round(Math.min(340, Math.max(240, W * 0.5)));
+      W = Math.max(200, cv.clientWidth); H = W < 500 ? 210 : Math.round(Math.min(340, Math.max(240, W * 0.5)));
       cv.width = W * dpr; cv.height = H * dpr; cv.style.height = H + 'px';
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0); dirty = true;
     }
 
     // ---- un pas : propagation, lecture, retour
     function startStep() {
+      tProp = T;
       echo.unshift(x.slice()); if (echo.length > 3) echo.pop();
       xPrev = x.slice();
       const u = input(n);
-      x = stepNet(net, xPrev, u);
+      // FORCE : z(n − 1), la sortie avec les poids actuels, revient dans le réservoir par W_fb
+      zPrev = L.out(xPrev);
+      x = stepNet(net, xPrev, u, zPrev, closed ? SFB : 0);
       balls = [];
       net.win.forEach((v, i) => { if (v) balls.push({ a: P.u, b: () => P.n(i), t0: 0, dur: 1, r: size(v * u, 1), col: 'in' }); });
+      if (closed) for (let k = 0; k < NK; k++) for (let i = 0; i < NR; i++) { const v = SFB * net.wfb[i][k] * zPrev[k]; if (Math.abs(v) > 0.03) balls.push({ a: () => P.y(k), b: () => P.n(i), c: () => fbc(k, i), t0: 0, dur: 1, r: size(v, 0.4), col: 'out' }); }
       net.edges.forEach((e) => { const v = e.w * xPrev[e.from]; if (Math.abs(v) > 0.02) balls.push({ a: () => P.n(e.from), b: () => P.n(e.to), c: () => bend(P.n(e.from), P.n(e.to)), t0: 0, dur: 1, r: size(v, 0.6), col: 'res' }); });
+      spread(balls);
       setPhase('prop');
     }
     function setPhase(p: typeof phase) {
       phase = p; tPhase = T; verdict = false;
-      if (p === 'read') { balls = []; for (let k = 0; k < NK; k++) x.forEach((v, i) => balls.push({ a: () => P.n(i), b: () => P.y(k), t0: 0, dur: 1, r: size(v, 1) * 0.8, col: 'res' })); }
+      if (p === 'read') { balls = []; for (let k = 0; k < NK; k++) x.forEach((v, i) => { const c = v * wShow[k][i]; if (Math.abs(c) >= 0.01) balls.push({ a: () => P.n(i), b: () => P.y(k), t0: 0, dur: 1, r: size(c, 0.5), col: 'res' }); });  spread(balls); }
       if (p === 'learn') {
         info = L.step(x, targets(n));
-        hist.push({ y: info.y, d: info.d }); if (hist.length > 20) hist.shift();
         wFrom = wShow.map((r) => r.slice()); wTo = L.W.map((r) => r.slice()); balls = [];
         // ridge, collecte : l'état et les cibles partent dans X et D
         if (rule === 'ridge' && !info.solved) {
@@ -112,23 +134,24 @@ const FM: Record<string, string> = {
           for (let k = 0; k < NK; k++) balls.push({ a: () => P.d(k), b: P.box, t0: 0, dur: 0.75, r: size(info.d[k], 1), col: 'ink' });
         }
       }
-      text(); dirty = true;
+      dirty = true;
     }
     function endStep() {
-      wShow = L.W.map((r) => r.slice()); n++; phase = 'idle'; balls = []; info = null;
+      wShow = L.W.map((r) => r.slice()); yDisp = wShow.map((w) => w.reduce((s, v, i) => s + v * x[i], 0)); dDisp = targets(n); n++; phase = 'idle'; balls = []; info = null;
       if (once) { once = false; running = false; play.textContent = 'lecture'; play.classList.remove('active'); }
-      text(); dirty = true;
+      dirty = true;
     }
     function advance(now: number) {
       const dt = Math.min(100, now - lastNow); lastNow = now;
       if (!running) return;
-      T += dt * (fastRidge() ? 2.5 : 1); dirty = true;
+      const dead = phase === 'learn' && info && ((rule === 'ridge' && info.solved && !info.dw.flat().some((v) => v)) || (rule === 'eh' && verdict && !info.M));
+      T += dt * (n === WASH ? 0.45 : fastRidge() ? (n - WASH < 2 ? 1 : 6) : dead ? 3 : 1); dirty = true;
       if (phase === 'idle') { startStep(); return; }
       const p = pNow();
       if (phase === 'learn') {
         const q = Math.min(1, Math.max(0, (p - TW[rule]) / (1 - TW[rule])));
         wShow = wFrom.map((r, k) => r.map((v, i) => v + (wTo[k][i] - v) * spring(q)));
-        if (rule === 'eh' && !verdict && p >= 0.4) { verdict = true; text(); }
+        if (rule === 'eh' && !verdict && p >= 0.4) verdict = true;
       }
       if (p >= 1) { if (phase === 'prop') setPhase('read'); else if (phase === 'read') setPhase('learn'); else endStep(); }
     }
@@ -146,18 +169,26 @@ const FM: Record<string, string> = {
       // connexions figées, presque invisibles ; pendant la propagation, celles qui portent une bille s'allument (pic au passage)
       const lit = phase === 'prop' ? Math.sin(Math.PI * Math.min(1, Math.max(0, p))) : 0;
       ctx.strokeStyle = C.t2;
+      ctx.setLineDash([2, 3]);
       const stroke = (alpha: number, w: number, path: () => void) => { ctx.globalAlpha = alpha; ctx.lineWidth = w; ctx.beginPath(); path(); ctx.stroke(); };
-      net.win.forEach((v, i) => { if (!v) return; const a = P.u(), b = P.n(i), s = lit * Math.min(1, Math.abs(v * input(n))); stroke(0.1 + 0.6 * s, 1 + 1.2 * s, () => { ctx.moveTo(...a); ctx.lineTo(...b); }); });
+      net.win.forEach((v, i) => { if (!v) return; const a = P.u(), b = P.n(i), s = lit * Math.min(1, Math.abs(v * input(n))); stroke(0.18 + 0.6 * s, 1 + 1.2 * s, () => { ctx.moveTo(...a); ctx.lineTo(...b); }); });
       net.edges.forEach((e) => {
         const a = P.n(e.from), b = P.n(e.to), c = bend(a, b), v = Math.abs(e.w * xPrev[e.from]), s = v > 0.02 ? lit * Math.min(1, v / 0.6) : 0;
-        stroke(0.1 + 0.55 * s, 1 + 1.2 * s, () => { ctx.moveTo(...a); ctx.quadraticCurveTo(c[0], c[1], b[0], b[1]); });
+        stroke(0.18 + 0.55 * s, 1 + 1.2 * s, () => { ctx.moveTo(...a); ctx.quadraticCurveTo(c[0], c[1], b[0], b[1]); });
       });
-      ctx.globalAlpha = 1;
+      ctx.globalAlpha = 1; ctx.setLineDash([]);
+      if (closed) {
+        ctx.setLineDash([2, 3]); ctx.strokeStyle = C.t2;
+        for (let k = 0; k < NK; k++) for (let i = 0; i < NR; i++) { const a = P.y(k), b = P.n(i), c = fbc(k, i), s = phase === 'prop' ? lit * Math.min(1, Math.abs(SFB * net.wfb[i][k] * zPrev[k]) / 0.4) : 0; ctx.globalAlpha = 0.12 + 0.5 * s; ctx.lineWidth = 1 + s; ctx.beginPath(); ctx.moveTo(...a); ctx.quadraticCurveTo(c[0], c[1], b[0], b[1]); ctx.stroke(); }
+        ctx.setLineDash([]); ctx.globalAlpha = 1;
+        if (W >= 500 && !(n === WASH && phase !== 'idle')) label('W_fb (figé) : z revient dans le réservoir', 0.53 * W, H - 6, C.t2);
+      }
       // lecture : traits violets, épaisseur selon √(|w| / référence de la règle)
       ctx.strokeStyle = C.out;
       wShow.forEach((row, k) => row.forEach((v, i) => {
         const a = P.n(i), b = P.y(k); ctx.lineWidth = 0.5 + 3.5 * Math.min(1, Math.sqrt(Math.abs(v) / WREF[rule]));
-        ctx.setLineDash(v < 0 ? [4, 3] : []); ctx.globalAlpha = Math.abs(v) < 1e-6 ? 0.18 : 0.8;
+        // un poids nul n'a pas de fil : le fil apparaît en fondu dès que le poids s'écarte de zéro
+        const vis = Math.min(1, Math.abs(v) / (0.03 * WREF[rule])); if (vis < 0.01) return; ctx.globalAlpha = 0.8 * vis;
         ctx.beginPath(); ctx.moveTo(...a); ctx.lineTo(...b); ctx.stroke();
       }));
       ctx.setLineDash([]); ctx.globalAlpha = 1;
@@ -165,35 +196,34 @@ const FM: Record<string, string> = {
       const pp = phase === 'prop' ? Math.min(1, Math.max(0, (p - 0.75) / 0.25)) : 1;
       // à l'arrivée des billes (fin de propagation), chaque neurone gonfle et s'entoure d'un halo, d'autant plus que |x| est grand
       const hs = phase === 'prop' ? Math.min(1, Math.max(0, (p - 0.8) / 0.2)) : phase === 'read' ? 1 + Math.min(1, p / 0.35) : 0;
+      const R0 = W < 500 ? 6.5 : 8;
+      if (!reduce && (phase === 'prop' || phase === 'read')) {
+        const ring = (c: Pt, s: number, a: number, r0: number, span: number) => { if (s <= 0 || s >= 1 || a < 0.01) return; ctx.beginPath(); ctx.arc(c[0], c[1], r0 + span * s, 0, 2 * Math.PI); ctx.strokeStyle = C.res; ctx.globalAlpha = a * (1 - s); ctx.lineWidth = 1.3; ctx.stroke(); ctx.globalAlpha = 1; };
+        const su = (T - tProp) / 600; ring(P.u(), su, 0.4 * Math.min(1, Math.abs(input(n))), 9, 26);
+        const sr = (T - tProp - 0.72 * DUR.prop) / 750;
+        for (let i = 0; i < NR; i++) { const a = 0.45 * Math.min(1, Math.abs(x[i])); ring(P.n(i), sr, a, R0 + 2, W < 500 ? 18 : 30); ring(P.n(i), sr - 0.22, a * 0.7, R0 + 2, W < 500 ? 18 : 30); }
+      }
+      const disk = (i: number, r: number, v: number) => { const [cx, cy] = P.n(i); ctx.beginPath(); ctx.arc(cx, cy, r, 0, 2 * Math.PI); ctx.fillStyle = C.bg; ctx.fill(); ctx.globalAlpha = 0.15 + 0.8 * Math.min(1, Math.abs(v)); ctx.fillStyle = C.res; ctx.fill(); ctx.globalAlpha = 1; ctx.strokeStyle = C.res; ctx.lineWidth = 1.4; ctx.stroke(); };
       for (let i = 0; i < NR; i++) {
         const [cx, cy] = P.n(i), v = phase === 'prop' ? xPrev[i] + (x[i] - xPrev[i]) * pp : x[i];
-        const ax = Math.min(1, Math.abs(x[i])), up = hs > 0 && hs < 2 ? Math.sin((Math.PI * hs) / 2) : 0, r = 8 * (1 + 0.22 * up * ax);
+        const ax = Math.min(1, Math.abs(x[i])), up = hs > 0 && hs < 2 ? Math.sin((Math.PI * hs) / 2) : 0, r = R0 * (1 + 0.22 * up * ax);
         if (up > 0) { const g = Math.min(1, hs); ctx.beginPath(); ctx.arc(cx, cy, r + 3 + 9 * g * ax, 0, 2 * Math.PI); ctx.fillStyle = C.res; ctx.globalAlpha = 0.28 * up * ax; ctx.fill(); ctx.globalAlpha = 1; }
-        ctx.beginPath(); ctx.arc(cx, cy, r, 0, 2 * Math.PI); ctx.fillStyle = C.bg; ctx.fill();
-        ctx.globalAlpha = 0.15 + 0.8 * Math.min(1, Math.abs(v)); ctx.fillStyle = C.res; ctx.fill(); ctx.globalAlpha = 1;
-        ctx.strokeStyle = C.res; ctx.lineWidth = 1.4; ctx.stroke();
+        disk(i, r, v);
         echo.forEach((ex, j) => { const a = Math.min(1, Math.abs(ex[i])) * (0.5 - 0.14 * j); if (a > 0.04) { ctx.beginPath(); ctx.arc(cx, cy, r + 3.5 + 3.2 * j, 0, 2 * Math.PI); ctx.strokeStyle = C.res; ctx.globalAlpha = a; ctx.lineWidth = 1.2; ctx.stroke(); ctx.globalAlpha = 1; } });
       }
-      // mini-courbes à droite des cibles : y_k (violet) et sa cible (pointillés) sur les 20 derniers pas (grand écran seulement)
-      if (W >= 500 && hist.length > 1) for (let k = 0; k < NK; k++) {
-        const x0 = 0.895 * W, wd = 0.095 * W, yc = P.d(k)[1], X = (j: number) => x0 + (j + 20 - hist.length) / 19 * wd, Y = (v: number) => yc - Math.max(-1.1, Math.min(1.1, v)) * 13;
-        ctx.strokeStyle = C.t2; ctx.globalAlpha = 0.35; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x0, yc); ctx.lineTo(x0 + wd, yc); ctx.stroke(); ctx.globalAlpha = 1;
-        const curve = (f: (h: { y: number[]; d: number[] }) => number, col: string, w: number, dash: number[]) => { ctx.setLineDash(dash); ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); hist.forEach((h, j) => (j ? ctx.lineTo(X(j), Y(f(h))) : ctx.moveTo(X(j), Y(f(h))))); ctx.stroke(); ctx.setLineDash([]); };
-        curve((h) => h.d[k], C.text, 1, [3, 2]); curve((h) => h.y[k], C.out, 1.6, []);
-      }
       // entrée, sorties (valeur avec les poids affichés, donc elle bouge quand ils changent), cibles
-      const shown = phase === 'learn' || (phase === 'idle' && n > WASH), nn = Math.max(0, phase === 'idle' ? n - 1 : n);
-      node(P.u(), 9, C.t2, 1.4); label(W < 500 ? 'u' : 'entrée u', P.u()[0], P.u()[1] + 24); label(fm(input(nn)), P.u()[0], P.u()[1] - 15);
-      const dd = targets(nn), yv = wShow.map((w) => w.reduce((s, v, i) => s + v * x[i], 0));
+      const fresh = phase === 'learn' || (phase === 'read' && p > 0.9), nn = Math.max(0, phase === 'idle' ? n - 1 : n);
+      node(P.u(), 9, C.t2, 1.4); { const [ux, uy] = P.u(); ctx.beginPath(); ctx.arc(ux, uy, 7.5, 0, 2 * Math.PI); ctx.fillStyle = C.t2; ctx.globalAlpha = 0.55 * Math.min(1, Math.abs(input(nn))); ctx.fill(); ctx.globalAlpha = 1; } label(W < 500 ? 'u' : 'entrée u', P.u()[0], P.u()[1] + 24); label(fm(input(nn)), P.u()[0], P.u()[1] - 15);
+      const yv = fresh ? wShow.map((w) => w.reduce((s, v, i) => s + v * x[i], 0)) : yDisp, dd = fresh ? targets(n) : dDisp;
+      const pulse = phase === 'read' && p > 0.85 ? Math.sin(((p - 0.85) / 0.15) * Math.PI) : 0;
       const ghost = rule === 'eh' && phase === 'learn' && p < 0.45 ? Math.sin((p / 0.45) * Math.PI) : 0;
       for (let k = 0; k < NK; k++) {
         const [yx, yy] = P.y(k), [dx, dy] = P.d(k);
-        // eh_np : la sortie est poussée de ξ (z = y + ξ) et tremble, puis revient à y
-        const sy = ghost && info?.xi ? -(16 * info.xi[k]) / 0.3 * ghost + 2.2 * ghost * Math.sin(p * 90 + 2 * k) : 0, sx = ghost ? 1.8 * ghost * Math.sin(p * 77 + 5 * k) : 0;
-        if (sy || sx) { ctx.setLineDash([2, 2]); ctx.strokeStyle = C.out; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(yx, yy); ctx.lineTo(yx + sx, yy + sy); ctx.stroke(); ctx.setLineDash([]); }
-        node([yx + sx, yy + sy], 9, C.out, 2); node([dx, dy], 9, C.text, 1.2, true);
+        node([yx, yy], 9 + 2 * pulse, C.out, 2); if (yv) { ctx.beginPath(); ctx.arc(yx, yy, 7.5 + 2 * pulse, 0, 2 * Math.PI); ctx.fillStyle = C.out; ctx.globalAlpha = 0.5 * Math.min(1, Math.abs(yv[k])); ctx.fill(); ctx.globalAlpha = 1; } node([dx, dy], 9, C.text, 1.2, true);
+        // eh_np : la sortie bruitée z = y + ξ, en double pâle décalé de ξ, qui tremble ; y reste en place
+        if (ghost && info?.xi) { const sh = reduce ? 0 : 1, sy = -(16 * info.xi[k]) / 0.3 * ghost + 2 * sh * ghost * Math.sin(p * 90 + 2 * k), sx = 14 + 1.6 * sh * ghost * Math.sin(p * 77 + 5 * k); ctx.globalAlpha = 0.6; node([yx + sx, yy + sy], 7, C.out, 1.2, true); ctx.globalAlpha = 1; }
         label(`y${SUB[k]}`, yx, yy + 22, C.out); label(TNAMES[k], dx, dy + 21, C.text);
-        if (shown) { label(fm(yv[k]), yx, yy - 13, C.out); label(fm(dd[k]), dx, dy - 13, C.text); }
+        if (yv && dd) { label(fm(yv[k]), yx, yy - 13, C.out); label(fm(dd[k]), dx, dy - 13, C.text); }
       }
       if (rule === 'rls' || rule === 'ridge') {
         const [bx, by] = P.box(); ctx.strokeStyle = C.t2; ctx.lineWidth = 1.2; ctx.strokeRect(bx - 34, by - 12, 68, 24);
@@ -201,12 +231,30 @@ const FM: Record<string, string> = {
         else label('P', bx, by + 4, C.text);
       }
       if (rule === 'eh') { const [mx, my] = P.m(); node([mx, my], 9, C.text, 1.2); label(verdict && info ? `M = ${info.M}` : 'M', mx + 20, my + 4, C.text, 'left'); }
-      if (phase === 'learn' && info) feedback(p, C, label);
+      if (phase === 'learn' && info) { feedback(p, C, label); for (let i = 0; i < NR; i++) disk(i, R0, x[i]); }
+      if (sel) {
+        const [k, i] = sel, a = P.n(i), b = P.y(k), mp = mid(k, i), v = wShow[k][i];
+        ctx.strokeStyle = C.out; ctx.globalAlpha = Math.max(0.15, Math.min(1, Math.abs(v) / (0.03 * WREF[rule]))); ctx.lineWidth = 2 + 3.5 * Math.min(1, Math.sqrt(Math.abs(v) / WREF[rule])); ctx.beginPath(); ctx.moveTo(...a); ctx.lineTo(...b); ctx.stroke(); ctx.globalAlpha = 1;
+        disk(i, R0, x[i]); ctx.beginPath(); ctx.arc(a[0], a[1], R0 + 4, 0, 2 * Math.PI); ctx.strokeStyle = C.out; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.font = `600 11.5px ${C.font}`; const s = `w = ${fm(v)}`, tw = ctx.measureText(s).width;
+        ctx.fillStyle = C.bg; ctx.globalAlpha = 0.9; ctx.fillRect(mp[0] - tw / 2 - 3, mp[1] - 17, tw + 6, 14); ctx.globalAlpha = 1; ctx.fillStyle = C.text; ctx.textAlign = 'center'; ctx.fillText(s, mp[0], mp[1] - 6);
+      }
+      if (n === WASH && phase !== 'idle') {
+        const FIRST: Record<string, string> = { prop: closed ? '① l’entrée et la sortie z du pas précédent (par W_fb, figé) entrent dans le réservoir' : '① l’entrée se répand dans le réservoir', read: '② chaque sortie additionne les neurones, pondérés par ses poids' };
+        const L3: Record<Rule, string> = { ridge: '③ l’état et les cibles sont mis de côté ; W sera calculé d’un coup', rls: '③ P tire de x un gain, que l’erreur multiplie, poids par poids ; rien ne revient dans le réservoir', lms: '③ l’erreur rejoint chaque poids de sa sortie ; rien ne revient dans le réservoir', eh: '③ les sorties sont bruitées ; M juge le bruit, puis les poids changent ; rien ne revient dans le réservoir' };
+        const s = phase === 'learn' ? (closed ? `③ ${rule === 'rls' ? 'RLS' : rule === 'lms' ? 'LMS' : 'eh_np'} corrige W_out ; c’est z, pas l’erreur, qui revient dans le réservoir` : L3[rule]) : FIRST[phase];
+        ctx.font = `600 12.5px ${C.font}`; const tw = ctx.measureText(s).width;
+        ctx.fillStyle = C.bg; ctx.globalAlpha = 0.9; ctx.fillRect(W / 2 - tw / 2 - 8, H - 24, tw + 16, 20); ctx.globalAlpha = 1;
+        ctx.fillStyle = C.text; ctx.textAlign = 'center'; ctx.fillText(s, W / 2, H - 9);
+      }
       // billes
       if (phase !== 'idle') balls.forEach((bl) => {
         const q = (p - bl.t0) / bl.dur; if (q < 0 || q > 1) return;
+        const col = bl.col === 'in' ? C.t2 : bl.col === 'res' ? C.res : bl.col === 'out' ? C.out : C.text;
+        if (!reduce) [0.05, 0.1, 0.15].forEach((d, j) => { const qq = q - d; if (qq <= 0) return; const [tx2, ty2] = pos(bl, ease(qq)); ctx.beginPath(); ctx.arc(tx2, ty2, bl.r * (0.8 - 0.18 * j), 0, 2 * Math.PI); ctx.fillStyle = col; ctx.globalAlpha = 0.32 - 0.1 * j; ctx.fill(); });
+        ctx.globalAlpha = 1;
         const [bx, by] = pos(bl, ease(q));
-        ctx.beginPath(); ctx.arc(bx, by, bl.r, 0, 2 * Math.PI); ctx.fillStyle = bl.col === 'in' ? C.t2 : bl.col === 'res' ? C.res : C.text; ctx.fill();
+        ctx.beginPath(); ctx.arc(bx, by, bl.r, 0, 2 * Math.PI); ctx.fillStyle = col; ctx.fill();
       });
     }
 
@@ -217,51 +265,84 @@ const FM: Record<string, string> = {
       const at = (a: Pt, b: Pt, q: number): Pt => [a[0] + (b[0] - a[0]) * q, a[1] + (b[1] - a[1]) * q];
       const line = (a: Pt, b: Pt, w: number, col: string, alpha = 1) => { ctx.globalAlpha = alpha; ctx.lineWidth = w; ctx.strokeStyle = col; ctx.beginPath(); ctx.moveTo(...a); ctx.lineTo(...b); ctx.stroke(); ctx.globalAlpha = 1; };
       // traînée : un trait épais qui file de a vers b, avec une tête ronde
-      const comet = (a: Pt, b: Pt, q0: number, w: number, col = C.text) => { if (q0 <= 0 || q0 >= 1) return; const q = ease(q0); line(at(a, b, Math.max(0, q - 0.25)), at(a, b, q), w, col); ctx.beginPath(); ctx.arc(...at(a, b, q), w * 0.8, 0, 2 * Math.PI); ctx.fillStyle = col; ctx.fill(); };
+      const comet = (a0: Pt, b: Pt, q0: number, w: number, col = C.text, alpha = 1) => {
+        if (q0 <= 0 || q0 >= 1) return; const len = Math.hypot(b[0] - a0[0], b[1] - a0[1]) || 1, a = at(a0, b, Math.min(0.5, 11 / len)), q = ease(q0);
+        line(at(a, b, Math.max(0, q - 0.25)), at(a, b, q), w, col, alpha); ctx.globalAlpha = alpha; ctx.beginPath(); ctx.arc(...at(a, b, q), w * 0.8, 0, 2 * Math.PI); ctx.fillStyle = col; ctx.fill(); ctx.globalAlpha = 1;
+      };
+      // traînée sur une courbe (a0 → b, point de contrôle c) : chemin à part, qui ne longe pas le fil de lecture
+      const qb = (a: Pt, b: Pt, c: Pt, s: number): Pt => { const r = 1 - s; return [r * r * a[0] + 2 * r * s * c[0] + s * s * b[0], r * r * a[1] + 2 * r * s * c[1] + s * s * b[1]]; };
+      const cometC = (a: Pt, b: Pt, c: Pt, q0: number, w: number, col = C.text, alpha = 1) => {
+        if (q0 <= 0 || q0 >= 1) return; const q = ease(q0), s0 = Math.max(0, q - 0.3);
+        ctx.globalAlpha = alpha; ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath();
+        for (let j = 0; j <= 10; j++) { const pt = qb(a, b, c, s0 + ((q - s0) * j) / 10); j ? ctx.lineTo(...pt) : ctx.moveTo(...pt); }
+        ctx.stroke(); ctx.beginPath(); ctx.arc(...qb(a, b, c, q), w * 0.9, 0, 2 * Math.PI); ctx.fillStyle = col; ctx.fill(); ctx.globalAlpha = 1;
+      };
+      // arc depuis la sortie k vers le poids (k, i) : bombé hors du faisceau de fils (en haut pour y₁, en bas pour y₃)
+      const arc = (k: number, i: number): Pt => { const a = P.y(k), b = mid(k, i), dx = b[0] - a[0], dy = b[1] - a[1], s = k === 2 ? 1 : -1; return [(a[0] + b[0]) / 2 - s * dy * 0.45 + 0 * dx, (a[1] + b[1]) / 2 + s * Math.abs(dx) * 0.45]; };
+      // le poids lui-même : un petit nœud violet au milieu du fil (là où la règle agit)
+      const synapse = (k: number, i: number, r: number, alpha: number) => { const [sx, sy] = mid(k, i); ctx.globalAlpha = alpha; ctx.beginPath(); ctx.arc(sx, sy, r, 0, 2 * Math.PI); ctx.fillStyle = C.out; ctx.fill(); ctx.strokeStyle = C.bg; ctx.lineWidth = 1; ctx.stroke(); ctx.globalAlpha = 1; };
+      const isSel = (k: number, i: number) => !!sel && sel[0] === k && sel[1] === i, al = (k: number, i: number) => (isSel(k, i) ? 1 : 0.35);
+      // échelonnement : chaque sortie part un peu après la précédente
+      const segK = (a: number, b: number, k: number) => seg(a + 0.06 * k, b + 0.06 * k);
       // flèche d'erreur : de la cible vers la sortie, épaisseur |e|
       const arrows = (g: number, rel = 0) => { if (g <= 0 || rel >= 1) return; const a0 = 1 - rel; for (let k = 0; k < NK; k++) {
         const [yx, yy] = P.y(k), [dx] = P.d(k), x0 = dx - 13, x1 = x0 + (yx + 14 - x0) * elastic(g), w = (1.5 + 4 * Math.min(1, Math.abs(I.e[k]) / 0.6)) * (0.35 + 0.65 * a0);
         line([x0, yy], [x1, yy], w, C.text, 0.25 + 0.75 * a0);
         ctx.beginPath(); ctx.moveTo(x1 - 1, yy); ctx.lineTo(x1 + 8, yy - 6 - w / 2); ctx.lineTo(x1 + 8, yy + 6 + w / 2); ctx.closePath(); ctx.fillStyle = C.text; ctx.globalAlpha = 0.25 + 0.75 * a0; ctx.fill(); ctx.globalAlpha = 1;
-        if (g >= 1 && rel === 0 && wide) label(`e = ${fm(I.e[k])}`, (yx + dx) / 2, yy + 4 + 12 + w / 2, C.text);
+        if (g >= 1 && wide) { ctx.globalAlpha = a0; label(`e = ${fm(I.e[k])}`, (yx + dx) / 2, yy + 4 + 12 + w / 2, C.text); ctx.globalAlpha = 1; }
       } };
       // rencontre au milieu des fils : le signal de chaque sortie (depuis y_k, ou depuis P pour g) et x_i (depuis le neurone)
-      const meet = (g: number, sig: (k: number, i: number) => number, sm: number, from?: () => Pt) => {
-        if (g <= 0 || g >= 1) return;
-        for (let k = 0; k < NK; k++) for (let i = 0; i < NR; i++) {
+      // rencontre au poids : le signal de la sortie arrive par un arc (pas par le fil), l'activité x_i arrive par le fil, dans le sens normal
+      const meet = (a: number, b: number, sig: (k: number, i: number) => number, sm: number, from?: () => Pt) => {
+        for (let k = 0; k < NK; k++) { const g = segK(a, b, k); if (g <= 0) continue; for (let i = 0; i < NR; i++) {
           if (Math.abs(I.dw[k][i]) / m < 0.02) continue;
-          comet(from ? from() : P.y(k), mid(k, i), g, 1 + 2.5 * Math.min(1, Math.abs(sig(k, i)) / sm));
-          comet(P.n(i), mid(k, i), g, 1 + 2.5 * Math.min(1, Math.abs(x[i])), C.res);
-        }
+          synapse(k, i, isSel(k, i) ? 3.5 : 2.6, Math.min(1, g * 3) * (isSel(k, i) ? 1 : 0.7));
+          if (g >= 1) continue;
+          const w = 0.8 + 1.5 * Math.min(1, Math.abs(sig(k, i)) / sm);
+          if (from) comet(from(), mid(k, i), g, w, C.text, al(k, i)); else cometC(P.y(k), mid(k, i), arc(k, i), g, w, C.text, al(k, i));
+          comet(P.n(i), mid(k, i), g, 0.8 + 1.5 * Math.min(1, Math.abs(x[i])), C.res, al(k, i));
+        } }
       };
       // les poids modifiés s'allument (violet), épaisseur selon |Δw|, puis s'éteignent pendant qu'ils changent
-      const flash = (g: number) => { if (g <= 0 || g >= 1) return; ctx.shadowColor = C.out; ctx.shadowBlur = 12 * (1 - g); for (let k = 0; k < NK; k++) for (let i = 0; i < NR; i++) { const v = Math.abs(I.dw[k][i]) / m; if (v > 0.02) line(P.n(i), P.y(k), 2 + 4 * v, C.out, (1 - g) * (0.35 + 0.65 * v)); } ctx.shadowBlur = 0; };
+      const flash = (g: number) => {
+        if (g <= 0 || g >= 1) return;
+        for (let k = 0; k < NK; k++) for (let i = 0; i < NR; i++) {
+          const v = Math.abs(I.dw[k][i]) / m; if (v <= 0.02) continue;
+          const a = P.n(i), b = P.y(k), dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1, nx = -dy / len, ny = dx / len;
+          const amp = (reduce ? 0 : 7 * v) * (1 - g) * Math.sin(2 * Math.PI * (3 * g) + i + k);
+          ctx.globalAlpha = (1 - g) * (0.3 + 0.6 * v); ctx.strokeStyle = C.out; ctx.lineWidth = 1.5 + 2.5 * v; ctx.beginPath();
+          for (let s = 0; s <= 16; s++) { const u = s / 16, o = amp * Math.sin(Math.PI * u); const pt: Pt = [a[0] + dx * u + nx * o, a[1] + dy * u + ny * o]; s ? ctx.lineTo(...pt) : ctx.moveTo(...pt); }
+          ctx.stroke(); ctx.globalAlpha = 1;
+          synapse(k, i, (isSel(k, i) ? 3.5 : 2.6) * (1 + 0.6 * Math.sin(Math.PI * g)), (1 - g) * (isSel(k, i) ? 1 : 0.8));
+        }
+      };
       const pulseBox = (g: number, txt: string, below: boolean) => {
         if (g <= 0) return; const s = g < 1 ? 1 + 0.4 * Math.sin(g * Math.PI) : 1, [bx, by] = P.box();
         ctx.lineWidth = g < 1 ? 3 : 1.6; ctx.strokeStyle = C.text; ctx.strokeRect(bx - 34 * s, by - 12 * s, 68 * s, 24 * s);
         label(txt, bx, below ? by + 30 : by - 18, C.text);
       };
       if (rule === 'lms') {
-        arrows(seg(0, 0.3), seg(0.32, 0.64));
-        meet(seg(0.3, 0.64), (k) => I.e[k], 0.6);
+        arrows(seg(0, 0.3), seg(0.32, 0.7));
+        meet(0.3, 0.56, (k) => I.e[k], 0.6);
         flash(seg(0.66, 1));
       }
       if (rule === 'rls') {
         // x entre dans P ; P en tire g (un gain par neurone, commun aux trois sorties) ; e_k et g_i se rejoignent sur chaque fil
         arrows(seg(0, 0.3), seg(0.44, 0.7));
         for (let i = 0; i < NR; i++) comet(P.n(i), P.box(), seg(0, 0.25), 1 + 2.5 * Math.min(1, Math.abs(x[i])), C.res);
-        pulseBox(seg(0.25, 0.42), 'g = P x / (1 + xᵀ P x)', true);
-        const gm = Math.max(1e-9, ...I.g!.map(Math.abs)), q = seg(0.42, 0.7);
-        if (q > 0 && q < 1) for (let k = 0; k < NK; k++) for (let i = 0; i < NR; i++) {
+        pulseBox(seg(0.25, 0.42), 'g', true);
+        const gm = Math.max(1e-9, ...I.g!.map(Math.abs));
+        for (let k = 0; k < NK; k++) { const q = segK(0.42, 0.6, k); if (q <= 0 || q >= 1) continue; for (let i = 0; i < NR; i++) {
           if (Math.abs(I.dw[k][i]) / m < 0.02) continue;
-          comet(P.box(), mid(k, i), q, 1 + 2.5 * Math.abs(I.g![i]) / gm);
-          comet(P.y(k), mid(k, i), q, 1 + 2.5 * Math.min(1, Math.abs(I.e[k]) / 0.6));
-        }
+          synapse(k, i, isSel(k, i) ? 3.5 : 2.6, Math.min(1, q * 3) * (isSel(k, i) ? 1 : 0.7));
+          comet(P.box(), mid(k, i), q, 0.8 + 1.5 * Math.abs(I.g![i]) / gm, C.text, al(k, i));
+          cometC(P.y(k), mid(k, i), arc(k, i), q, 0.8 + 1.5 * Math.min(1, Math.abs(I.e[k]) / 0.6), C.text, al(k, i));
+        } }
         flash(seg(0.72, 1));
       }
       if (rule === 'eh') {
         // sorties bruitées ; z et d filent vers M ; verdict ; si M = 1, le bruit ξ_k de chaque sortie rencontre x_i
-        for (let k = 0; k < NK; k++) { const [yx, yy] = P.y(k), [dx, dy] = P.d(k); comet([yx, yy - 9], P.m(), seg(0.12, 0.36), 2); comet([dx, dy - 9], P.m(), seg(0.12, 0.36), 2); }
+        for (let k = 0; k < NK; k++) { const [yx, yy] = P.y(k), [dx, dy] = P.d(k); comet([yx, yy], P.m(), seg(0.12, 0.36), 1.6); comet([dx - 4, dy], P.m(), seg(0.12, 0.36), 1.6); }
         const g = seg(0.36, 0.5), [mx, my] = P.m(), s = 13 * spring(g);
         if (g > 0) { ctx.lineWidth = 4; ctx.strokeStyle = C.text; ctx.beginPath();
           if (I.M) { ctx.moveTo(mx - s, my); ctx.lineTo(mx - s / 3, my + s * 0.7); ctx.lineTo(mx + s, my - s * 0.8); }
@@ -269,40 +350,16 @@ const FM: Record<string, string> = {
           ctx.stroke(); }
         if (I.M) {
           for (let k = 0; k < NK; k++) comet(P.m(), P.y(k), seg(0.46, 0.56), 2.5);
-          meet(seg(0.56, 0.8), (k) => I.xi![k], 0.3);
+          meet(0.56, 0.74, (k) => I.xi![k], 0.3);
           flash(seg(0.82, 1));
         }
       }
       if (rule === 'ridge' && I.solved && I.dw.flat().some((v) => v)) {
         pulseBox(seg(0, 0.2), 'résolution', false);
         const q = seg(0.2, 0.66);
-        if (q > 0 && q < 1) for (let k = 0; k < NK; k++) for (let i = 0; i < NR; i++) { const v = Math.abs(I.dw[k][i]) / m; if (v > 0.02) comet(P.box(), mid(k, i), q, 1 + 2.5 * v); }
+        if (q > 0 && q < 1) for (let k = 0; k < NK; k++) for (let i = 0; i < NR; i++) { const v = Math.abs(I.dw[k][i]) / m; if (v > 0.02) comet(P.box(), mid(k, i), q, 0.8 + 1.5 * v, C.text, al(k, i)); }
         flash(seg(0.7, 1));
       }
-    }
-
-    // ---- textes
-    const PH: Record<string, string> = {
-      prop: 'l’entrée part le long de ses connexions ; chaque neurone renvoie son activité sur ses connexions récurrentes.',
-      read: 'chaque sortie somme les activités des 12 neurones, pondérées par ses poids : y = W x.',
-    };
-    function text() {
-      const lead = `pas ${Math.max(1, n - WASH + 1)}`;
-      if (phase === 'idle') { if (!running) $('ln1').textContent = n === WASH ? 'W = 0 au départ. « lecture » enchaîne les pas ; changer de règle recommence.' : `pas ${n - WASH} terminé. « un pas » ou « lecture » pour continuer.`; return; }
-      if (phase === 'prop' || phase === 'read') { $('ln1').textContent = `${lead} · ${PH[phase]}`; $('ln2').textContent = ''; return; }
-      const I = info!, nz = I.dw.flat().filter((v) => Math.abs(v) > 1e-12).length;
-      const T: Record<Rule, string> = {
-        ridge: I.solved ? (I.dw.flat().some((v) => v) ? 'les 20 états et cibles mis de côté donnent W en une seule résolution.' : 'W est fixé depuis la résolution : plus de mise à jour.') : 'l’état x et les cibles d sont mis de côté dans X et D ; W ne change pas encore.',
-        rls: 'P transforme x en un gain g par neurone, commun aux trois sorties ; le poids de i vers k reçoit −e_k g_i.',
-        lms: 'l’erreur e_k de chaque sortie rencontre l’activité x_i de chaque neurone sur le fil qui les relie : Δw = −η e_k x_i.',
-        eh: !verdict ? 'les sorties sont bruitées ; M compare l’erreur avec et sans bruit, une seule fois pour les trois sorties.' : I.M ? 'M = 1 : le bruit a rapproché les sorties de leurs cibles ; chaque poids suit le bruit de sa sortie : Δw = η ξ_k x_i.' : 'M = 0 : le bruit a éloigné les sorties de leurs cibles ; aucun poids ne bouge.',
-      };
-      $('ln1').textContent = `${lead} · ${T[rule]}`;
-      const parts: string[] = [];
-      if (W < 500 && rule !== 'eh') parts.push(`e = (${I.e.map((v) => fm(v)).join(' ; ')})`);
-      if (rule === 'eh' && verdict) parts.push(`ξ = (${I.xi!.map((v) => fm(v)).join(' ; ')})`);
-      if (rule !== 'eh' || verdict) parts.push(`poids modifiés : ${nz} sur ${NK * NR}`);
-      $('ln2').textContent = parts.join(' · ');
     }
 
     // ---- contrôles : la règle, et un seul bouton lecture / pause
@@ -310,20 +367,35 @@ const FM: Record<string, string> = {
     function reset() {
       running = false; once = false; play.textContent = 'lecture'; play.classList.remove('active');
       // transitoire fait sans animation : l'état oublie son départ x = 0
-      L = makeLearner(rule); x = new Array(NR).fill(0); for (n = 0; n < WASH; n++) x = stepNet(net, x, input(n));
-      xPrev = x.slice(); wShow = zeros(); balls = []; phase = 'idle'; info = null; T = 0; tPhase = 0; echo = []; hist = [];
+      L = learner(rule); x = new Array(NR).fill(0); zPrev = new Array(NK).fill(0); for (n = 0; n < WASH; n++) x = stepNet(net, x, input(n));
+      xPrev = x.slice(); wShow = zeros(); balls = []; phase = 'idle'; info = null; T = 0; tPhase = 0; echo = []; yDisp = null; dDisp = null;
+      if (rule === 'ridge') closed = false;
       root.querySelectorAll<HTMLElement>('[data-fm]').forEach((d) => (d.hidden = d.dataset.fm !== rule));
-      $('ln2').textContent = ''; text();
+      root.querySelector<HTMLElement>('[data-fb]')!.toggleAttribute('hidden', !closed);
       $('rule').querySelectorAll<HTMLElement>('button').forEach((b) => b.classList.toggle('active', b.dataset.r === rule));
+      loop.classList.toggle('active', closed); loop.disabled = rule === 'ridge';
       dirty = true;
     }
     RULES.forEach(([r, l]) => { const b = mk('rule', l, () => { rule = r; reset(); }); b.dataset.r = r; });
+    const loop = mk('rule', 'boucle fermée', () => { closed = !closed; reset(); }) as HTMLButtonElement;
+    loop.classList.add('blloop'); loop.title = 'principe de FORCE : la sortie revient dans le réservoir par des poids figés';
     // « un pas » : joue jusqu'à la fin du pas en cours (ou un pas entier), puis s'arrête
     mk('ctl', 'un pas', () => { once = true; if (!running) { running = true; lastNow = performance.now(); } play.textContent = 'lecture'; play.classList.remove('active'); dirty = true; });
     const play = mk('ctl', 'lecture', () => {
       running = !running || once; once = false; play.textContent = running ? 'pause' : 'lecture'; play.classList.toggle('active', running);
-      lastNow = performance.now(); if (!running) text(); dirty = true;
+      lastNow = performance.now(); dirty = true;
     });
+    const nearest = (ev: MouseEvent) => {
+      const r = cv.getBoundingClientRect(), px = ev.clientX - r.left, py = ev.clientY - r.top;
+      let best: [number, number] | null = null, bd = 8;
+      for (let k = 0; k < NK; k++) for (let i = 0; i < NR; i++) {
+        const a = P.n(i), b = P.y(k), vx = b[0] - a[0], vy = b[1] - a[1], q = Math.max(0, Math.min(1, ((px - a[0]) * vx + (py - a[1]) * vy) / (vx * vx + vy * vy)));
+        const dd = Math.hypot(px - a[0] - q * vx, py - a[1] - q * vy); if (dd < bd) { bd = dd; best = [k, i]; }
+      }
+      return best;
+    };
+    cv.addEventListener('click', (ev) => { sel = nearest(ev); dirty = true; });
+    cv.addEventListener('mousemove', (ev) => { cv.style.cursor = nearest(ev) ? 'pointer' : 'default'; });
     new ResizeObserver(resize).observe(cv);
     resize(); reset(); requestAnimationFrame(frame);
     // les phases avancent aussi quand le dessin est suspendu (onglet masqué)
@@ -340,8 +412,8 @@ const FM: Record<string, string> = {
   .blw .calc { margin-top: 2px; padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--text-2) 4.5%, transparent); }
   .blw .fm { font-size: 0.9rem; overflow-x: auto; overflow-y: hidden; margin: 2px 0 4px; }
   .blw .fm[hidden] { display: none; }
+  .blw .seg button.blloop { margin-left: 8px; }
+  .blw .seg button:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
   .blw .fm .katex { font-size: 1em; }
-  .blw .ln { font: 11.5px/1.5 var(--mono); color: var(--text-2); min-height: 1.5em; overflow-wrap: anywhere; }
-  .blw .ln.l1 { min-height: 3em; }
   .blw canvas { width: 100%; display: block; margin: 8px 0 0; }
 </style>

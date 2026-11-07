@@ -9,7 +9,7 @@ export const input = (n: number) => 0.6 * Math.sin(0.31 * n) + 0.4 * Math.sin(0.
 export const TNAMES = ['u(n − 1)', 'u(n − 3)', 'u(n − 5)'];
 export const targets = (n: number) => [input(n - 1), input(n - 3), input(n - 5)];
 
-export type Net = { edges: { from: number; to: number; w: number }[]; win: number[]; W: number[][] };
+export type Net = { edges: { from: number; to: number; w: number }[]; win: number[]; W: number[][]; wfb: number[][] };
 export function makeNet(seed = 3): Net {
   const r = rng(seed);
   const W = Array.from({ length: NR }, () => new Array(NR).fill(0));
@@ -29,10 +29,15 @@ export function makeNet(seed = 3): Net {
   for (let i = 0; i < NR; i++) for (let j = 0; j < NR; j++) if (W[i][j]) { W[i][j] *= 0.9 / rho; edges.push({ from: j, to: i, w: W[i][j] }); }
   const win = new Array(NR).fill(0);
   [0, 3, 6, 9].forEach((i) => (win[i] = (r() < 0.5 ? -1 : 1) * (0.6 + 0.4 * r())));
-  return { edges, win, W };
+  // retour de FORCE : la sortie z renvoyée dans le réservoir par des poids figés tirés au hasard (tirage à part, le reste du réseau ne change pas)
+  const rf = rng(seed + 100), wfb = Array.from({ length: NR }, () => Array.from({ length: NK }, () => 2 * rf() - 1));
+  return { edges, win, W, wfb };
 }
-export const stepNet = (net: Net, x: number[], u: number) => net.W.map((row, i) => Math.tanh(row.reduce((s, v, j) => s + v * x[j], 0) + net.win[i] * u));
+// sfb > 0 : boucle fermée (FORCE), z = sortie du pas précédent renvoyée par W_fb
+export const stepNet = (net: Net, x: number[], u: number, z?: number[], sfb = 0) => net.W.map((row, i) => Math.tanh(row.reduce((s, v, j) => s + v * x[j], 0) + net.win[i] * u + (z && sfb ? sfb * net.wfb[i].reduce((s, w, k) => s + w * z[k], 0) : 0)));
 
+// pas d'apprentissage de LMS, amplitude du bruit et pas d'eh_np
+export const ETA = 0.15, SIG = 0.3, ETA_EH = 0.6;
 export type Rule = 'ridge' | 'rls' | 'lms' | 'eh';
 export type Learn = { e: number[]; y: number[]; d: number[]; dw: number[][]; g?: number[]; xi?: number[]; M?: number; solved?: boolean; stored?: number };
 // W : NK × NR ; toutes les règles apprennent les trois sorties sur les mêmes états
@@ -41,7 +46,6 @@ export function makeLearner(rule: Rule, seed = 9) {
   let P = Array.from({ length: NR }, (_, i) => Array.from({ length: NR }, (_, j) => (i === j ? 100 : 0)));
   const X: number[][] = [], D: number[][] = [];
   let solved = false;
-  const ETA = 0.15, SIG = 0.3, ETA_EH = 0.6;
   const out = (x: number[]) => W.map((w) => w.reduce((s, v, i) => s + v * x[i], 0));
   function step(x: number[], d: number[]): Learn {
     const y = out(x), e = y.map((v, k) => v - d[k]);
