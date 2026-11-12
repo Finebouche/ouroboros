@@ -54,10 +54,10 @@ Le même trajet pour toutes les règles : l'entrée traverse le réservoir, la l
 
 <BillesWidget />
 
-- **Ridge** (Hoerl et Kennard, 1970) : la solution du chapitre 1, en un système linéaire. Ici la constante est pénalisée comme les autres poids, pour comparer exactement avec RLS.
-- **RLS** (*recursive least squares* ; Plackett, 1950) : $P$ est l'inverse de $\sum \tilde x\,\tilde x^{\top} + \alpha I$ sur les phrases déjà vues, tenu à jour par la formule de Sherman-Morrison (l'inverse après ajout de $\tilde x\,\tilde x^{\top}$ se déduit de l'ancien, sans réinverser). Parti de $W_{out} = 0$, après **une passe**, $W_{out}$ est exactement la solution ridge de même coefficient $\alpha$, quel que soit l'ordre des phrases (sans facteur d'oubli, *forgetting factor*). Une deuxième passe compte chaque phrase deux fois : ridge de coefficient $\alpha/2$. En boucle fermée, RLS est la règle d'origine de FORCE (section 4).
-- **LMS** (*least mean squares* ; Widrow et Hoff, 1960) : descente de gradient stochastique sur $\tfrac12 \lVert e \rVert^2$, un exemple à la fois. Il minimise l'erreur quadratique **sans pénalité** : il ne vise aucun ridge. Parti de $W_{out} = 0$, il passe près des solutions ridge de $\alpha$ de plus en plus petit ; l'arrêt précoce (*early stopping*) joue le rôle de $\alpha$.
-- **NLMS** (*normalized LMS* ; Nagumo et Noda, 1967 ; Albert et Gardner, 1967) : le pas est divisé par $\lVert x \rVert^2 + 1$ de l'exemple (le 1 vient du biais). L'erreur sur cet exemple est alors multipliée par exactement $1 - c$ : elle diminue si $0 < c < 2$, sans changer de signe si $c \le 1$.
+- **Ridge** : la solution du chapitre 1, en un système linéaire. Ici la constante est pénalisée comme les autres poids, pour comparer exactement avec RLS.
+- **RLS** (*recursive least squares*) : $P$ est l'inverse de $\sum \tilde x\,\tilde x^{\top} + \alpha I$ sur les phrases déjà vues, tenu à jour par la formule de Sherman-Morrison (l'inverse après ajout de $\tilde x\,\tilde x^{\top}$ se déduit de l'ancien, sans réinverser). Parti de $W_{out} = 0$, après **une passe**, $W_{out}$ est exactement la solution ridge de même coefficient $\alpha$, quel que soit l'ordre des phrases (sans facteur d'oubli, *forgetting factor*). Une deuxième passe compte chaque phrase deux fois : ridge de coefficient $\alpha/2$. En boucle fermée, RLS est la règle d'origine de FORCE (section 4).
+- **LMS** (*least mean squares*) : descente de gradient stochastique sur $\tfrac12 \lVert e \rVert^2$, un exemple à la fois. Il minimise l'erreur quadratique **sans pénalité** : il ne vise aucun ridge. Parti de $W_{out} = 0$, il passe près des solutions ridge de $\alpha$ de plus en plus petit ; l'arrêt précoce (*early stopping*) joue le rôle de $\alpha$.
+- **NLMS** (*normalized LMS*) : le pas est divisé par $\lVert x \rVert^2 + 1$ de l'exemple (le 1 vient du biais). L'erreur sur cet exemple est alors multipliée par exactement $1 - c$ : elle diminue si $0 < c < 2$, sans changer de signe si $c \le 1$.
 - **Époque** : un passage sur les 382 phrases ; les chants dans un ordre aléatoire, chacun dans l'ordre du temps.
 
 Avec ces réglages (états standardisés, $c = 0{,}1$, $\alpha$ sur une grille fine de 0,001 à 1 000), LMS est le plus proche de la solution ridge de $\alpha \approx 400$ après 1 époque, 40 après 10, 1,6 après 300, 0,5 après 1 000, 0,25 après 2 000 : $\alpha$ décroît à peu près comme l'inverse du nombre d'époques (écart relatif au ridge le plus proche : 10 à 17 %). C'est la correspondance du gradient continu, $\alpha \approx 1/(\eta \times \text{époques})$ (Ali, Kolter et Tibshirani, 2019), à un facteur 1,2 à 1,5 près : ici $1/\eta \approx 610$, contre $\alpha \times$ époques entre 400 et 500.
@@ -105,12 +105,12 @@ Autre tâche : un réseau chaotique **sans entrée** doit produire seul un signa
 
 <ForceWidget />
 
-Avec ces réglages (200 neurones, réseau chaotique de gain 1,5, aucune entrée, cible de période 60) :
+Avec ces réglages (cible de période 60) :
 
-- **Sans retour** : la lecture s'ajuste un peu pendant l'apprentissage (RMSE 0,29), puis échoue (0,72) : le réservoir chaotique ne repasse jamais par les mêmes états.
-- **Retour de la cible** (*teacher forcing*) : pendant l'apprentissage, le réservoir reçoit la cible exacte, et la lecture l'apprend presque parfaitement (0,005). Une fois la boucle refermée sur sa propre sortie, ses petites erreurs reviennent dans le réservoir et s'accumulent (0,36) : elle n'a jamais appris dans ces conditions.
-- **FORCE** : c'est la sortie réelle $y$ qui revient dès le début. RLS la garde assez proche de la cible pour que le réservoir apprenne dans les conditions où il tournera seul. L'activité des neurones devient périodique, le chaos est maîtrisé, et la sortie tient une fois l'apprentissage coupé (0,009).
-- **LMS en boucle fermée** : avec un pas assez grand pour suivre la cible (0,007 pendant l'apprentissage), ses poids bougent encore cinq fois plus que ceux de RLS en fin d'apprentissage ; figés, ils laissent une boucle instable (1,25).
+- **Sans retour** : la lecture s'ajuste un peu pendant l'apprentissage, puis échoue : le réservoir chaotique ne repasse jamais par les mêmes états.
+- **Retour de la cible** (*teacher forcing*) : pendant l'apprentissage, le réservoir reçoit la cible exacte, et la lecture l'apprend presque parfaitement. Une fois la boucle refermée sur sa propre sortie, ses petites erreurs reviennent dans le réservoir et s'accumulent : elle n'a jamais appris dans ces conditions.
+- **FORCE** : c'est la sortie réelle $y$ qui revient dès le début. RLS la garde assez proche de la cible pour que le réservoir apprenne dans les conditions où il tournera seul. L'activité des neurones devient périodique, le chaos est maîtrisé, et la sortie tient une fois l'apprentissage coupé.
+- **LMS en boucle fermée** : avec un pas assez grand pour suivre la cible, ses poids bougent encore cinq fois plus que ceux de RLS en fin d'apprentissage ; figés, ils laissent une boucle instable.
 
 La boucle fermée sert à **générer** sans entrée (chapitre 6, section 6). Pour une tâche pilotée par une entrée, elle apporte peu : avec l'interrupteur « boucle fermée » de l'animation de la section 2 (échelle du retour 0,6), la RMSE après 100 pas vaut 0,05 pour RLS (0,08 en boucle ouverte), 0,22 pour LMS (0,19) et 0,34 pour eh_np (0,25).
 
@@ -120,7 +120,7 @@ La boucle fermée sert à **générer** sans entrée (chapitre 6, section 6). Po
 
 [Ohkubo et Inubushi (2024)](https://www.nature.com/articles/s41598-024-81880-3) partent de trois applications (l'article note $x$ le système lu et $r$ le réservoir ; ici, notations du cours) :
 
-- $\psi$ : le système lu avance, $u(n+1) = \psi(u(n))$. La cible est $d = \psi(u)$.
+- $\psi$ : le système lu avance jusqu'à l'horizon de prédiction ; la cible est $d = \psi(u)$ (dans leur test ci-dessous, $u$ 0,2 plus loin, soit $d(n) = u(n + 10)$).
 - $f$ : après le transitoire, l'état du réservoir ne dépend plus que du système qui le pilote, $x = f(u)$ (synchronisation généralisée, *generalized synchronization*).
 - $h$ : si $f$ est inversible, $u = f^{-1}(x)$, donc la cible s'écrit avec l'état du réservoir seul. $h$ est la **lecture idéale** :
 
@@ -134,8 +134,8 @@ $$
 h(x) = \underbrace{h(0) + \nabla h(0)\,x}_{\text{ordre 1}} \;+\; \underbrace{\tfrac12\, x^{\top} \nabla^2 h(0)\, x}_{\text{ordre 2}} \;+\; O(\lVert x \rVert^3)
 $$
 
-- **Ordre 1**, la lecture classique : $y = b + W_{out}\,x$, avec $b \approx h(0)$ et $W_{out} \approx \nabla h(0)$. Erreur en $O(\lVert x \rVert^2)$.
-- **Ordre 2**, la lecture généralisée : $y = b + W_{out}\,x + x^{\top} W^{Q} x$, avec $W^{Q} \approx \tfrac12 \nabla^2 h(0)$, soit un poids par produit $x_j x_{j'}$. Erreur en $O(\lVert x \rVert^3)$.
+- **Ordre 1**, la lecture classique : $y = b_{out} + W_{out}\,x$, avec $b_{out} \approx h(0)$ et $W_{out} \approx \nabla h(0)$. Erreur en $O(\lVert x \rVert^2)$.
+- **Ordre 2**, la lecture généralisée : $y = b_{out} + W_{out}\,x + x^{\top} W^{Q} x$, avec $W^{Q} \approx \tfrac12 \nabla^2 h(0)$, soit un poids par produit $x_j x_{j'}$. Erreur en $O(\lVert x \rVert^3)$.
 - En pratique, la ridge n'évalue pas ces dérivées en 0 : elle ajuste les mêmes termes sur les états visités. Le gain de l'ordre 2 dépend de la courbure de $h$ sur ces états.
 - **Antériorité** : lire des termes non linéaires de l'état n'est pas nouveau, et l'article le dit. Pathak et al. (2017) remplacent déjà la moitié des états par leur carré, $x_j^2$, pour prédire la composante $u_3$ de Lorenz (à cause de la symétrie du système). L'apport d'Ohkubo et Inubushi est le cadre (synchronisation généralisée, développement de Taylor), la forme quadratique complète, avec les produits croisés $x_j x_{j'}$, et le nom.
 
@@ -143,7 +143,7 @@ Leur test : le système de Lorenz, trois variables $u = (u_1, u_2, u_3)$ régies
 
 <OhkuboFigure />
 
-Avec ces réglages, sur les mêmes états ($N = 10$), l'ordre 2 divise l'erreur par 45 et retrouve l'attracteur en ailes de papillon, comme leur figure 2. À nombre de poids égal, l'écart se réduit puis s'inverse : RMSE 0,23 (ordre 1, $N = 65$) contre 0,095 (ordre 2, $N = 10$) avec 195 poids appris, mais 0,005 contre 0,008 avec 690. Leur figure 3b donne des erreurs presque égales à nombre de poids égal : l'ordre 2 économise surtout des neurones. Les meilleures échelles de $W$ restent petites (de 0,01 à 0,3) : l'entrée est l'état complet, la tâche demande peu de mémoire. Leur programme publié (pour $\tau = 0{,}02$) prend un rayon spectral de 0,01.
+Avec ces réglages, sur les mêmes états ($N = 10$), l'ordre 2 divise l'erreur par 45 et retrouve l'attracteur en ailes de papillon, comme leur figure 2. À nombre de poids égal, l'écart se réduit puis s'inverse : RMSE 0,23 (ordre 1, $N = 65$) contre 0,095 (ordre 2, $N = 10$) avec 195 poids appris, mais 0,005 contre 0,008 avec 690. Leur figure 3b donne des erreurs presque égales à nombre de poids égal : l'ordre 2 économise surtout des neurones. Les meilleures échelles de $W$ restent petites (de 0,01 à 0,3) : l'entrée est l'état complet, la tâche demande peu de mémoire. Leur programme publié (pour un horizon de 0,02) prend un rayon spectral de 0,01.
 
 ### Comment : un noyau, en forme duale
 
@@ -163,7 +163,7 @@ $$
 
 - Ce n'est pas le noyau polynomial usuel $(1 + x \cdot x')^2$ : chaque monôme unique y a le poids 1. $k$ est la somme des polynômes symétriques homogènes complets de degré 1 et 2 de $s = x \odot x'$ ; les identités de Newton donnent celui de degré 2, $(p_1^2 + p_2)/2$, alors que le noyau ANOVA de degré 2 vaut $(p_1^2 - p_2)/2$ (sommes de puissances : Saunders, Gammerman et Vovk, 1998, section 5 ; Shawe-Taylor et Cristianini, 2004, section 9.2).
 - Coût : $O(N)$ au lieu de $O(N^2)$. Écart relatif mesuré avec $\varphi$ explicite : $5 \cdot 10^{-15}$.
-- **Centrage** : $K_{\ell\ell'} = k(x_\ell, x_{\ell'})$ (matrice de Gram), $K_c = C K C$ avec $C = I - \tfrac1n \mathbf 1 \mathbf 1^{\top}$ sur les $n = 382$ phrases d'apprentissage. C'est le produit scalaire des $\varphi$ centrés : $(K_c)_{\ell\ell} = \lVert \varphi_c(x_\ell) \rVert^2$.
+- **Centrage** : $K_{\ell\ell'} = k(x_\ell, x_{\ell'})$ (matrice de Gram), $K_c = C K C$ avec $C = I - \tfrac1m \mathbf 1 \mathbf 1^{\top}$ sur les $m = 382$ phrases d'apprentissage. C'est le produit scalaire des $\varphi$ centrés : $(K_c)_{\ell\ell} = \lVert \varphi_c(x_\ell) \rVert^2$.
 - **ridge:2** : $W_{out} = \sum_\ell a_\ell\, \varphi_c(x_\ell)^{\top}$ avec $A = Y_c\,(K_c + \alpha I)^{-1}$ ($a_\ell$ : colonne $\ell$ de $A$, un coefficient par sortie ; $Y_c$ : cibles centrées ; $b_{out}$ : leur moyenne). Avec $K_c = U \Lambda U^{\top}$ gardé, changer $\alpha$ ne demande que $(\Lambda + \alpha I)^{-1}$.
 - **nlms:2** : la mise à jour $W_{out} \leftarrow W_{out} - \eta_\ell\, e_\ell\, \varphi_c(x_\ell)^{\top}$, $b_{out} \leftarrow b_{out} - \eta_\ell\, e_\ell$ ne touche que le coefficient de la phrase vue : $a_\ell \leftarrow a_\ell - \eta_\ell e_\ell$, avec $\eta_\ell = c/\big((K_c)_{\ell\ell} + 1\big)$ (le $+1$ vient de la constante du biais). Parti de zéro, $W_{out}$ reste dans le sous-espace engendré par les $\varphi_c(x_\ell)$ : les deux formes donnent les mêmes sorties.
 - **neh:2** : toute règle dont la mise à jour est un vecteur fois $\varphi_c(x_\ell)^{\top}$ passe en dual, EH compris : $a_\ell \leftarrow a_\ell + \eta_\ell\, M \odot (z - \bar z)$, avec $M = (M_1, \dots, M_6)$, une récompense par sortie.
@@ -174,7 +174,7 @@ Avec ces réglages :
 - **Pourquoi normaliser le taux** : sur l'exemple vu, l'erreur est multipliée par $1 - \eta\,\big((K_c)_{\ell\ell} + 1\big)$ et grandit dès que $\eta\,\big((K_c)_{\ell\ell} + 1\big) > 2$. Le plus grand $\lVert \varphi_c \rVert^2$ vaut 4,0 fois la moyenne, contre 2,0 pour $\lVert x \rVert^2$ : les monômes élèvent à peu près ce rapport au carré. Avec un taux unique, nlms:2 converge pour $c = 0{,}1$ et $0{,}5$, oscille pour $c = 1$ et diverge pour $c = 1{,}5$ (erreur $2 \cdot 10^{8}$ après deux époques). Avec le taux normalisé, le facteur vaut $1 - c$ : pas de divergence pour $c < 2$.
 - Sur les données du projet (`random_ei` : 500 neurones à fuite, poids récurrents dans $\mathcal U(-1, 1)$ ; états standardisés, 10 689 exemples d'apprentissage), le plus grand $(K_c)_{\ell\ell} + 1$ vaut 561 fois la moyenne (44 fois pour $\lVert x \rVert^2 + 1$ à l'ordre 1) : avec un taux unique, $c = 0{,}1$ donne déjà $\eta\,\big((K_c)_{\ell\ell} + 1\big) \approx 56$ sur cet exemple, soit un facteur $-55$ sur son erreur.
 - **Précision de test** : l'ordre 2 ne bat pas l'ordre 1 sur ce jeu. ridge:2 va de 52 % ($\alpha = 0{,}1$) à 66 % ($\alpha = 10^4$), contre 68 % pour le ridge d'ordre 1 ; nlms:2 (taux normalisé, $c = 0{,}1$) donne 67 % après une époque, puis 57 à 64 % jusqu'à 20 époques ; neh:2 ($c = 0{,}1$, $\sigma = 0{,}5$) 67 %, puis 60 à 66 %.
-- **Coût** : le dual garde $K_c$, $n \times n$ ; le primal, $W_{out}$ de taille $6 \times 1\,890$ ici, $6 \times 125\,750$ pour $N = 500$.
+- **Coût** : le dual garde $K_c$, $m \times m$ ; le primal, $W_{out}$, une ligne de monômes par sortie (6 lignes).
 
 <div class="retain">
 
@@ -240,11 +240,11 @@ Elle ne peut produire qu'une fonction affine de $x$, comme les deux premiers ter
 
 </Reveal>
 
-**Q7.** Dans la forme duale de nlms:2, que modifie un pas sur la phrase $\ell$ ? Et pourquoi un taux unique diverge-t-il sur les données du projet ?
+**Q7.** Dans la forme duale de nlms:2, que modifie un pas sur la phrase $\ell$ ? Sur le chant, pourquoi le taux unique diverge-t-il à $c = 1{,}5$, et pas le taux normalisé ?
 
 <Reveal>
 
-Seul le vecteur $a_\ell$ (et le biais) : $a_\ell \leftarrow a_\ell - \eta_\ell e_\ell$. Sur l'exemple vu, l'erreur est multipliée par $1 - \eta\,\big((K_c)_{\ell\ell} + 1\big)$. Avec un taux unique $c / \big(\langle (K_c)_{\ell\ell} \rangle + 1\big)$ et un $(K_c)_{\ell\ell} + 1$ 561 fois plus grand que la moyenne, ce facteur atteint $-55$ pour $c = 0{,}1$ : l'erreur de cet exemple explose. Le taux $c/\big((K_c)_{\ell\ell}+1\big)$ le ramène à $1 - c$.
+Seul le vecteur $a_\ell$ (et le biais) : $a_\ell \leftarrow a_\ell - \eta_\ell e_\ell$. Sur la phrase vue, l'erreur est multipliée par $1 - \eta\,\big((K_c)_{\ell\ell} + 1\big)$. Taux normalisé : ce facteur vaut $1 - c = -0{,}5$, l'erreur diminue. Taux unique $c / \big(\langle (K_c)_{\ell\ell} \rangle + 1\big)$ : la plus grande $(K_c)_{\ell\ell} + 1$ vaut environ 4 fois la moyenne, et le facteur atteint environ $1 - 4 \times 1{,}5 = -5$ sur cette phrase : son erreur grandit à chaque passage.
 
 </Reveal>
 

@@ -1,0 +1,44 @@
+---
+// Cours Reservoir computing, chapitre 2, section 5 : ce que change un pas de NLMS d'ordre 2 sur la phrase ℓ, en primal et en dual (figure statique).
+// Jeu des chants : N = 60 neurones, 1 890 monômes, 6 sorties, m = 382 phrases d'apprentissage. Largeurs des bandes à l'échelle (1 890 contre 382 colonnes).
+// Violet --r-out : la lecture entraînée ; plein = ce que le pas modifie, pâle = inchangé.
+import katex from 'katex';
+const km = (s: string) => katex.renderToString(s, { throwOnError: false });
+const NS = 6, NMON = 1890, NPH = 382, L = 140; // L : la phrase vue (position arbitraire)
+const RH = 8, GAP = 2, H = NS * (RH + GAP) - GAP;
+const rows = (w: number, op: number) => Array.from({ length: NS }, (_, k) => `<rect x="0" y="${k * (RH + GAP)}" width="${w}" height="${RH}" fill="var(--r-out)" fill-opacity="${op}"/>`).join('');
+const primal = rows(NMON, 0.75);
+// la colonne ℓ : trait à épaisseur fixe à l'écran (la bande est étirée horizontalement)
+const dual = rows(NPH, 0.14) + `<line x1="${L + 0.5}" x2="${L + 0.5}" y1="0" y2="${H}" stroke="var(--r-out)" stroke-width="3" vector-effect="non-scaling-stroke"/>`;
+const fP = km('W_{out} \\leftarrow W_{out} - \\eta_\\ell\\, e_\\ell\\, \\varphi_c(x_\\ell)^{\\top}');
+const fD = km('a_\\ell \\leftarrow a_\\ell - \\eta_\\ell\\, e_\\ell');
+const fS = km('W_{out} = \\textstyle\\sum_\\ell a_\\ell\\, \\varphi_c(x_\\ell)^{\\top}');
+---
+<figure class="dlf">
+  <div class="dlt"><b>Que change un pas de NLMS sur la phrase ℓ ?</b><span>chant : 6 sorties ; largeurs à l'échelle</span></div>
+  <div class="dlr">
+    <div class="dll"><b>primal</b><span set:html={fP} /></div>
+    <svg viewBox={`0 0 ${NMON} ${H}`} preserveAspectRatio="none" style="width:100%" role="img" aria-label="Primal : 6 lignes de 1 890 poids, toutes modifiées" set:html={primal} />
+    <div class="dlc">6 × 1 890 poids, un par monôme et par sortie : tous bougent.</div>
+  </div>
+  <div class="dlr">
+    <div class="dll"><b>dual</b><span set:html={fD} /></div>
+    <svg viewBox={`0 0 ${NPH} ${H}`} preserveAspectRatio="none" style={`width:${((100 * NPH) / NMON).toFixed(1)}%`} role="img" aria-label="Dual : 6 lignes de 382 coefficients, seule la colonne de la phrase vue est modifiée" set:html={dual} />
+    <div class="dlc">6 × 382 coefficients, un vecteur <i>a</i><sub>ℓ</sub> par phrase : seule la colonne ℓ bouge.</div>
+  </div>
+  <figcaption>Parties de zéro, les deux formes donnent les mêmes sorties : <Fragment set:html={fS} />. Plein : modifié par le pas ; pâle : inchangé.</figcaption>
+</figure>
+
+<style is:global>
+  .dlf { margin: 1.5rem 0; font-family: var(--font); }
+  .dlf .dlt { display: flex; flex-wrap: wrap; gap: 2px 12px; align-items: baseline; margin-bottom: 10px; font-size: 12.5px; color: var(--text-2); }
+  .dlf .dlt b { font-size: 15px; font-weight: 600; color: var(--text); }
+  .dlf .dlr { margin-bottom: 14px; }
+  .dlf .dll { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; margin-bottom: 5px; font-size: 13px; color: var(--text); }
+  .dlf .dll b { font-weight: 600; min-width: 52px; }
+  .dlf .dll .katex { font-size: 1em; }
+  .dlf svg { display: block; height: 58px; }
+  .dlf .dlc { margin-top: 4px; font-size: 12.5px; color: var(--text-2); }
+  .dlf figcaption { font-size: 12.5px; color: var(--text-2); line-height: 1.5; }
+  .dlf figcaption .katex { font-size: 1em; }
+</style>

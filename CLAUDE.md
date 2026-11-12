@@ -12,7 +12,7 @@ Ce dépôt est le site de cours personnel de l'utilisateur (Astro + MDX). La str
 
 ## Le lecteur et le ton
 
-- Le site est une **fiche de révision** : il doit pouvoir le relire vite et tout retrouver. Texte court, précis, condensé. Quand on hésite, couper.
+- Le site est un ensemble de **cours** très bien faits, pas des fiches de révision. Texte clair et précis.
 - Pas d'analogie filée, pas de digression de rigueur, pas de méta-commentaire (« la suite se lit comme… », « voici ce que montre la figure »). Pas de justification qui n'aide pas à comprendre.
 - **Visuel d'abord**, puis les étapes, puis le « pourquoi ».
 - Ne pas supposer de bases : si une notion n'est pas acquise (ex. Bellman), partir de zéro.
