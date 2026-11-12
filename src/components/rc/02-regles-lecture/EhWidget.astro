@@ -1,7 +1,7 @@
 ---
 // Cours Reservoir computing, chapitre 2 : la règle EH sur les six sorties d'une phrase. Chaque sortie reçoit un bruit ξ ;
 // la récompense compare la sortie bruitée à une référence ; si elle est meilleure (M = 1), le poids suit le bruit.
-// Quatre lectures apprennent en parallèle (eh, eh_np, eh_np_local, neh), sur les mêmes phrases et dans le même ordre que ReglesWidget
+// Quatre lectures apprennent en parallèle (eh, eh_np, eh_np_local, neh), sur les mêmes phrases et dans le même ordre
 // (chants mélangés, rng(77)), chacune avec son bruit ; trois passes au plus (au-delà, les poids d'eh divergent).
 // Flèche, à l'échelle : déplacement de la sortie sur la même phrase dû à la mise à jour, Δy_i = η M_i (z_i − z̄_i) (‖x‖² + 1) (poids et biais) ; rouge si elle s'éloigne de la cible.
 import katex from 'katex';
@@ -46,7 +46,7 @@ const FM: Record<string, string> = {
     const st = stats(train.map((s) => s.x));
     const Z = train.map((s) => feat(s.x, st)), T = train.map((s) => s.next), Zt = test.map((s) => feat(s.x, st)), Tt = test.map((s) => s.next);
     const meanZ2 = Z.reduce((a, z) => a + dot(z, z), 0) / Z.length;
-    // même ordre que ReglesWidget : chants mélangés à chaque passe (rng(77)), trois passes
+    // chants mélangés à chaque passe (rng(77)), trois passes
     const songIdx: number[][] = [];
     train.forEach((s, k) => (songIdx[s.song] ??= []).push(k));
     const ro = rng(77), SEQ = [0, 1, 2].flatMap(() => epochOrder(songIdx, ro)), EMAX = SEQ.length;

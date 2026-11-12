@@ -40,7 +40,7 @@ const ly = (v: number) => B.y0 + ((1 - Math.log10(v)) / 3) * (B.y1 - B.y0); // d
 let bot = '';
 [10, 1, 0.1, 0.01].forEach((v) => (bot += `<line x1="${B.x0}" x2="${B.x1}" y1="${ly(v).toFixed(1)}" y2="${ly(v).toFixed(1)}" stroke="var(--border)"/><text x="${B.x0 - 6}" y="${(ly(v) + 3.5).toFixed(1)}" text-anchor="end" class="oh-a">${fm(v, v < 1 ? (v < 0.1 ? 2 : 1) : 0)}</text>`));
 [10, 30, 100, 300].forEach((m) => (bot += `<text x="${lx(m).toFixed(1)}" y="${B.y1 + 14}" text-anchor="middle" class="oh-a">${m}</text>`));
-bot += `<text x="${B.x1}" y="${B.y1 + 28}" text-anchor="end" class="oh-a">paramètres appris M (3 sorties × monômes)</text>`;
+bot += `<text x="${B.x1}" y="${B.y1 + 28}" text-anchor="end" class="oh-a">paramètres appris (3 sorties × monômes)</text>`;
 bot += `<text x="${B.x0 - 6}" y="${B.y0 - 12}" text-anchor="end" class="oh-a">RMSE</text>`;
 const m195 = curve.filter((c) => c.M === 195);
 bot += `<line x1="${lx(195).toFixed(1)}" x2="${lx(195).toFixed(1)}" y1="${B.y0}" y2="${B.y1}" stroke="var(--text-2)" stroke-dasharray="3 3"/>`;

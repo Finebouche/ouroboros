@@ -9,7 +9,7 @@
 import katex from 'katex';
 const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
 // boucle fermée (FORCE) : la sortie du pas précédent revient dans le réservoir par W_fb, figé
-const FB = tx('\\text{boucle fermée : } x(n) = \\tanh\\big(W x(n{-}1) + W_{in} u(n) + W_{fb}\\, z(n{-}1)\\big), \\; W_{fb} \\text{ figé}');
+const FB = tx('\\text{boucle fermée : } x(n) = \\tanh\\big(W x(n{-}1) + W_{in} u(n) + W_{fb}\\, y(n{-}1)\\big), \\; W_{fb} \\text{ figé}');
 const FM: Record<string, string> = {
   ridge: tx('W = D\\,X^{\\top} (X X^{\\top} + \\lambda I)^{-1} \\quad \\text{(une fois, sur 20 états et cibles mis de côté)}'),
   rls: tx('g = \\frac{P x}{1 + x^{\\top} P x}, \\qquad W \\leftarrow W - e\\, g^{\\top}, \\qquad P \\leftarrow P - g\\, x^{\\top} P'),
@@ -18,7 +18,8 @@ const FM: Record<string, string> = {
 };
 ---
 <div class="widget blw" data-widget="blw">
-  <div class="blhead"><b>Que reçoit chaque poids de lecture ?</b></div>
+  <div class="blhead"><b>Que reçoit chaque poids de lecture ?</b>
+    <span class="blk"><i class="k-res"></i>activité des neurones<i class="k-out"></i>poids appris (épaisseur |w|)<i class="k-ink"></i>signal d'apprentissage<i class="k-fix"></i>connexions figées<span>· clic sur un fil : suivre son poids</span></span></div>
   <div class="row blctl"><span>Règle :</span><span class="seg" data-ref="rule"></span><span class="seg" data-ref="ctl"></span></div>
   <div class="calc">
     {Object.entries(FM).map(([k, h]) => <div class="fm" data-fm={k} set:html={h} hidden={k !== 'lms'} />)}
@@ -181,7 +182,7 @@ const FM: Record<string, string> = {
         ctx.setLineDash([2, 3]); ctx.strokeStyle = C.t2;
         for (let k = 0; k < NK; k++) for (let i = 0; i < NR; i++) { const a = P.y(k), b = P.n(i), c = fbc(k, i), s = phase === 'prop' ? lit * Math.min(1, Math.abs(SFB * net.wfb[i][k] * zPrev[k]) / 0.4) : 0; ctx.globalAlpha = 0.12 + 0.5 * s; ctx.lineWidth = 1 + s; ctx.beginPath(); ctx.moveTo(...a); ctx.quadraticCurveTo(c[0], c[1], b[0], b[1]); ctx.stroke(); }
         ctx.setLineDash([]); ctx.globalAlpha = 1;
-        if (W >= 500 && !(n === WASH && phase !== 'idle')) label('W_fb (figé) : z revient dans le réservoir', 0.53 * W, H - 6, C.t2);
+        if (W >= 500 && !(n === WASH && phase !== 'idle')) label('W_fb (figé) : la sortie y revient dans le réservoir', 0.53 * W, H - 6, C.t2);
       }
       // lecture : traits violets, épaisseur selon √(|w| / référence de la règle)
       ctx.strokeStyle = C.out;
@@ -240,9 +241,9 @@ const FM: Record<string, string> = {
         ctx.fillStyle = C.bg; ctx.globalAlpha = 0.9; ctx.fillRect(mp[0] - tw / 2 - 3, mp[1] - 17, tw + 6, 14); ctx.globalAlpha = 1; ctx.fillStyle = C.text; ctx.textAlign = 'center'; ctx.fillText(s, mp[0], mp[1] - 6);
       }
       if (n === WASH && phase !== 'idle') {
-        const FIRST: Record<string, string> = { prop: closed ? '① l’entrée et la sortie z du pas précédent (par W_fb, figé) entrent dans le réservoir' : '① l’entrée se répand dans le réservoir', read: '② chaque sortie additionne les neurones, pondérés par ses poids' };
+        const FIRST: Record<string, string> = { prop: closed ? '① l’entrée et la sortie y du pas précédent (par W_fb, figé) entrent dans le réservoir' : '① l’entrée se répand dans le réservoir', read: '② chaque sortie additionne les neurones, pondérés par ses poids' };
         const L3: Record<Rule, string> = { ridge: '③ l’état et les cibles sont mis de côté ; W sera calculé d’un coup', rls: '③ P tire de x un gain, que l’erreur multiplie, poids par poids ; rien ne revient dans le réservoir', lms: '③ l’erreur rejoint chaque poids de sa sortie ; rien ne revient dans le réservoir', eh: '③ les sorties sont bruitées ; M juge le bruit, puis les poids changent ; rien ne revient dans le réservoir' };
-        const s = phase === 'learn' ? (closed ? `③ ${rule === 'rls' ? 'RLS' : rule === 'lms' ? 'LMS' : 'eh_np'} corrige W_out ; c’est z, pas l’erreur, qui revient dans le réservoir` : L3[rule]) : FIRST[phase];
+        const s = phase === 'learn' ? (closed ? `③ ${rule === 'rls' ? 'RLS' : rule === 'lms' ? 'LMS' : 'eh_np'} corrige W_out ; c’est la sortie, pas l’erreur, qui revient dans le réservoir` : L3[rule]) : FIRST[phase];
         ctx.font = `600 12.5px ${C.font}`; const tw = ctx.measureText(s).width;
         ctx.fillStyle = C.bg; ctx.globalAlpha = 0.9; ctx.fillRect(W / 2 - tw / 2 - 8, H - 24, tw + 16, 20); ctx.globalAlpha = 1;
         ctx.fillStyle = C.text; ctx.textAlign = 'center'; ctx.fillText(s, W / 2, H - 9);
@@ -404,7 +405,14 @@ const FM: Record<string, string> = {
 </script>
 
 <style is:global>
-  .blw .blhead b { display: block; font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+  .blw .blhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin-bottom: 8px; }
+  .blw .blhead b { font-size: 15px; font-weight: 600; color: var(--text); }
+  .blw .blk { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 12.5px; color: var(--text-2); }
+  .blw .blk i { display: inline-block; width: 16px; height: 0; border-top: 2px solid var(--text); margin-left: 8px; }
+  .blw .blk i.k-res { width: 9px; height: 9px; border: 0; border-radius: 50%; background: var(--r-res); margin-left: 0; }
+  .blw .blk i.k-out { border-top-color: var(--r-out); }
+  .blw .blk i.k-fix { border-top: 2px dashed var(--text-2); }
+  .blw .blk span { margin-left: 4px; }
   .blw .blctl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 8px; }
   .blw .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
   .blw .seg button { font-size: 13px; padding: 4px 11px; }

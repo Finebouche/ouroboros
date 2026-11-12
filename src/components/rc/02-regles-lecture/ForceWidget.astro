@@ -7,9 +7,9 @@ import { runs, target, TTRAIN, TTEST, type Case } from './force';
 const R = runs();
 const CASES: [Case, string, string][] = [
   ['none', 'sans retour', 'la lecture apprend (RLS) sur un réservoir chaotique, sans rien lui renvoyer'],
-  ['teacher', 'retour de la cible', 'pendant l’apprentissage, on renvoie la cible d ; ensuite, la sortie z'],
-  ['force', 'FORCE (RLS)', 'on renvoie z dès le début ; RLS la garde proche de la cible'],
-  ['lms', 'LMS en boucle fermée', 'on renvoie z ; LMS, pas de 0,02'],
+  ['teacher', 'retour de la cible', 'pendant l’apprentissage, on renvoie la cible d ; ensuite, la sortie y'],
+  ['force', 'FORCE (RLS)', 'on renvoie la sortie y dès le début ; RLS la garde proche de la cible'],
+  ['lms', 'LMS en boucle fermée', 'on renvoie la sortie y ; LMS, pas de 0,02'],
 ];
 const fm = (v: number, d = 2) => v.toFixed(d).replace('.', ',');
 const W = 680, ox = 44, pw = W - ox - 10, T = TTRAIN + TTEST, X = (t: number) => ox + (t / T) * pw;
