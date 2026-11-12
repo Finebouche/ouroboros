@@ -1,0 +1,122 @@
+---
+// Cours Reservoir computing, chapitre 1, section 2 : forme de la régression ridge. Matrice X des états augmentés [x(n) ; 1]
+// (une colonne par instant, transitoire grisé et barré), cibles Y alignées en dessous, puis un seul système linéaire (N+1)×(N+1)
+// qui donne W_out (1 × (N+1)). Figure statique ; deux mises en page (large, étroite) tirées des mêmes fonctions.
+// Teintes de X : états d'un petit ESN réel (N = 6, ρ = 0,9, u(n) = sin(0,5 n), x(0) = 0), calculés à la construction.
+// ---- petit ESN, pour des teintes plausibles (|x| → opacité)
+const N = 6, NC = 16, NW = 4, HC = 11; // neurones, colonnes, colonnes de transitoire, colonne mise en évidence
+let sd = 11;
+const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647 * 2 - 1; };
+const Wr = Array.from({ length: N }, () => Array.from({ length: N }, () => rnd()));
+const Win = Array.from({ length: N }, () => rnd());
+// rayon spectral par puissance itérée sur W^k (estimation suffisante pour une teinte)
+let v = new Array(N).fill(1), rho = 1;
+for (let k = 0; k < 200; k++) { const w = Wr.map((row) => row.reduce((s, a, j) => s + a * v[j], 0)); const n = Math.hypot(...w); rho = n / Math.hypot(...v); v = w.map((a) => a / n); }
+const Ws = Wr.map((row) => row.map((a) => (a * 0.9) / rho));
+const states: number[][] = [];
+let x = new Array(N).fill(0);
+for (let n = 1; n <= NC; n++) { x = Ws.map((row, i) => Math.tanh(row.reduce((s, a, j) => s + a * x[j], 0) + 0.8 * Win[i] * Math.sin(0.5 * n))); states.push(x); }
+
+// ---- dessin
+const c = 13, NR = N + 1, GY = 8; // côté d'une case, lignes de X (N états + la constante), écart entre X et Y
+const op = (a: number) => (0.15 + 0.75 * Math.min(1, Math.abs(a))).toFixed(2);
+const sub = (s: string) => `<tspan baseline-shift="sub" font-size="0.72em">${s}</tspan>`;
+const sup = (s: string) => `<tspan baseline-shift="super" font-size="0.72em">${s}</tspan>`;
+// variable mathématique : italique de KaTeX (police déjà chargée par les formules de la page)
+const mi = (s: string) => `<tspan class="rg-i">${s}</tspan>`;
+
+function block(ox: number, oy: number) {
+  const yY = oy + NR * c + GY, xw = ox + NW * c, xe = ox + NC * c;
+  let s = '';
+  // X : N lignes d'états (bleu-vert), puis la ligne de 1
+  for (let t = 0; t < NC; t++) {
+    for (let i = 0; i < N; i++) s += `<rect x="${ox + t * c + 0.75}" y="${oy + i * c + 0.75}" width="${c - 1.5}" height="${c - 1.5}" rx="1.5" fill="var(--r-res)" fill-opacity="${op(states[t][i])}"/>`;
+    s += `<rect x="${ox + t * c + 0.75}" y="${oy + N * c + 0.75}" width="${c - 1.5}" height="${c - 1.5}" rx="1.5" fill="var(--text-2)" fill-opacity="0.22"/>`;
+    // Y : cibles, en pointillés
+    s += `<rect x="${ox + t * c + 1.5}" y="${yY + 1.5}" width="${c - 3}" height="${c - 3}" rx="1.5" fill="none" stroke="var(--text)" stroke-width="1" stroke-dasharray="2 1.6"/>`;
+  }
+  // transitoire : grisé et barré, dans X et dans Y
+  s += `<rect x="${ox}" y="${oy}" width="${NW * c}" height="${NR * c}" fill="var(--surface)" fill-opacity="0.72"/>`;
+  s += `<rect x="${ox}" y="${yY}" width="${NW * c}" height="${c}" fill="var(--surface)" fill-opacity="0.72"/>`;
+  s += `<line x1="${ox - 2}" y1="${oy - 2}" x2="${xw + 2}" y2="${yY + c + 2}" stroke="var(--text-2)" stroke-width="1.4"/>`;
+  // une colonne = un instant n : état augmenté et cible alignés
+  s += `<rect x="${ox + HC * c}" y="${oy - 1.5}" width="${c}" height="${yY + c - oy + 3}" rx="2" fill="none" stroke="var(--text)" stroke-width="1.3"/>`;
+  s += `<text x="${ox + HC * c + c / 2}" y="${yY + c + 14}" text-anchor="middle" class="rg-a">n</text>`;
+  // accolades simples au-dessus : transitoire / gardés
+  s += `<path d="M${ox + 1},${oy - 4} v-4 H${xw - 2} v4" fill="none" stroke="var(--text-2)" stroke-width="0.9"/>`;
+  s += `<path d="M${xw + 2},${oy - 4} v-4 H${xe - 1} v4" fill="none" stroke="var(--text-2)" stroke-width="0.9"/>`;
+  s += `<text x="${ox + (NW * c) / 2}" y="${oy - 12}" text-anchor="middle" class="rg-a">transitoire</text>`;
+  s += `<text x="${(xw + xe) / 2}" y="${oy - 12}" text-anchor="middle" class="rg-a">T instants gardés</text>`;
+  // lignes : N neurones, la constante 1
+  s += `<path d="M${ox - 4},${oy + 1} h-3 V${oy + N * c - 1} h3" fill="none" stroke="var(--text-2)" stroke-width="0.9"/>`;
+  s += `<text x="${ox - 10}" y="${oy + (N * c) / 2 + 4}" text-anchor="end" class="rg-a">N neurones</text>`;
+  s += `<text x="${ox - 10}" y="${oy + N * c + c / 2 + 4}" text-anchor="end" class="rg-a">1</text>`;
+  s += `<text x="${ox - 10}" y="${yY + c / 2 + 4}" text-anchor="end" class="rg-a">cibles</text>`;
+  s += `<text x="${ox - 104}" y="${oy + (NR * c) / 2 + 5}" class="rg-m">X</text>`;
+  s += `<text x="${ox - 104}" y="${yY + c / 2 + 5}" class="rg-m">Y</text>`;
+  return s;
+}
+
+// système (N+1)×(N+1), centré en (sx, sy) ; libellés en dessous
+const q = 9;
+function system(sx: number, sy: number) {
+  const L = NR * q, x0 = sx - L / 2, y0 = sy - L / 2;
+  let s = `<rect x="${x0}" y="${y0}" width="${L}" height="${L}" rx="2" fill="var(--surface-2)" stroke="var(--text-2)" stroke-width="1"/>`;
+  for (let k = 1; k < NR; k++) s += `<line x1="${x0 + k * q}" y1="${y0}" x2="${x0 + k * q}" y2="${y0 + L}" stroke="var(--border)" stroke-width="0.8"/><line x1="${x0}" y1="${y0 + k * q}" x2="${x0 + L}" y2="${y0 + k * q}" stroke="var(--border)" stroke-width="0.8"/>`;
+  s += `<text x="${sx}" y="${y0 + L + 15}" text-anchor="middle" class="rg-a">(N+1) × (N+1)</text>`;
+  s += `<text x="${sx}" y="${y0 + L + 34}" text-anchor="middle" class="rg-e">${mi('X')}${mi('X')}${sup('⊤')} + ${mi('α')}${mi('I')}</text>`;
+  return s;
+}
+
+// W_out : une ligne de N+1 poids (violet), centrée en (wx, wy)
+function wout(wx: number, wy: number) {
+  const x0 = wx - (NR * c) / 2, y0 = wy - c / 2;
+  let s = '';
+  for (let k = 0; k < NR; k++) s += `<rect x="${x0 + k * c + 0.75}" y="${y0 + 0.75}" width="${c - 1.5}" height="${c - 1.5}" rx="1.5" fill="var(--r-out)" fill-opacity="0.8"/>`;
+  s += `<text x="${wx}" y="${y0 - 9}" text-anchor="middle" class="rg-m rg-o">W${sub('out')}</text>`;
+  s += `<text x="${wx}" y="${y0 + c + 15}" text-anchor="middle" class="rg-a">1 × (N+1)</text>`;
+  return s;
+}
+
+const arrow = (x1: number, y1: number, x2: number, y2: number, id: string) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="var(--text-2)" stroke-width="1.3" marker-end="url(#${id})"/>`;
+const marker = (id: string) => `<defs><marker id="${id}" viewBox="0 0 8 8" refX="7.5" refY="4" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0.5 L8,4 L0,7.5 z" fill="var(--text-2)"/></marker></defs>`;
+
+// mise en page large : X/Y → système → W_out, sur une ligne
+const OX = 118, OY = 38, MID = OY + (NR * c + GY + c) / 2;
+const WW = 636, HW = 172;
+const wide = marker('rg-aw') + block(OX, OY)
+  + arrow(OX + NC * c + 10, MID, 388, MID, 'rg-aw')
+  + `<text x="431" y="${MID - NR * q / 2 - 9}" text-anchor="middle" class="rg-a">un seul système linéaire</text>`
+  + system(431, MID)
+  + arrow(474, MID, 522, MID, 'rg-aw')
+  + wout(580, MID);
+
+// mise en page étroite : X/Y en haut, flèche vers le bas, puis système → W_out
+const SXn = 165, SYn = 240, WN = 344, HN = 314;
+const narrow = marker('rg-an') + block(OX, OY)
+  + arrow(SXn, OY + NR * c + GY + c + 10, SXn, SYn - NR * q / 2 - 8, 'rg-an')
+  + `<text x="${SXn + 10}" y="${(OY + NR * c + GY + c + SYn - NR * q / 2) / 2 + 4}" class="rg-a">un seul système linéaire</text>`
+  + system(SXn, SYn)
+  + arrow(SXn + NR * q / 2 + 8, SYn, 246, SYn, 'rg-an')
+  + wout(294, SYn);
+---
+<figure class="rdgf">
+  <svg class="rdg-svg rdg-wide" viewBox={`0 0 ${WW} ${HW}`} role="img" aria-label="Régression ridge : états en colonnes dans X, transitoire jeté, cibles Y alignées, un seul système linéaire de taille N+1 qui donne W_out" set:html={wide} />
+  <svg class="rdg-svg rdg-narrow" viewBox={`0 0 ${WN} ${HN}`} role="img" aria-label="Régression ridge : états en colonnes dans X, transitoire jeté, cibles Y alignées, un seul système linéaire de taille N+1 qui donne W_out" set:html={narrow} />
+</figure>
+
+<style is:global>
+  .rdgf { margin: 1.5rem 0; }
+  .rdgf .rdg-svg { width: 100%; height: auto; display: block; margin: 0 auto; }
+  .rdgf .rdg-wide { max-width: 636px; }
+  .rdgf .rdg-narrow { display: none; max-width: 344px; }
+  @media (max-width: 600px) {
+    .rdgf .rdg-wide { display: none; }
+    .rdgf .rdg-narrow { display: block; }
+  }
+  .rdgf .rdg-svg text.rg-a { font: 11.5px var(--font); fill: var(--text-2); }
+  .rdgf .rdg-svg text.rg-m { font: 600 15px var(--font); fill: var(--text); }
+  .rdgf .rdg-svg text.rg-o { fill: var(--r-out); font-size: 14px; }
+  .rdgf .rdg-svg text.rg-e { font: 14px KaTeX_Main, 'Times New Roman', serif; fill: var(--text); }
+  .rdgf .rdg-svg tspan.rg-i { font-family: KaTeX_Math, 'Times New Roman', serif; font-style: italic; }
+</style>

@@ -1,0 +1,45 @@
+---
+// Cours Reservoir computing, chapitre 1 : figure statique du théorème de Cover. Courbes grises : C(P, N) / 2^P (coverCount de cover.ts).
+// Points : part mesurée des étiquetages au hasard séparables par une lecture linéaire sans constante, sur le réservoir statique
+// du widget (makePoints('rand', P, a), makeProj(N, b), gain 2, phi), test exact `separable` (simplexe). 2 000 tirages indépendants par point :
+// graines a et b tirées par rng(2026) dans l'ordre N = 5, 10, 20 puis P croissant. Calcul fait en Node le 7 novembre 2026 ;
+// écart maximal à la formule 0,021, χ² = 17,8 pour 18 points (compatible avec le bruit d'échantillonnage).
+import katex from 'katex';
+import { coverCount } from './cover';
+const tex = (s: string) => katex.renderToString(s, { throwOnError: false });
+const MES: Record<number, [number, number][]> = {
+  5: [[4, 1], [6, 0.969], [8, 0.766], [10, 0.521], [12, 0.261], [14, 0.138], [16, 0.06], [18, 0.029]],
+  10: [[12, 0.993], [16, 0.856], [20, 0.511], [24, 0.208], [28, 0.064], [32, 0.011]],
+  20: [[28, 0.993], [34, 0.858], [40, 0.52], [46, 0.188], [52, 0.043]],
+};
+const NS = [5, 10, 20], PMAX = 56;
+const W = 420, H = 238, L = 34, R = 12, T = 26, B = 42;
+const x = (p: number) => L + (p / PMAX) * (W - L - R), y = (f: number) => T + (1 - f) * (H - T - B);
+const curve = (N: number) => Array.from({ length: PMAX }, (_, i) => i + 1).map((p, i) => `${i ? 'L' : 'M'}${x(p).toFixed(1)},${y(coverCount(p, N) / 2 ** p).toFixed(1)}`).join('');
+const capF = tex('C(P,N)/2^P');
+---
+<figure class="cvc">
+  <svg data-ref="cvc" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Part des étiquetages séparables selon le nombre de points P, pour N = 5, 10 et 20 neurones : formule et mesure">
+    {[0, 0.5, 1].map((f) => <line x1={x(0)} y1={y(f)} x2={x(PMAX)} y2={y(f)} stroke="var(--border)" stroke-dasharray={f === 0.5 ? '3 3' : undefined} />)}
+    {[0, 0.5, 1].map((f) => <text x={L - 6} y={y(f) + 4} text-anchor="end" class="ax">{String(f).replace('.', ',')}</text>)}
+    {[0, 10, 20, 30, 40, 50].map((p) => <text x={x(p)} y={H - B + 15} text-anchor="middle" class="ax">{p}</text>)}
+    <text x={x(PMAX / 2)} y={H - 6} text-anchor="middle" class="ax">nombre de points P</text>
+    {NS.map((N) => <line x1={x(2 * N)} y1={T - 6} x2={x(2 * N)} y2={y(0.5)} stroke="var(--text-2)" stroke-width="0.8" stroke-dasharray="1.5 2.5" />)}
+    {NS.map((N) => <text x={x(2 * N)} y={T - 10} text-anchor="middle" class="lb">N = {N}</text>)}
+    {NS.map((N) => <path d={curve(N)} fill="none" stroke="var(--text-2)" stroke-width="1.4" />)}
+    {NS.map((N) => MES[N].map(([p, f]) => <circle cx={x(p)} cy={y(f)} r="3.2" fill="var(--text)" />))}
+  </svg>
+  <figcaption>Part des étiquetages au hasard qu'une lecture linéaire sans constante sépare, pour <i>P</i> points et <i>N</i> neurones. Courbes grises : <Fragment set:html={capF} />. Points pleins : mesure sur le réservoir statique du widget (2 000 tirages par point, test exact). Chaque courbe passe par la moitié à <i>P</i> = 2<i>N</i>.</figcaption>
+</figure>
+
+<style is:global>
+  .cvc { margin: 1.5rem 0; }
+  .cvc svg[data-ref="cvc"] { width: 100%; max-width: 460px; height: auto; display: block; margin: 0 auto; }
+  .cvc svg[data-ref="cvc"] text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .cvc svg[data-ref="cvc"] text.lb { font: 11.5px var(--font); fill: var(--text); }
+  @media (max-width: 480px) {
+    /* le viewBox de 420 se réduit : texte agrandi en unités du viewBox pour rester ≈ 11 px affiché */
+    .cvc svg[data-ref="cvc"] text.ax, .cvc svg[data-ref="cvc"] text.lb { font-size: 13px; }
+  }
+  .cvc figcaption { font-size: 12.5px; color: var(--text-2); line-height: 1.5; margin-top: 8px; }
+</style>

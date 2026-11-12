@@ -1,126 +1,119 @@
 ---
-// Cours Reservoir computing, chapitre 1 : théorème de Cover. P = 20 points du plan, deux classes. Un réservoir statique φ(u) = tanh(W_in u + b)
-// les envoie dans R^N ; une lecture linéaire sans constante (hyperplan par l'origine) tente de les séparer (algorithme de Ho-Kashyap, voir cover.ts).
-// Tout ce qui est affiché est calculé ici : erreurs de la lecture trouvée, C(P, N). Réglages vérifiés par simulation (Node) : gain 2, 60 tirages.
-import katex from 'katex';
-const tex = (s: string) => katex.renderToString(s, { throwOnError: false });
-const F1 = tex('\\varphi(u) = \\tanh\\big(W_{in}\\,u + b\\big) \\in \\mathbb{R}^N');
-const F1b = tex('y = w^{\\top}\\varphi(u)');
-const F2 = tex('C(P,N) = 2\\sum_{j=0}^{N-1} \\binom{P-1}{j}');
+// Cours Reservoir computing, chapitre 1 : combien de neurones pour séparer XOR ? P = 20 points du plan (5 par quadrant, graine 124),
+// un réservoir statique φ(u) = tanh(W_in u + b) à N neurones (gain 2, graine 68 par défaut), une lecture linéaire sans constante.
+// Test exact de séparabilité (simplexe, cover.ts) ; lecture affichée : Ho-Kashyap, ou le certificat du test exact s'il est le seul à séparer.
+// Vérifié en Node avec ces réglages : erreurs 8, 6, 4, 2, 0 pour N = 2, 3, 4, 6, 8 ; sur 300 tirages du réservoir, XOR séparé
+// 0 fois à N = 2, 18 à N = 3, 82 à N = 4, 239 à N = 6, 294 à N = 8.
 ---
 <div class="widget rcw cvw" data-widget="cvw">
+  <div class="cvhead">
+    <b>Combien de neurones pour séparer XOR ?</b>
+    <div class="cvstat"><span>mal classés</span><b data-ref="err">–</b></div>
+  </div>
   <div class="cvrow">
-    <span class="seg" data-ref="task"></span>
-    <span class="seg" data-ref="feat"></span>
+    <span class="cvlab">Neurones N</span>
+    <span class="seg" data-ref="N"></span>
     <button data-ref="draw">nouveau tirage</button>
   </div>
-  <label class="cvsl"><span>Neurones N</span><input type="range" data-ref="N" min="1" max="30" step="1" value="4" /><b data-ref="N-out"></b></label>
-  <div class="calc">
-    <div class="fm" set:html={F1} />
-    <div class="fm" set:html={F1b} />
-    <div class="fm" set:html={F2} />
-    <div class="ln" data-ref="line"></div>
-  </div>
-  <div class="scr"><svg data-ref="svg" role="img" aria-label="À gauche, les points du plan et la frontière de la lecture ; à droite, la part des étiquetages séparables selon N"></svg></div>
-  <div class="kpis">
-    <div><span>Points mal classés</span><b data-ref="k1">–</b><i data-ref="k1i"></i></div>
-    <div><span>Part séparable (Cover)</span><b data-ref="k2">–</b><i data-ref="k2i"></i></div>
-  </div>
-  <p class="note">Réservoir statique (pas de récurrence), W<sub>in</sub> et b tirés une fois et figés ; seule la lecture <i>w</i>, sans constante, est cherchée. Zéro erreur prouve que les points sont séparables ; des erreurs restantes ne prouvent pas le contraire.</p>
+  <div class="cvplot"><svg data-ref="svg" viewBox="0 0 290 284" role="img" aria-label="Plan d'entrée : points des deux classes, région où la lecture sort +, frontière de la lecture"></svg></div>
+  <p class="note" data-ref="note"></p>
 </div>
 
 <script>
-  import { coverCount, makePoints, makeProj, phi, fit } from './cover';
+  import { makePoints, makeProj, phi, fit, separable } from './cover';
 
+  let uid = 0;
   document.querySelectorAll<HTMLElement>('[data-widget="cvw"]').forEach((root) => {
     const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
-    const P = 20, NMAX = 30;
-    const proj = makeProj(NMAX, 101);
-    let kind: 'xor' | 'rand' = 'xor', raw = false, N = 4, seed = 1;
-    const fm = (v: number, d = 1) => v.toFixed(d).replace('.', ',');
-    const big = (v: number) => v.toLocaleString('fr-FR');
-    const mkSeg = (ref: string, items: [string, () => void][], act: () => number) => {
-      items.forEach(([lab, f], i) => {
-        const b = document.createElement('button'); b.textContent = lab; b.dataset.v = String(i);
-        b.addEventListener('click', () => { f(); draw(); });
-        $(ref).appendChild(b);
-      });
-      return () => $(ref).querySelectorAll('button').forEach((b) => b.classList.toggle('active', +(b as HTMLElement).dataset.v! === act()));
-    };
-    const syncTask = mkSeg('task', [['XOR', () => (kind = 'xor')], ['étiquettes au hasard', () => (kind = 'rand')]], () => (kind === 'xor' ? 0 : 1));
-    const syncFeat = mkSeg('feat', [['entrée brute', () => (raw = true)], ['réservoir statique', () => (raw = false)]], () => (raw ? 0 : 1));
+    const P = 20, NS = [2, 3, 4, 6, 8], NMAX = 8, id = `cvm${uid++}`;
+    const pts = makePoints('xor', P, 124);
+    let N = 2, seed = 68;
+    NS.forEach((n) => {
+      const b = document.createElement('button'); b.textContent = String(n); b.dataset.v = String(n);
+      b.addEventListener('click', () => { N = n; draw(); });
+      $('N').appendChild(b);
+    });
     $('draw').addEventListener('click', () => { seed++; draw(); });
-    const nIn = $('N') as HTMLInputElement;
-    nIn.addEventListener('input', () => { N = +nIn.value; draw(); });
+
+    // plan d'entrée [−1,15 ; 1,15]², carré de S unités
+    const X0 = 40, Y0 = 8, S = 240, LIM = 1.15;
+    const sx = (v: number) => X0 + ((v + LIM) / (2 * LIM)) * S, sy = (v: number) => Y0 + (1 - (v + LIM) / (2 * LIM)) * S;
 
     function draw() {
-      syncTask(); syncFeat();
-      nIn.disabled = raw; $('N-out').textContent = raw ? '–' : String(N);
-      const pts = makePoints(kind, P, seed);
-      const dim = raw ? 0 : N;
-      const F = pts.x.map((x) => phi(proj, dim, x));
-      const { w, err } = fit(F, pts.y);
-      const dot = (u: [number, number]) => phi(proj, dim, u).reduce((s, z, j) => s + z * w[j], 0);
+      $('N').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +(b as HTMLElement).dataset.v! === N));
+      const proj = makeProj(NMAX, seed);
+      const F = pts.x.map((x) => phi(proj, N, x));
+      const ex = separable(F, pts.y), hk = fit(F, pts.y);
+      const w = ex.sep && hk.err > 0 ? ex.w : hk.w;
+      const out = (u: [number, number]) => phi(proj, N, u).reduce((s, z, j) => s + z * w[j], 0);
+      const bad = pts.x.map((u, i) => pts.y[i] * out(u) <= 1e-12);
+      const nbad = bad.filter(Boolean).length;
 
-      // panneau de gauche : plan d'entrée, région où la lecture sort + ; points ; erreurs cerclées
-      const W = 640, H = 250, L = { x: 8, y: 22, s: 220 };
-      const sx = (v: number) => L.x + ((v + 1.15) / 2.3) * L.s, sy = (v: number) => L.y + (1 - (v + 1.15) / 2.3) * L.s;
-      let g = `<text x="${L.x + L.s / 2}" y="12" text-anchor="middle" class="zl">plan d'entrée u</text>`;
-      g += `<rect x="${L.x}" y="${L.y}" width="${L.s}" height="${L.s}" fill="none" stroke="var(--border)"/>`;
-      const G = 44, cell = L.s / G;
-      for (let i = 0; i < G; i++) for (let j = 0; j < G; j++) {
-        const ux = -1.15 + ((i + 0.5) / G) * 2.3, uy = 1.15 - ((j + 0.5) / G) * 2.3;
-        if (dot([ux, uy]) > 0) g += `<rect x="${(L.x + i * cell).toFixed(1)}" y="${(L.y + j * cell).toFixed(1)}" width="${(cell + 0.4).toFixed(1)}" height="${(cell + 0.4).toFixed(1)}" fill="var(--r-out)" fill-opacity="0.16"/>`;
+      // région « sortie + » : masque calculé sur une toile (2 pixels par unité), une seule image, pas de tapis de rectangles
+      const R = 2 * S, cv = document.createElement('canvas'); cv.width = cv.height = R;
+      const ctx = cv.getContext('2d')!, img = ctx.createImageData(R, R);
+      for (let j = 0; j < R; j++) for (let i = 0; i < R; i++) {
+        const v = out([-LIM + ((i + 0.5) / R) * 2 * LIM, LIM - ((j + 0.5) / R) * 2 * LIM]) > 0 ? 255 : 0, k = 4 * (j * R + i);
+        img.data[k] = img.data[k + 1] = img.data[k + 2] = v; img.data[k + 3] = 255;
       }
-      g += `<line x1="${sx(-1.15)}" y1="${sy(0)}" x2="${sx(1.15)}" y2="${sy(0)}" stroke="var(--border)"/><line x1="${sx(0)}" y1="${sy(-1.15)}" x2="${sx(0)}" y2="${sy(1.15)}" stroke="var(--border)"/>`;
+      ctx.putImageData(img, 0, 0);
+
+      // frontière y = 0 par carrés marchants (grille G × G)
+      const G = 96, val: number[][] = [];
+      for (let j = 0; j <= G; j++) { val.push([]); for (let i = 0; i <= G; i++) val[j].push(out([-LIM + (i / G) * 2 * LIM, LIM - (j / G) * 2 * LIM])); }
+      const px = (i: number) => X0 + (i / G) * S, py = (j: number) => Y0 + (j / G) * S;
+      let d = '';
+      for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) {
+        const c = [[i, j], [i + 1, j], [i + 1, j + 1], [i, j + 1]] as const, cut: [number, number][] = [];
+        for (let e = 0; e < 4; e++) {
+          const [a1, b1] = c[e], [a2, b2] = c[(e + 1) % 4], v1 = val[b1][a1], v2 = val[b2][a2];
+          if ((v1 > 0) !== (v2 > 0)) { const t = v1 / (v1 - v2); cut.push([px(a1 + t * (a2 - a1)), py(b1 + t * (b2 - b1))]); }
+        }
+        for (let k = 0; k + 1 < cut.length; k += 2) d += `M${cut[k][0].toFixed(1)},${cut[k][1].toFixed(1)}L${cut[k + 1][0].toFixed(1)},${cut[k + 1][1].toFixed(1)}`;
+      }
+
+      let g = `<defs><clipPath id="${id}c"><rect x="${X0}" y="${Y0}" width="${S}" height="${S}"/></clipPath><mask id="${id}"><image href="${cv.toDataURL()}" x="${X0}" y="${Y0}" width="${S}" height="${S}" preserveAspectRatio="none"/></mask></defs>`;
+      g += `<rect x="${X0}" y="${Y0}" width="${S}" height="${S}" fill="var(--r-out)" fill-opacity="0.13" mask="url(#${id})"/>`;
+      g += `<line x1="${sx(-LIM)}" y1="${sy(0)}" x2="${sx(LIM)}" y2="${sy(0)}" stroke="var(--border)"/><line x1="${sx(0)}" y1="${sy(-LIM)}" x2="${sx(0)}" y2="${sy(LIM)}" stroke="var(--border)"/>`;
+      g += `<path d="${d}" fill="none" stroke="var(--r-out)" stroke-width="1.6" stroke-linecap="round" clip-path="url(#${id}c)"/>`;
+      g += `<rect x="${X0}" y="${Y0}" width="${S}" height="${S}" fill="none" stroke="var(--border)"/>`;
+      [-1, 0, 1].forEach((v) => {
+        g += `<text x="${sx(v)}" y="${Y0 + S + 14}" text-anchor="middle" class="ax">${v === -1 ? '−1' : v}</text>`;
+        g += `<text x="${X0 - 6}" y="${sy(v) + 4}" text-anchor="end" class="ax">${v === -1 ? '−1' : v}</text>`;
+      });
+      g += `<text x="${X0 + S / 2}" y="${Y0 + S + 28}" text-anchor="middle" class="ax">u<tspan baseline-shift="sub" font-size="8.5">1</tspan></text>`;
+      g += `<text x="${X0 - 32}" y="${Y0 + S / 2 + 4}" text-anchor="middle" class="ax">u<tspan baseline-shift="sub" font-size="8.5">2</tspan></text>`;
       pts.x.forEach((u, i) => {
-        const bad = pts.y[i] * dot(u) <= 1e-12;
-        if (bad) g += `<circle cx="${sx(u[0])}" cy="${sy(u[1])}" r="8" fill="none" stroke="var(--h-py)" stroke-width="1.6"/>`;
+        if (bad[i]) g += `<circle cx="${sx(u[0])}" cy="${sy(u[1])}" r="8" fill="none" stroke="var(--h-py)" stroke-width="1.6"/>`;
         g += pts.y[i] > 0
           ? `<circle cx="${sx(u[0])}" cy="${sy(u[1])}" r="4" fill="var(--text)"/>`
           : `<circle cx="${sx(u[0])}" cy="${sy(u[1])}" r="3.6" fill="var(--surface)" stroke="var(--text)" stroke-width="1.4"/>`;
       });
-      g += `<text x="${L.x + L.s / 2}" y="${L.y + L.s + 14}" text-anchor="middle" class="zl">plein : +1 · creux : −1 · teinte : sortie +</text>`;
+      ($('svg') as unknown as SVGSVGElement).innerHTML = g;
 
-      // panneau de droite : part des étiquetages séparables C(P,N) / 2^P selon N
-      const R = { x: 296, y: 22, w: 310, h: 200 };
-      const cx = (n: number) => R.x + 34 + (n / NMAX) * (R.w - 34), cy = (p: number) => R.y + (1 - p) * R.h;
-      g += `<text x="${R.x + R.w / 2 + 17}" y="12" text-anchor="middle" class="zl">part des 2^P étiquetages séparables, P = ${P}</text>`;
-      [0, 0.5, 1].forEach((p) => (g += `<line x1="${cx(0)}" y1="${cy(p)}" x2="${cx(NMAX)}" y2="${cy(p)}" stroke="var(--border)" ${p === 0.5 ? 'stroke-dasharray="2 3"' : ''}/><text x="${cx(0) - 5}" y="${cy(p) + 3}" text-anchor="end" class="zl">${p * 100} %</text>`));
-      [0, 10, 20, 30].forEach((n) => (g += `<text x="${cx(n)}" y="${R.y + R.h + 14}" text-anchor="middle" class="zl">${n}</text>`));
-      g += `<text x="${cx(NMAX / 2)}" y="${R.y + R.h + 28}" text-anchor="middle" class="zl">neurones N</text>`;
-      let d = '';
-      for (let n = 1; n <= NMAX; n++) d += `${n === 1 ? 'M' : 'L'}${cx(n).toFixed(1)},${cy(coverCount(P, n) / 2 ** P).toFixed(1)} `;
-      g += `<path d="${d}" fill="none" stroke="var(--text-2)" stroke-width="1.6"/>`;
-      g += `<text x="${cx(10) + 6}" y="${cy(0.5) - 6}" class="zl">N = P/2 = 10</text>`;
-      if (!raw) g += `<circle cx="${cx(N)}" cy="${cy(coverCount(P, N) / 2 ** P)}" r="5" fill="var(--r-out)"/>`;
-      const svg = $('svg') as unknown as SVGSVGElement;
-      svg.setAttribute('viewBox', `0 0 ${W} ${R.y + R.h + 40}`); svg.innerHTML = g;
-
-      const C = raw ? coverCount(P, 2) : coverCount(P, N), tot = 2 ** P;
-      $('line').textContent = raw
-        ? `Sans réservoir : les points restent dans R², N = 2. C(${P}, 2) = ${big(C)} étiquetages séparables sur ${big(tot)}.`
-        : `P = ${P} points, N = ${N} : C(${P}, ${N}) = ${big(C)} étiquetages séparables sur 2^${P} = ${big(tot)}, soit ${fm((100 * C) / tot)} %.`;
-      $('k1').innerHTML = err ? `<span class="r">${err} sur ${P}</span>` : `0 sur ${P}`;
-      $('k1i').textContent = err ? 'lecture trouvée, séparation non trouvée' : 'séparés : la lecture trouvée classe tout juste';
-      $('k2').textContent = `${fm((100 * C) / tot)} %`;
-      $('k2i').textContent = `formule C(${P}, ${raw ? 2 : N}) / 2^${P}, étiquettes au hasard : théorique, pas mesurée`;
+      $('err').innerHTML = nbad ? `<span class="r">${nbad} sur ${P}</span>` : `0 sur ${P}`;
+      $('note').innerHTML = (nbad
+        ? `<b>Non séparable</b> avec ces ${N} neurones (test exact). Cerclés : erreurs de la meilleure lecture trouvée. `
+        : `<b>Séparable</b> avec ces ${N} neurones. `)
+        + `Plein : +1, creux : −1, teinte : sortie +. W<sub>in</sub> et b tirés au hasard et figés (« nouveau tirage » en tire d'autres), lecture sans constante.`;
     }
     draw();
   });
 </script>
 
 <style is:global>
-  .cvw .cvrow { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-bottom: 8px; }
+  .cvw .cvhead { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .cvw .cvhead > b { font-size: 15px; font-weight: 600; color: var(--text); }
+  .cvw .cvstat { display: flex; align-items: baseline; gap: 8px; background: var(--surface-2); border-radius: 8px; padding: 4px 10px; }
+  .cvw .cvstat span { font-size: 12px; color: var(--text-2); }
+  .cvw .cvstat b { font-size: 14px; font-weight: 600; color: var(--text); }
+  .cvw .cvstat .r { color: var(--h-py); }
+  .cvw .cvrow { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; }
+  .cvw .cvlab { font-size: 13px; color: var(--text-2); }
   .cvw .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
   .cvw .cvrow > button[data-ref="draw"] { margin-left: auto; }
-  .cvw .cvsl { max-width: 340px; }
-  .cvw .calc { margin-top: 10px; padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--text-2) 4.5%, transparent); }
-  .cvw .fm { font-size: 0.92rem; overflow-x: auto; overflow-y: hidden; margin: 2px 0; }
-  .cvw .ln { font: 11.5px/1.5 var(--mono); color: var(--text-2); min-height: 1.5em; margin-top: 4px; }
-  .cvw .scr { overflow-x: auto; }
-  .cvw svg { min-width: 600px; width: 100%; height: auto; display: block; margin: 8px auto 0; max-width: 680px; }
-  .cvw svg text.zl { font: 11px var(--font); fill: var(--text-2); }
-  .cvw .kpis .r { color: var(--h-py); }
+  .cvw svg[data-ref="svg"] { width: 100%; max-width: 330px; height: auto; display: block; margin: 10px auto 0; }
+  .cvw svg[data-ref="svg"] text.ax { font: 11px var(--font); fill: var(--text-2); }
   .cvw .note { font-size: 12.5px; color: var(--text-2); line-height: 1.5; margin: 8px 0 0; }
+  .cvw .note b { color: var(--text); font-weight: 600; }
 </style>

@@ -1,0 +1,91 @@
+---
+// Cours Reservoir computing, chapitre 2 : la grammaire du chant en graphe d'états. Probabilités lues dans chants.ts (nextProbs).
+// B est dessiné deux fois, « après A » et « après E » : même phrase, suite différente. C'est ce qui demande de la mémoire.
+// Les deux B et leurs flèches de sortie : en --text, trait épais (on insiste par le poids, pas par une couleur) ; cadre « même phrase B » en pointillé gris. Le reste en gris.
+import { nextProbs, NAMES } from './chants';
+
+const fm = (v: number) => String(+v.toFixed(2)).replace('.', ',');
+const p = (prev: number, cur: number, nxt: number) => fm(nextProbs(prev, cur)[nxt]);
+const [A, B, C, D, E, FIN] = [0, 1, 2, 3, 4, 5];
+const R = 15;
+// positions des nœuds
+const P = { A: [68, 70], BA: [170, 70], BE: [170, 178], C: [270, 70], D: [270, 178], E: [358, 124], FIN: [438, 124] } as const;
+const W = 466, H = 226;
+type Pt = readonly [number, number];
+// point sur le bord d'un cercle de rayon r, dans la direction de q
+const edge = (a: Pt, q: Pt, r = R): Pt => { const dx = q[0] - a[0], dy = q[1] - a[1], l = Math.hypot(dx, dy); return [a[0] + (dx / l) * r, a[1] + (dy / l) * r]; };
+const f = (v: number) => v.toFixed(1);
+let g = '';
+// flèche droite de a vers b, étiquette décalée perpendiculairement (côté s = ±1)
+const arc = (a: Pt, b: Pt, lab: string, s = 1, rb = R, cls = '') => {
+  const p0 = edge(a, b), p1 = edge(b, a, rb + 1);
+  const mx = (p0[0] + p1[0]) / 2, my = (p0[1] + p1[1]) / 2, l = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+  const nx = -(p1[1] - p0[1]) / l, ny = (p1[0] - p0[0]) / l;
+  g += `<line x1="${f(p0[0])}" y1="${f(p0[1])}" x2="${f(p1[0])}" y2="${f(p1[1])}" class="ar${cls}" marker-end="url(#grm-tip${cls ? '-hl' : ''})"/>`;
+  g += `<text x="${f(mx + s * nx * 9)}" y="${f(my + s * ny * 9 + 4)}" text-anchor="middle" class="pl">${lab}</text>`;
+};
+// flèche courbe (quadratique) de a vers b par le point de contrôle c, étiquette au sommet
+const curve = (a: Pt, b: Pt, c: Pt, lab: string, lp: Pt, rb = R) => {
+  const p0 = edge(a, c), p1 = edge(b, c, rb + 1);
+  g += `<path d="M${f(p0[0])},${f(p0[1])} Q${c[0]},${c[1]} ${f(p1[0])},${f(p1[1])}" class="ar" marker-end="url(#grm-tip)"/>`;
+  g += `<text x="${lp[0]}" y="${lp[1]}" text-anchor="middle" class="pl">${lab}</text>`;
+};
+// groupe des deux B (pointillé gris) et sa légende directe
+g += `<rect x="${P.BA[0] - 34}" y="${P.BA[1] - 26}" width="68" height="${P.BE[1] - P.BA[1] + 66}" rx="10" class="grp"/>`;
+g += `<text x="${P.BA[0]}" y="${P.BA[1] - 33}" text-anchor="middle" class="gl">même phrase B</text>`;
+// début du chant
+g += `<text x="2" y="${P.A[1] + 4}" class="st">début</text>`;
+g += `<line x1="34" y1="${P.A[1]}" x2="${P.A[0] - R - 1}" y2="${P.A[1]}" class="ar" marker-end="url(#grm-tip)"/>`;
+// boucle A → A
+g += `<path d="M${P.A[0] - 7},${P.A[1] - R + 2} C${P.A[0] - 20},${P.A[1] - 48} ${P.A[0] + 20},${P.A[1] - 48} ${P.A[0] + 8},${P.A[1] - R}" class="ar" marker-end="url(#grm-tip)"/>`;
+g += `<text x="${P.A[0]}" y="${P.A[1] - 43}" text-anchor="middle" class="pl">${p(-1, A, A)}</text>`;
+arc(P.A, P.BA, p(-1, A, B), -1);
+arc(P.BA, P.C, p(A, B, C), -1, R, ' hl');
+arc(P.BE, P.D, p(E, B, D), 1, R, ' hl');
+arc(P.C, P.E, p(-1, C, E), -1);
+arc(P.D, P.E, p(-1, D, E), 1);
+// vers FIN : par-dessus et par-dessous E
+curve(P.C, P.FIN, [P.FIN[0] - 18, P.C[1] + 4], p(-1, C, FIN), [P.FIN[0] - 34, P.C[1] + 6], 19);
+curve(P.D, P.FIN, [P.FIN[0] - 18, P.D[1] - 4], p(-1, D, FIN), [P.FIN[0] - 34, P.D[1] + 4], 19);
+// E → B (après E) : courbe entre C et D
+curve(P.E, P.BE, [278, 124], p(-1, E, B), [272, 129]);
+// nœuds
+const node = (q: Pt, t: string, hl = false) => (g += `<circle cx="${q[0]}" cy="${q[1]}" r="${R}" class="nd${hl ? ' hl' : ''}"/><text x="${q[0]}" y="${q[1] + 4.5}" text-anchor="middle" class="nl">${t}</text>`);
+node(P.A, NAMES[A]); node(P.BA, NAMES[B], true); node(P.BE, NAMES[B], true); node(P.C, NAMES[C]); node(P.D, NAMES[D]); node(P.E, NAMES[E]);
+g += `<rect x="${P.FIN[0] - 19}" y="${P.FIN[1] - 13}" width="38" height="26" rx="13" class="nd"/><text x="${P.FIN[0]}" y="${P.FIN[1] + 4}" text-anchor="middle" class="fl">${NAMES[FIN]}</text>`;
+g += `<text x="${P.BA[0]}" y="${P.BA[1] + R + 14}" text-anchor="middle" class="sb">après A</text>`;
+g += `<text x="${P.BE[0]}" y="${P.BE[1] + R + 14}" text-anchor="middle" class="sb">après E</text>`;
+---
+<figure class="grm">
+  <svg data-grm viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Grammaire du chant : A, puis A ou B ; B est suivi de C s'il vient après A, de D s'il vient après E ; C et D mènent à E ou à la fin ; E ramène à B">
+    <defs>
+      <marker id="grm-tip" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,1 L10,5 L0,9 z" class="tp" /></marker>
+      <marker id="grm-tip-hl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,1 L10,5 L0,9 z" class="tp hl" /></marker>
+    </defs>
+    <Fragment set:html={g} />
+  </svg>
+  <figcaption>Grammaire du jeu jouet : probabilité de la phrase suivante sur chaque flèche. Un chant commence par A et compte au plus 14 phrases (FIN forcé ensuite).</figcaption>
+</figure>
+
+<style is:global>
+  .grm { margin: 1.5rem 0; }
+  .grm svg[data-grm] { width: 100%; max-width: 520px; height: auto; display: block; margin: 0 auto; }
+  .grm svg[data-grm] .ar { fill: none; stroke: var(--text-2); stroke-width: 1.3; }
+  .grm svg[data-grm] .ar.hl { stroke: var(--text); stroke-width: 2; }
+  .grm svg[data-grm] .tp { fill: var(--text-2); }
+  .grm svg[data-grm] .tp.hl { fill: var(--text); }
+  .grm svg[data-grm] .nd { fill: var(--surface); stroke: var(--text-2); stroke-width: 1.3; }
+  .grm svg[data-grm] .nd.hl { stroke: var(--text); stroke-width: 2.6; }
+  .grm svg[data-grm] .grp { fill: none; stroke: var(--text-2); stroke-width: 1.2; stroke-dasharray: 4 3; }
+  .grm svg[data-grm] text.nl { font: 600 14px var(--font); fill: var(--text); }
+  .grm svg[data-grm] text.fl { font: 600 11.5px var(--font); fill: var(--text); }
+  .grm svg[data-grm] text.pl { font: 13px var(--font); fill: var(--text-2); }
+  .grm svg[data-grm] text.sb { font: 600 12.5px var(--font); fill: var(--text); }
+  .grm svg[data-grm] text.gl { font: 13px var(--font); fill: var(--text); }
+  .grm svg[data-grm] text.st { font: 12.5px var(--font); fill: var(--text-2); }
+  @media (max-width: 640px) {
+    .grm svg[data-grm] text.pl, .grm svg[data-grm] text.gl, .grm svg[data-grm] text.st { font-size: 14.5px; }
+    .grm svg[data-grm] text.sb { font-size: 14px; }
+  }
+  .grm figcaption { font-size: 12.5px; color: var(--text-2); margin-top: 6px; }
+</style>

@@ -1,38 +1,42 @@
 ---
 // Cours Reservoir computing, chapitre 2 : la règle EH sur les six sorties d'une phrase. Chaque sortie reçoit un bruit ξ ;
-// la récompense compare la sortie bruitée à une référence ; si elle est meilleure (M = 1), le poids suit le bruit.
+// la récompense compare la sortie bruitée z à une référence ; si elle est meilleure (M = 1), le poids suit le bruit.
 // Quatre lectures apprennent en parallèle (eh, eh_np, eh_np_local, neh), sur les mêmes phrases et dans le même ordre
-// (chants mélangés, rng(77)), chacune avec son bruit ; trois passes au plus (au-delà, les poids d'eh divergent).
-// Flèche, à l'échelle : déplacement de la sortie sur la même phrase dû à la mise à jour, Δy_i = η M_i (z_i − z̄_i) (‖x‖² + 1) (poids et biais) ; rouge si elle s'éloigne de la cible.
+// (chants mélangés à chaque passe, rng(77)), chacune avec son bruit ; trois passes au plus (au-delà, les poids d'eh divergent).
+// Le widget s'ouvre sur la première phrase déjà tirée. C'est le seul endroit du chapitre qui donne la formule de chaque variante.
+// Flèche : déplacement de la sortie sur la même phrase dû à la mise à jour, Δy_i = η M_i (z_i − z̄_i) (‖x‖² + 1) (poids et biais),
+// agrandi 10 fois (sinon quelques pixels) ; rouge si la sortie s'éloigne de sa cible.
 import katex from 'katex';
 const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
 // chaque formule est une suite de morceaux qui passent à la ligne sur un écran étroit
 const pc = (a: string[]) => a.map((s) => `<span class="fp">${tx(s)}</span>`).join('');
-const COMMON = pc(['z = W_{out}x + b + \\xi,\\;\\; \\xi_i \\sim \\mathcal U(-\\sigma, \\sigma)', 'W_{out} \\leftarrow W_{out} + \\eta\\, M\\,(z - \\bar z)\\, x^{\\top},', 'b \\leftarrow b + \\eta\\, M\\,(z - \\bar z)']);
+const R = 'r = -\\lVert z - d \\rVert^2,', ZB = '\\bar z = W_{out}x + b_{out}\\ \\ (z - \\bar z = \\xi),', MI = 'M_i = [\\,(z_i - d_i)^2 < (\\bar z_i - d_i)^2\\,],';
+const ETA = '\\eta = c\\,/\\,(\\langle \\lVert x \\rVert^2 \\rangle + 1)';
 const FM: Record<string, string> = {
-  eh: pc(['r = -\\lVert z - d \\rVert^2,', '\\bar z \\leftarrow (1 - \\tfrac{1}{\\tau})\\,\\bar z + \\tfrac{1}{\\tau}\\, z,', '\\bar r \\leftarrow (1 - \\tfrac{1}{\\tau})\\,\\bar r + \\tfrac{1}{\\tau}\\, r,', 'M = [\\,r > \\bar r\\,]']),
-  eh_np: pc(['r = -\\lVert z - d \\rVert^2,', '\\bar z = W_{out}x + b \\text{ (même phrase, sans bruit)},', '\\bar r = -\\lVert \\bar z - d \\rVert^2,', 'M = [\\,r > \\bar r\\,]']),
-  eh_np_local: pc(['\\bar z = W_{out}x + b,', 'r_i = -(z_i - d_i)^2,', '\\bar r_i = -(\\bar z_i - d_i)^2,', 'M_i = [\\,r_i > \\bar r_i\\,],', '\\eta = c\\,/\\,(\\langle \\lVert x \\rVert^2 \\rangle + 1)']),
-  neh: pc(['\\bar z = W_{out}x + b,', 'r_i = -(z_i - d_i)^2,', '\\bar r_i = -(\\bar z_i - d_i)^2,', 'M_i = [\\,r_i > \\bar r_i\\,],', '\\eta = c\\,/\\,(\\lVert x \\rVert^2 + 1)']),
+  eh: pc([R, '\\bar z \\leftarrow (1 - \\gamma)\\,\\bar z + \\gamma\\, z,', '\\bar r \\leftarrow (1 - \\gamma)\\,\\bar r + \\gamma\\, r,', 'M = [\\,r > \\bar r\\,],', ETA]),
+  eh_np: pc([R, ZB, '\\bar r = -\\lVert \\bar z - d \\rVert^2,', 'M = [\\,r > \\bar r\\,],', ETA]),
+  eh_np_local: pc([ZB, MI, ETA]),
+  neh: pc([ZB, MI, '\\eta = c\\,/\\,(\\lVert x \\rVert^2 + 1)']),
 };
 ---
 <div class="widget ehw" data-widget="ehw">
+  <div class="ehhead">
+    <b>Le bruit a-t-il aidé, et la sortie se rapproche-t-elle de sa cible&nbsp;?</b>
+    <div class="ehstat"><span data-ref="k2l">sorties rapprochées</span><b data-ref="k2">–</b></div>
+  </div>
   <div class="row"><span>Variante :</span><span class="seg" data-ref="var"></span></div>
   <div class="row ehctl"><span class="seg" data-ref="ctl"></span></div>
   <div class="calc">
-    <div class="fm" set:html={COMMON} />
     {Object.entries(FM).map(([k, h]) => <div class="fm" data-fm={k} set:html={h} hidden={k !== 'eh'} />)}
     <div class="ln" data-ref="ln1"></div>
     <div class="ln" data-ref="ln2"></div>
   </div>
-  <div class="ehhead"><b>Le bruit a-t-il aidé, et la sortie se rapproche-t-elle de sa cible ?</b></div>
   <svg data-ref="svg" role="img" aria-label="Les six sorties de la lecture sur la phrase en cours : cible, sortie sans bruit, sortie bruitée, référence, récompense et déplacement dû à la mise à jour"></svg>
   <div class="kpis">
-    <div><span>Phrases vues</span><b data-ref="k1">0</b></div>
-    <div><span>Sorties rapprochées de leur cible</span><b data-ref="k2">–</b><i>parmi les sorties mises à jour</i></div>
+    <div><span>Phrases vues</span><b data-ref="k1">0</b><i>382 par passe, trois passes au plus</i></div>
     <div><span>Précision de test</span><b data-ref="k3">–</b></div>
   </div>
-  <p class="note">États standardisés, réglages du tableau de la section 2, chants dans un ordre aléatoire à chaque époque (trois passes au plus). Violet plein : sortie sans bruit ; creux : bruitée ; losange : z̄ filtré (eh) ; pointillés : cible ; flèche : effet de la mise à jour, rouge s'il éloigne de la cible ; triangle : hors échelle.</p>
+  <p class="note">États standardisés ; σ = 0,5 ; c = 0,03 et γ = 0,2 pour eh, c = 0,1 pour les autres ; chants dans un ordre aléatoire à chaque passe. Sorties rapprochées : parmi les sorties mises à jour.</p>
 </div>
 
 <script>
@@ -51,13 +55,10 @@ const FM: Record<string, string> = {
     train.forEach((s, k) => (songIdx[s.song] ??= []).push(k));
     const ro = rng(77), SEQ = [0, 1, 2].flatMap(() => epochOrder(songIdx, ro)), EMAX = SEQ.length;
     const VARS = ['eh', 'eh_np', 'eh_np_local', 'neh'] as const;
+    const AMP = 10; // agrandissement de la flèche
     const fm = (v: number, d = 2) => (Math.abs(v) < 0.5 * 10 ** -d ? (0).toFixed(d) : v.toFixed(d)).replace('.', ',').replace('-', '−');
     type L = { m: ReturnType<typeof makeRule>; last: StepInfo | null; before: number[] | null; after: number[] | null; closer: number; tot: number };
     let sel = 0, learners: L[] = [], n = -1, seen = 0, trial = 0;
-    function reset() {
-      learners = VARS.map((id) => ({ m: makeRule(id, NC, N + 1, { ...RULES.find((r) => r.id === id)!.o, meanZ2 }), last: null, before: null, after: null, closer: 0, tot: 0 }));
-      n = -1; seen = 0; trial = 0; draw();
-    }
     function update() {
       const z = Z[n];
       learners.forEach((Lr) => {
@@ -70,75 +71,114 @@ const FM: Record<string, string> = {
       });
     }
     const next = () => { if (seen >= EMAX) return false; n = SEQ[seen]; seen++; trial = 1; update(); return true; };
+    // état initial : la première phrase est déjà tirée
+    function reset() {
+      learners = VARS.map((id) => ({ m: makeRule(id, NC, N + 1, { ...RULES.find((r) => r.id === id)!.o, meanZ2 }), last: null, before: null, after: null, closer: 0, tot: 0 }));
+      n = -1; seen = 0; trial = 0; next(); draw();
+    }
     const mk = (box: string, label: string, f: () => void) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', f); $(box).appendChild(b); return b; };
     // boutons d'avance, désactivés après trois passes
     const adv = [
-      mk('ctl', 'nouveau bruit, même phrase', () => { if (seen >= EMAX) return; if (n < 0) next(); else { trial++; update(); } draw(); }),
+      mk('ctl', 'nouveau bruit, même phrase', () => { if (seen >= EMAX) return; trial++; update(); draw(); }),
       mk('ctl', 'phrase suivante', () => { next(); draw(); }),
-      mk('ctl', 'une passe (382 phrases)', () => { for (let k = 0; k < Z.length; k++) if (!next()) break; draw(); }),
+      mk('ctl', 'fin de la passe', () => { do { if (!next()) break; } while (seen % Z.length); draw(); }),
     ] as HTMLButtonElement[];
     mk('ctl', 'tout effacer', reset);
     VARS.forEach((v, i) => { const b = mk('var', v, () => { sel = i; draw(); }); b.dataset.i = String(i); });
 
     function svg() {
-      const nar = root.clientWidth < 520, Lr = learners[sel], I = Lr.last, W = nar ? 400 : 640, rh = 31, top = 22, ax0 = nar ? 40 : 52, ax1 = nar ? 250 : 410, gx = nar ? 18 : 20, lo = -0.6, hi = 1.6;
+      const nar = root.clientWidth < 520, Lr = learners[sel], I = Lr.last!, W = nar ? 400 : 640, rh = 31, extra = 18, top = 22;
+      const ax0 = nar ? 38 : 52, ax1 = nar ? 248 : 410, gx = nar ? 16 : 20, lo = -0.6, hi = 1.6, cw = nar ? 6.6 : 6; // cw : largeur moyenne d'un caractère
       const X = (v: number) => ax0 + ((Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * (ax1 - ax0);
-      const t = n >= 0 ? T[n] : -1, local = sel >= 2;
-      // flèche à l'échelle : trait puis pointe, la pointe ne dépasse jamais la longueur du déplacement
+      const t = T[n], local = sel >= 2;
+      const rowY = (k: number) => top + k * rh + rh / 2 + (k > t ? extra : 0);
+      const H = top + NC * rh + extra + 4;
+      // flèche : trait puis pointe, la pointe ne dépasse jamais la longueur du déplacement
       const arrow = (x0: number, x1: number, y: number, col: string) => {
         const s = Math.sign(x1 - x0), h = Math.min(5, Math.abs(x1 - x0)), xb = x1 - s * h;
         return (Math.abs(xb - x0) > 0.3 ? `<line x1="${x0}" x2="${xb}" y1="${y}" y2="${y}" stroke="${col}" stroke-width="2.2"/>` : '') + `<path d="M${x1},${y} L${xb},${y - 3.2} L${xb},${y + 3.2} z" fill="${col}"/>`;
       };
-      let g = '';
+      let g = '', arrowLabelled = false, redLabelled = false;
       [0, 1].forEach((v) => (g += `<text x="${X(v)}" y="12" text-anchor="middle" class="ax">${v}</text>`));
       g += `<text x="${ax1 + gx}" y="12" class="ax">${nar ? 'récompense' : local ? 'récompense de chaque sortie' : 'récompense globale'}</text>`;
-      for (let k = 0; k < NC; k++) {
-        const y = top + k * rh + rh / 2, d = k === t ? 1 : 0;
-        g += `<text x="${ax0 - 18}" y="${y + 4}" text-anchor="end" class="${k === t ? 'rl b' : 'rl'}">${NAMES[k]}</text>`;
+      // la rangée de la cible d'abord (ses étiquettes directes ont la priorité), puis les autres
+      const order = [t, ...Array.from({ length: NC }, (_, k) => k).filter((k) => k !== t)];
+      for (const k of order) {
+        const y = rowY(k), d = k === t ? 1 : 0;
+        g += `<text x="${ax0 - 16}" y="${y + 4}" text-anchor="end" class="${k === t ? 'rl b' : 'rl'}">${NAMES[k]}</text>`;
         g += `<line x1="${ax0}" x2="${ax1}" y1="${y}" y2="${y}" stroke="var(--border)"/>`;
         [0, 1].forEach((v) => (g += `<line x1="${X(v)}" x2="${X(v)}" y1="${y - 3}" y2="${y + 3}" stroke="var(--border)"/>`));
-        if (n < 0) continue;
         g += `<line x1="${X(d)}" x2="${X(d)}" y1="${y - 11}" y2="${y + 11}" stroke="var(--text)" stroke-dasharray="3 2" stroke-width="1.2"/>`;
-        if (!I || !Lr.before || !Lr.after) continue;
-        const zh = Lr.before[k], zn = I.zn![k];
+        const zh = Lr.before![k], zn = I.zn![k], zr = I.zref![k];
         g += `<line x1="${X(zh)}" x2="${X(zn)}" y1="${y}" y2="${y}" stroke="var(--r-out)" stroke-width="1.6" stroke-opacity="0.45"/>`;
-        if (sel === 0) { const xr = X(I.zref![k]); g += `<path d="M${xr},${y - 6} L${xr + 6},${y} L${xr},${y + 6} L${xr - 6},${y} z" fill="none" stroke="var(--text-2)" stroke-width="1.3"/>`; }
-        g += `<circle cx="${X(zh)}" cy="${y}" r="4.5" fill="var(--r-out)"/><circle cx="${X(zn)}" cy="${y}" r="4.5" fill="none" stroke="var(--r-out)" stroke-width="1.6"/>`;
+        if (sel === 0) { const xr = X(zr); g += `<path d="M${xr},${y - 6} L${xr + 6},${y} L${xr},${y + 6} L${xr - 6},${y} z" fill="none" stroke="var(--text-2)" stroke-width="1.3"/>`; }
+        g += `<circle cx="${X(zh)}" cy="${y}" r="4.5" fill="var(--r-out)"/><circle cx="${X(zn)}" cy="${y}" r="4.5" fill="var(--surface)" stroke="var(--r-out)" stroke-width="1.6"/>`;
         // valeurs hors de l'axe : triangle gris au bord
-        const vs = sel === 0 ? [zh, zn, I.zref![k]] : [zh, zn];
-        if (vs.some((v) => v < lo)) g += `<path d="M${ax0 - 13},${y} L${ax0 - 7},${y - 4} L${ax0 - 7},${y + 4} z" fill="var(--text-2)"/>`;
-        if (vs.some((v) => v > hi)) g += `<path d="M${ax1 + 13},${y} L${ax1 + 7},${y - 4} L${ax1 + 7},${y + 4} z" fill="var(--text-2)"/>`;
-        const za = Lr.after[k];
-        if (Math.abs(za - zh) > 1e-9) {
-          const bad = Math.abs(za - d) > Math.abs(zh - d), x0 = X(zh), x1 = X(za), col = bad ? 'var(--h-py)' : 'var(--r-out)';
-          if (Math.abs(x1 - x0) > 1.5) g += arrow(x0, x1, y - 10, col);
-          else g += `<circle cx="${x1}" cy="${y - 10}" r="2" fill="${col}"/>`;
+        const vs = sel === 0 ? [zh, zn, zr] : [zh, zn];
+        if (vs.some((v) => v < lo)) g += `<path d="M${ax0 - 11},${y} L${ax0 - 5},${y - 4} L${ax0 - 5},${y + 4} z" fill="var(--text-2)"><title>hors échelle</title></path>`;
+        if (vs.some((v) => v > hi)) g += `<path d="M${ax1 + 11},${y} L${ax1 + 5},${y - 4} L${ax1 + 5},${y + 4} z" fill="var(--text-2)"><title>hors échelle</title></path>`;
+        // flèche de la mise à jour, agrandie AMP fois
+        const za = Lr.after![k], dy = za - zh;
+        if (Math.abs(dy) > 1e-9) {
+          const bad = Math.abs(za - d) > Math.abs(zh - d), x0 = X(zh), x1 = X(zh + AMP * dy), col = bad ? 'var(--h-py)' : 'var(--r-out)', ya = y - 10;
+          g += Math.abs(x1 - x0) > 1.5 ? arrow(x0, x1, ya, col) : `<circle cx="${x1}" cy="${ya}" r="2" fill="${col}"/>`;
+          const lab = [!arrowLabelled ? `mise à jour × ${AMP}` : '', bad && !redLabelled ? 's’éloigne de la cible' : ''].filter(Boolean).join(', ');
+          if (lab) {
+            // après la pointe si la place suffit, sinon de l'autre côté de la flèche
+            const right = x1 >= x0, w = lab.length * cw, fits = right ? x1 + 5 + w < ax1 + gx - 4 : x1 - 5 - w > 2;
+            const xt = fits ? x1 + (right ? 5 : -5) : x0 + (right ? -5 : 5), anchor = right === fits ? 'start' : 'end';
+            g += `<text x="${xt}" y="${ya + 3}" text-anchor="${anchor}" class="al${bad ? ' bad' : ''}">${lab}</text>`;
+            arrowLabelled = true; if (bad) redLabelled = true;
+          }
         }
-        if (local) g += `<text x="${ax1 + gx}" y="${y + 4}" class="rv">${fm(I.rw![k])} ${I.M![k] ? '>' : '≤'} ${fm(I.rref![k])}</text><text x="${W - 8}" y="${y + 4}" text-anchor="end" class="${I.M![k] ? 'mv on' : 'mv'}">M = ${I.M![k]}</text>`;
+        // étiquettes directes sous la rangée de la cible
+        if (k === t) {
+          const L = [{ x: X(zh), s: 'sans bruit' }, { x: X(zn), s: 'bruitée' }, { x: X(d), s: 'cible' }];
+          if (sel === 0) L.push({ x: X(zr), s: 'z̄ filtré' });
+          // écarte les étiquettes (6 px au moins) : les groupes qui se chevauchent sont centrés sur la moyenne de leurs repères
+          const P = L.map((l) => ({ ...l, w: l.s.length * cw, c: l.x })).sort((a, b) => a.x - b.x);
+          let cl = P.map((p) => [p]);
+          for (let it = 0; it < 10; it++) {
+            const place = (grp: typeof P) => {
+              const tw = grp.reduce((a, p) => a + p.w, 0) + 6 * (grp.length - 1), mid = grp.reduce((a, p) => a + p.x, 0) / grp.length;
+              let x = Math.max(ax0 - 20, Math.min(ax1 + gx - 4 - tw, mid - tw / 2));
+              grp.forEach((p) => { p.c = x + p.w / 2; x += p.w + 6; });
+            };
+            cl.forEach(place);
+            const merged: (typeof P)[] = [];
+            cl.forEach((grp) => { const last = merged[merged.length - 1]; if (last) { const a = last[last.length - 1], b = grp[0]; if (a.c + a.w / 2 + 6 > b.c - b.w / 2) { last.push(...grp); return; } } merged.push(grp); });
+            if (merged.length === cl.length) break;
+            cl = merged; cl.forEach(place);
+          }
+          P.forEach((l) => {
+            if (Math.abs(l.c - l.x) > 2) g += `<line x1="${l.x}" x2="${l.c}" y1="${y + 7}" y2="${y + 13}" stroke="var(--text-2)" stroke-width="0.8"/>`;
+            g += `<text x="${l.c}" y="${y + 23}" text-anchor="middle" class="dl">${l.s}</text>`;
+          });
+        }
+        if (local) g += `<text x="${ax1 + gx}" y="${y + 4}" class="rv">${fm(I.rw![k])} ${I.M![k] ? '>' : '≤'} ${fm(I.rref![k])}</text><text x="${W - 6}" y="${y + 4}" text-anchor="end" class="${I.M![k] ? 'mv on' : 'mv'}">${nar ? 'M=' : 'M = '}${I.M![k]}</text>`;
       }
-      if (n >= 0 && I && !local) {
-        const y0 = top + 6, y1 = top + NC * rh - 6, ym = (y0 + y1) / 2;
+      if (!local) {
+        const y0 = top + 6, y1 = H - 10, ym = (y0 + y1) / 2;
         g += `<path d="M${ax1 + gx - 4},${y0} h4 V${y1} h-4" fill="none" stroke="var(--text-2)"/>`;
         g += `<text x="${ax1 + gx + 8}" y="${ym - 14}" class="rv">r = ${fm(I.rw![0])}</text><text x="${ax1 + gx + 8}" y="${ym + 2}" class="rv">r̄ = ${fm(I.rref![0])}</text><text x="${ax1 + gx + 8}" y="${ym + 20}" class="${I.M![0] ? 'mv on' : 'mv'}">M = ${I.M![0]}${nar ? '' : ' pour toutes'}</text>`;
       }
-      if (n < 0) g += `<text x="${(ax0 + ax1) / 2}" y="${top + 3 * rh + 4}" text-anchor="middle" class="ax">W<tspan baseline-shift="sub" font-size="8">out</tspan> = 0 : clique « phrase suivante »</text>`;
       const el = $('svg') as unknown as SVGSVGElement;
-      el.setAttribute('viewBox', `0 0 ${W} ${top + NC * rh + 4}`); el.innerHTML = g;
+      el.setAttribute('viewBox', `0 0 ${W} ${H}`); el.toggleAttribute('data-nar', nar); el.innerHTML = g;
     }
     function draw() {
       $('var').querySelectorAll<HTMLElement>('button').forEach((b) => b.classList.toggle('active', +b.dataset.i! === sel));
       root.querySelectorAll<HTMLElement>('[data-fm]').forEach((d) => (d.hidden = d.dataset.fm !== VARS[sel]));
       svg();
-      const Lr = learners[sel], I = Lr.last;
-      if (n < 0 || !I) { $('ln1').innerHTML = 'W<sub>out</sub> = 0 au départ : sorties égales, la prédiction est A (7 % du test).'; $('ln2').textContent = ''; }
-      else {
-        const s = train[n], t = T[n], c = NAMES[t];
-        $('ln1').innerHTML = `chant ${s.song + 1}, phrase ${s.pos + 1} (${NAMES[s.cur]}) → cible ${c} · essai ${trial} sur cette phrase`;
-        const dz = I.zn![t] - I.zref![t], z2 = dot(Z[n], Z[n]);
-        $('ln2').innerHTML = `sortie ${c} : ξ = ${fm(I.xi![t])} · z − z̄ = ${fm(dz)} · M = ${I.M![t]} · Δy = η M (z − z̄) (‖x‖² + 1) = ${fm(I.eta * I.M![t] * dz * z2, 3)}`;
-      }
-      $('k1').textContent = String(seen);
-      $('k2').textContent = Lr.tot ? `${Math.round((100 * Lr.closer) / Lr.tot)} %` : '–';
+      const Lr = learners[sel], I = Lr.last!;
+      const s = train[n], t = T[n], c = NAMES[t];
+      $('ln1').innerHTML = `chant ${s.song + 1}, phrase ${s.pos + 1} (${NAMES[s.cur]}) → cible ${c} · essai ${trial} sur cette phrase`;
+      const dz = I.zn![t] - I.zref![t], z2 = dot(Z[n], Z[n]);
+      $('ln2').innerHTML = `sortie ${c} : ξ = ${fm(I.xi![t])} · z − z̄ = ${fm(dz)} · M = ${I.M![t]} · Δy = η M (z − z̄) (‖x‖² + 1) = ${fm(I.eta * I.M![t] * dz * z2, 3)}`;
+      $('k1').textContent = `${seen} / ${EMAX}`;
+      // avant toute mise à jour (M = 0 partout), la pastille le dit au lieu d'afficher une valeur vide
+      $('k2l').textContent = Lr.tot ? 'sorties rapprochées' : 'aucune sortie mise à jour';
+      $('k2').textContent = Lr.tot ? `${Math.round((100 * Lr.closer) / Lr.tot)} %` : '';
+      $('k2').hidden = !Lr.tot;
       $('k3').textContent = `${Math.round(100 * accuracy(Lr.m.W, Zt, Tt))} %`;
       adv.forEach((b) => (b.disabled = seen >= EMAX));
     }
@@ -149,23 +189,33 @@ const FM: Record<string, string> = {
 </script>
 
 <style is:global>
+  .ehw .ehhead { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .ehw .ehhead > b { font-size: 15px; font-weight: 600; color: var(--text); }
+  .ehw .ehstat { display: flex; align-items: baseline; gap: 8px; background: var(--surface-2); border-radius: 8px; padding: 4px 10px; }
+  .ehw .ehstat span { font-size: 12.5px; color: var(--text-2); }
+  .ehw .ehstat b[hidden] { display: none; }
+  .ehw .ehstat b { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
   .ehw .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
   .ehw .seg button { font-size: 13px; padding: 4px 11px; }
   .ehw .ehctl > .seg { display: flex; width: 100%; }
   .ehw .ehctl > .seg button:last-child { margin-left: auto; }
+  .ehw .seg button:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
   .ehw .calc { margin-top: 2px; padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--text-2) 4.5%, transparent); }
   .ehw .fm { position: relative; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 0.9em; font-size: 0.86rem; overflow-x: auto; overflow-y: hidden; margin: 2px 0 4px; }
   .ehw .fm[hidden] { display: none; }
-  .ehw .seg button:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
   .ehw .fm .katex { font-size: 1em; }
   .ehw .ln { font: 11.5px/1.5 var(--mono); color: var(--text-2); min-height: 1.5em; overflow-wrap: anywhere; }
-  .ehw .ehhead { margin-top: 10px; }
-  .ehw .ehhead b { font-size: 15px; font-weight: 600; color: var(--text); }
-  .ehw svg { width: 100%; height: auto; display: block; margin: 4px 0 0; }
-  .ehw svg text.ax { font: 11px var(--font); fill: var(--text-2); }
-  .ehw svg text.rl { font: 11.5px var(--font); fill: var(--text-2); }
-  .ehw svg text.rl.b { font-weight: 600; fill: var(--text); }
-  .ehw svg text.rv { font: 11px var(--mono); fill: var(--text-2); }
-  .ehw svg text.mv { font: 11.5px var(--font); fill: var(--text-2); }
-  .ehw svg text.mv.on { font-weight: 600; fill: var(--text); }
+  .ehw svg[data-ref="svg"] { width: 100%; height: auto; display: block; margin: 8px 0 0; }
+  .ehw svg[data-ref="svg"] text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .ehw svg[data-ref="svg"] text.rl { font: 11.5px var(--font); fill: var(--text-2); }
+  .ehw svg[data-ref="svg"] text.rl.b { font-weight: 600; fill: var(--text); }
+  .ehw svg[data-ref="svg"] text.dl { font: 11px var(--font); fill: var(--text); }
+  .ehw svg[data-ref="svg"] text.al { font: 11px var(--font); fill: var(--r-out); }
+  .ehw svg[data-ref="svg"] text.al.bad { fill: var(--h-py); }
+  .ehw svg[data-ref="svg"] text.al, .ehw svg[data-ref="svg"] text.dl { paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
+  .ehw svg[data-ref="svg"] text.rv { font: 11px var(--mono); fill: var(--text-2); }
+  .ehw svg[data-ref="svg"] text.mv { font: 11.5px var(--font); fill: var(--text-2); }
+  .ehw svg[data-ref="svg"] text.mv.on { font-weight: 600; fill: var(--text); }
+  .ehw svg[data-ref="svg"][data-nar] text { font-size: 12.5px; }
+  .ehw svg[data-ref="svg"][data-nar] text.rv { font-size: 11.5px; }
 </style>

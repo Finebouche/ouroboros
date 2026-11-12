@@ -23,7 +23,7 @@ export function solve(A: Float64Array[], B: Float64Array[]) {
   return X;
 }
 
-// ridge : W = Y Xᵀ (X Xᵀ + λ I)⁻¹, constante comprise dans la pénalité (c'est ce que donne RLS avec P₀ = I/α)
+// ridge : W = Y Xᵀ (X Xᵀ + α I)⁻¹, constante comprise dans la pénalité (c'est ce que donne RLS avec P₀ = I/α)
 export function ridgeW(Z: Float64Array[], T: number[], nc: number, lam: number) {
   const D = Z[0].length;
   const A = Array.from({ length: D }, () => new Float64Array(D)), B = Array.from({ length: D }, () => new Float64Array(nc));

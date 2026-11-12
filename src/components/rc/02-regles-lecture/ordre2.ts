@@ -1,6 +1,10 @@
 // Cours Reservoir computing, chapitre 2 : lecture d'ordre 2, en primal (monômes explicites) et en dual (noyau).
-// φ(x) = (x_i, x_i x_j pour i ≤ j), centré sur l'apprentissage ; noyau k(a, b) = φ(a)·φ(b) = a·b + ((a·b)² + Σ a_i² b_i²) / 2.
-// NLMS sur [φ ; 1] : W ← W − η e φᵀ, b ← b − η e. Dual : W = Σ_j a_j φ_jᵀ, sortie Σ_j a_j k_c(x_j, x) + b, mise à jour a_i ← a_i − η_i e_i.
+// x : état du réservoir. φ(x) = (x_j, x_j x_j' pour j ≤ j' ; j : neurone), centré sur l'apprentissage ; noyau k(a, b) = φ(a)·φ(b) = a·b + ((a·b)² + Σ a_j² b_j²) / 2.
+// NLMS sur [φ ; 1] : W_out ← W_out − η e φᵀ, b_out ← b_out − η e. Dual : W_out = Σ_ℓ a_ℓ φ_ℓᵀ, sortie Σ_ℓ a_ℓ k_c(x_ℓ, x) + b_out,
+// mise à jour a_ℓ ← a_ℓ − η_ℓ e_ℓ (ℓ : phrase d'apprentissage ; dans le code, i et j numérotent les phrases).
+import { dataset, NC } from './chants';
+import { stats, epochOrder } from './regles';
+import { rng } from '../esn';
 
 export const nFeat = (n: number) => n + (n * (n + 1)) / 2;
 export function phi(x: Float64Array) {
@@ -60,4 +64,45 @@ export function makeO2(X: Float64Array[], T: number[], nc: number) {
     return { mp, md, gap };
   }
   return { n, D, diag, meanDiag, maxDiag: Math.max(...diag), step, mse, reset };
+}
+
+// courbes du widget « Pourquoi normaliser le taux ? », précalculées (à la construction) : pour chaque c, erreur quadratique moyenne
+// d'apprentissage (forme primale) à la fin de chaque époque, taux normalisé et taux unique ; une courbe s'arrête dès que l'erreur
+// dépasse STOP. gap : plus grand écart relatif entre les sorties primales et duales, sur les deux courbes.
+export const STOP = 1e6;
+const memo = new Map<string, ReturnType<typeof computeRates>>();
+export const rateCurves = (cs: number[], emax = 20) => {
+  const key = `${cs.join(',')}|${emax}`;
+  if (!memo.has(key)) memo.set(key, computeRates(cs, emax));
+  return memo.get(key)!;
+};
+function computeRates(cs: number[], emax: number) {
+  const { train } = dataset();
+  const st = stats(train.map((s) => s.x));
+  const X = train.map((s) => Float64Array.from(s.x, (v, i) => (v - st.m[i]) / st.s[i])), T = train.map((s) => s.next), n = X.length;
+  const songIdx: number[][] = [];
+  train.forEach((s, k) => (songIdx[s.song] ??= []).push(k));
+  const O = makeO2(X, T, NC);
+  const run = (c: number, single: boolean) => {
+    O.reset();
+    const ro = rng(77), err = [1];
+    let gap = 0;
+    for (let e = 0; e < emax; e++) {
+      const order = epochOrder(songIdx, ro);
+      for (const i of order) {
+        const s = O.step(i, c, single);
+        s.yp.forEach((v, k) => (gap = Math.max(gap, Math.abs(v - s.yd[k]) / Math.max(1, Math.abs(v)))));
+      }
+      const m = O.mse();
+      gap = Math.max(gap, m.gap);
+      err.push(m.mp);
+      if (!(m.mp < STOP)) break;
+    }
+    return { err, gap };
+  };
+  const ratio = (O.maxDiag + 1) / (O.meanDiag + 1);
+  return {
+    n, D: O.D, meanK1: O.meanDiag + 1, maxK1: O.maxDiag + 1, ratio,
+    runs: cs.map((c) => { const a = run(c, false), b = run(c, true); return { c, norm: a.err, uniq: b.err, gap: Math.max(a.gap, b.gap), gain: c * ratio }; }),
+  };
 }

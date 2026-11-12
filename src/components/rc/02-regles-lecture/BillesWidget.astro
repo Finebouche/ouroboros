@@ -11,10 +11,10 @@ const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
 // boucle fermée (FORCE) : la sortie du pas précédent revient dans le réservoir par W_fb, figé
 const FB = tx('\\text{boucle fermée : } x(n) = \\tanh\\big(W x(n{-}1) + W_{in} u(n) + W_{fb}\\, y(n{-}1)\\big), \\; W_{fb} \\text{ figé}');
 const FM: Record<string, string> = {
-  ridge: tx('W = D\\,X^{\\top} (X X^{\\top} + \\lambda I)^{-1} \\quad \\text{(une fois, sur 20 états et cibles mis de côté)}'),
-  rls: tx('g = \\frac{P x}{1 + x^{\\top} P x}, \\qquad W \\leftarrow W - e\\, g^{\\top}, \\qquad P \\leftarrow P - g\\, x^{\\top} P'),
-  lms: tx('W \\leftarrow W - \\eta\\, e\\, x^{\\top}, \\qquad e = y - d'),
-  eh: tx('z = y + \\xi, \\quad M = \\big[\\lVert z - d \\rVert^2 < \\lVert y - d \\rVert^2\\big], \\quad W \\leftarrow W + \\eta\\, M\\, \\xi\\, x^{\\top} \\quad \\text{(référence : la sortie sans bruit)}'),
+  ridge: tx('W_{out} = Y\\,X^{\\top} (X X^{\\top} + \\alpha I)^{-1} \\quad \\text{(une fois, sur 20 états et cibles mis de côté)}'),
+  rls: tx('g = \\frac{P x}{1 + x^{\\top} P x}, \\qquad W_{out} \\leftarrow W_{out} - e\\, g^{\\top}, \\qquad P \\leftarrow P - g\\, x^{\\top} P'),
+  lms: tx('W_{out} \\leftarrow W_{out} - \\eta\\, e\\, x^{\\top}, \\qquad e = y - d'),
+  eh: tx('z = y + \\xi, \\quad M = \\big[\\lVert z - d \\rVert^2 < \\lVert y - d \\rVert^2\\big], \\quad W_{out} \\leftarrow W_{out} + \\eta\\, M\\, \\xi\\, x^{\\top} \\quad \\text{(référence : la sortie sans bruit)}'),
 };
 ---
 <div class="widget blw" data-widget="blw">

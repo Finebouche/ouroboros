@@ -1,6 +1,6 @@
 // Cours Reservoir computing, chapitre 2 : petit modèle réel derrière l'animation des billes (BillesWidget).
 // Réservoir de 12 neurones tanh, connexions creuses (3 entrées par neurone), rayon spectral 0,9 ; entrée scalaire u(n) ;
-// trois sorties y_k = w_k · x (sans biais, entrée et états centrés) et trois cibles, l'entrée retardée de 1, 3 et 5 pas (de plus en plus de mémoire).
+// trois sorties y_i = w_i · x (sans biais, entrée et états centrés) et trois cibles, l'entrée retardée de 1, 3 et 5 pas (de plus en plus de mémoire).
 // Règles : ridge (états collectés puis une résolution), RLS, LMS, EH (référence = sortie sans bruit sur le même pas).
 import { rng } from '../esn';
 
@@ -29,12 +29,12 @@ export function makeNet(seed = 3): Net {
   for (let i = 0; i < NR; i++) for (let j = 0; j < NR; j++) if (W[i][j]) { W[i][j] *= 0.9 / rho; edges.push({ from: j, to: i, w: W[i][j] }); }
   const win = new Array(NR).fill(0);
   [0, 3, 6, 9].forEach((i) => (win[i] = (r() < 0.5 ? -1 : 1) * (0.6 + 0.4 * r())));
-  // retour de FORCE : la sortie z renvoyée dans le réservoir par des poids figés tirés au hasard (tirage à part, le reste du réseau ne change pas)
+  // retour de FORCE : la sortie y renvoyée dans le réservoir par des poids figés tirés au hasard (tirage à part, le reste du réseau ne change pas)
   const rf = rng(seed + 100), wfb = Array.from({ length: NR }, () => Array.from({ length: NK }, () => 2 * rf() - 1));
   return { edges, win, W, wfb };
 }
-// sfb > 0 : boucle fermée (FORCE), z = sortie du pas précédent renvoyée par W_fb
-export const stepNet = (net: Net, x: number[], u: number, z?: number[], sfb = 0) => net.W.map((row, i) => Math.tanh(row.reduce((s, v, j) => s + v * x[j], 0) + net.win[i] * u + (z && sfb ? sfb * net.wfb[i].reduce((s, w, k) => s + w * z[k], 0) : 0)));
+// sfb > 0 : boucle fermée (FORCE), yfb = sortie y du pas précédent renvoyée par W_fb
+export const stepNet = (net: Net, x: number[], u: number, yfb?: number[], sfb = 0) => net.W.map((row, i) => Math.tanh(row.reduce((s, v, j) => s + v * x[j], 0) + net.win[i] * u + (yfb && sfb ? sfb * net.wfb[i].reduce((s, w, k) => s + w * yfb[k], 0) : 0)));
 
 // pas d'apprentissage de LMS, amplitude du bruit et pas d'eh_np
 export const ETA = 0.15, SIG = 0.3, ETA_EH = 0.6;
@@ -54,7 +54,7 @@ export function makeLearner(rule: Rule, seed = 9) {
       if (solved) return { e, y, d, dw, solved: true };
       X.push(x.slice()); D.push(d.slice());
       if (X.length < NCOL) return { e, y, d, dw, stored: X.length };
-      // une seule résolution : W = D Xᵀ (X Xᵀ + λI)⁻¹, par élimination de Gauss (une colonne de second membre par sortie)
+      // une seule résolution : W = D Xᵀ (X Xᵀ + αI)⁻¹, par élimination de Gauss (une colonne de second membre par sortie)
       const A = Array.from({ length: NR }, (_, i) => [...Array.from({ length: NR }, (_, j) => X.reduce((s, row) => s + row[i] * row[j], 0) + (i === j ? 1e-4 : 0)), ...Array.from({ length: NK }, (_, k) => X.reduce((s, row, t) => s + row[i] * D[t][k], 0))]);
       for (let i = 0; i < NR; i++) {
         let p = i; for (let k = i + 1; k < NR; k++) if (Math.abs(A[k][i]) > Math.abs(A[p][i])) p = k;
