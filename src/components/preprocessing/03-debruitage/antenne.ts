@@ -1,13 +1,16 @@
 // Chapitre 3 (Preprocessing), traitement d'antenne en bande étroite : une case de fréquence, un vecteur complexe par trame.
-//   x_k = s_k · v(θ_s) + i_k · v(θ_i) + b_k        (raie, interférent, bruit indépendant entre capteurs)
-// Antenne linéaire uniforme de C capteurs espacés de `esp` longueurs d'onde (0,5 par défaut).
-// Gisement θ mesuré depuis la perpendiculaire à l'antenne. Même convention que le projet :
-//   retard τ_c = −(u · r_c)/c,  a_c(θ) = exp(−2πi f τ_c)/√C,  soit ici a_c = exp(2πi · esp · (c − (C−1)/2) · sin θ)/√C.
+//   x_j = (raie) · v(θ_s) + (interférent) · v(θ_I) + b_j        (j : trame ; b_j : bruit indépendant entre capteurs)
+// Antenne linéaire uniforme de C capteurs (indice i) espacés de `esp` longueurs d'onde (0,5 par défaut).
+// Gisement θ = direction d'arrivée, mesurée depuis la perpendiculaire à l'antenne. Même convention que le projet :
+//   retard τ_i = −(u · r_i)/c,  a_i(θ) = exp(−2πi f τ_i)/√C,  soit ici a_i = exp(2πi · esp · (i − (C−1)/2) · sin θ)/√C.
 // v(θ) = √C · a(θ) : onde plane d'amplitude 1 sur chaque capteur.
+// Notations du chapitre : R_b covariance du bruit, h filtre de l'antenne, ε charge diagonale, M observations, J trames.
+// (Dans le code, les matrices de covariance gardent le nom de variable K et les filtres le nom w : seuls les commentaires suivent le texte.)
 //
 // Algèbre complexe : un vecteur de taille n est un Float64Array de 2n réels [re0, im0, re1, im1, …] ;
 // une matrice n×n est rangée par lignes de la même façon (élément (i, j) à l'indice 2(i·n + j)).
-import { gauss, rng, type Tfct } from './raies';
+import { fft } from '../01-mfcc/dsp';
+import { FS, amplitude, gauss, rng, type Raie, type Tfct } from './raies';
 
 export type Vec = Float64Array;
 export type Mat = Float64Array;
@@ -78,7 +81,8 @@ export function covariance(obs: Vec[]): Mat {
   return K;
 }
 
-// Charge diagonale du projet : K + (ε + 10⁻⁶) · ℓ · I, avec ℓ = tr(K)/C (niveau moyen par capteur)
+// Charge diagonale du projet : R_b + (ε + 10⁻⁶) · ℓ · I, avec ℓ = tr(R_b)/C (niveau moyen par capteur).
+// Attention : charge(K, 0) ajoute encore 10⁻⁶ · ℓ ; « sans charge » au sens strict = la matrice telle quelle.
 export function charge(K: Mat, eps: number): Mat {
   const n = taille(K), out = K.slice(), l = Math.max(trace(K) / n, 1e-300);
   for (let i = 0; i < n; i++) out[2 * (i * n + i)] += (eps + 1e-6) * l;
@@ -142,7 +146,8 @@ export function remontee(L: Mat, y: Vec): Vec {
 // K⁻¹ b à partir du facteur de Cholesky
 export const resoudre = (L: Mat, b: Vec): Vec => remontee(L, descente(L, b));
 
-// Poids des voies classiques : w = a. Poids adaptatifs : w = K⁻¹a / (aᴴK⁻¹a). Dans les deux cas wᴴa = 1 (la raie visée passe sans gain ni perte).
+// Filtre des voies classiques : h = a. Filtre adaptatif : h = R_b⁻¹a / (aᴴR_b⁻¹a). Dans les deux cas hᴴa = 1 (la raie visée passe sans gain ni perte).
+// Puissance du bruit en sortie du filtre adaptatif : hᴴR_b h = 1 / (aᴴR_b⁻¹a).
 export function poidsAdaptatif(K: Mat, a: Vec): Vec | null {
   const L = cholesky(K);
   if (!L) return null;
@@ -151,19 +156,19 @@ export function poidsAdaptatif(K: Mat, a: Vec): Vec | null {
   return w;
 }
 
-// Diagramme de directivité : |wᴴ a(θ)|², réponse en puissance à une onde plane venue de θ (1 dans la direction visée)
+// Diagramme de directivité : |hᴴ a(θ)|², réponse en puissance à une onde plane venue de θ (1 dans la direction visée)
 export function directivite(w: Vec, thetaDeg: number, esp = 0.5): number {
   const [re, im] = herm(w, pointage(w.length / 2, thetaDeg, esp));
   return re * re + im * im;
 }
 
-// Rapport signal/bruit en sortie pour une raie de puissance 1 par capteur dans la direction de a : C·|wᴴa|² / (wᴴ K w)
+// Rapport signal/bruit en sortie pour une raie de puissance 1 par capteur dans la direction de a : C·|hᴴa|² / (hᴴ R_b h)
 export function rsbSortie(w: Vec, a: Vec, K: Mat): number {
   const [re, im] = herm(w, a);
   return ((w.length / 2) * (re * re + im * im)) / herm(w, mulMV(K, w))[0];
 }
 
-// Gain sur un capteur seul : rapport signal/bruit en sortie divisé par celui d'un capteur (1 / K_cc)
+// Gain sur un capteur seul : rapport signal/bruit en sortie divisé par celui d'un capteur (1 / R_b[i, i])
 export const gain = (w: Vec, a: Vec, K: Mat): number => rsbSortie(w, a, K) * (trace(K) / (w.length / 2));
 
 // Bruit complexe gaussien circulaire de puissance p (E|z|² = p)
@@ -187,15 +192,16 @@ export function observation(r: () => number, C: number, sources: { theta: number
   return x;
 }
 
-// Voies classiques (Bartlett) : P(θ) = (1/K) Σ_k |a(θ)ᴴ x_k|²
+// Voies classiques (Bartlett) : P(θ) = (1/J) Σ_j |a(θ)ᴴ x_j|²
 export function voiesClassiques(X: Vec[], a: Vec): number {
   let s = 0;
   for (const x of X) { const [re, im] = herm(a, x); s += re * re + im * im; }
   return s / X.length;
 }
 
-// Filtre adapté adaptatif (AMF) : P(θ) = (1/K) Σ_k |a(θ)ᴴ K_n⁻¹ x_k|² / (a(θ)ᴴ K_n⁻¹ a(θ)), L = facteur de Cholesky de K_n.
-// Comme dans le projet : trames blanchies y_k = L⁻¹x_k, pointage blanchi a_w = L⁻¹a, P = (1/K) Σ |a_wᴴ y_k|² / ‖a_w‖².
+// Filtre adapté adaptatif (AMF) : P(θ) = (1/J) Σ_j |a(θ)ᴴ R_b⁻¹ x_j|² / (a(θ)ᴴ R_b⁻¹ a(θ)), L = facteur de Cholesky de R_b.
+// C'est aussi (1/J) Σ_j |hᴴx_j|² / (hᴴR_b h) avec h = R_b⁻¹a / (aᴴR_b⁻¹a) : puissance en sortie du filtre, divisée par celle du bruit en sortie.
+// Comme dans le projet : trames blanchies y_j = L⁻¹x_j, pointage blanchi L⁻¹a, P = (1/J) Σ |(L⁻¹a)ᴴ y_j|² / ‖L⁻¹a‖².
 export function amf(Y: Vec[], L: Mat, a: Vec): number {
   const aw = descente(L, a), q = herm(aw, aw)[0];
   let s = 0;
@@ -207,17 +213,17 @@ export function amf(Y: Vec[], L: Mat, a: Vec): number {
 
 export type ReglagesAntenne = {
   variante: 'classique' | 'adaptatif';
-  bw?: number; // demi-largeur (Hz) de la bande de fréquences voisines qui sert à estimer K_n
+  bw?: number; // demi-largeur (Hz) de la bande de fréquences voisines qui sert à estimer R_b
   garde?: number; // garde (Hz) autour de la case testée, exclue de l'estimation (projet : fenêtre Doppler + 0,25 Hz)
   eps?: number; // charge diagonale ε
   pas?: number; // pas des gisements balayés (degrés), de −90° à +90°
-  surTrames?: boolean; // essai : estimer K_n sur les trames de la case testée elle-même (dans le temps) au lieu des fréquences voisines
+  surTrames?: boolean; // essai : estimer R_b sur les trames de la case testée elle-même (dans le temps) au lieu des fréquences voisines
 };
 
-// S(f) = max_θ (1/K) Σ_k |aᴴx_k|² (classique) ou max_θ (1/K) Σ_k |aᴴK_n⁻¹x_k|² / (aᴴK_n⁻¹a) (adaptatif).
-// Xs[c] : TFCT du capteur c ; n : nombre de trames utilisées ; retard(c, θ) : retard (s) du capteur c pour une onde plane venue de θ (degrés).
-// K_n(f) : moyenne des x xᴴ sur les cases f′ avec garde ≤ |f′ − f| ≤ bw, sans les cases anormalement fortes
-// (trace > 2 × médiane glissante), puis charge diagonale (ε + 10⁻⁶) · tr(K_n)/C.
+// S(f) = max_θ (1/J) Σ_j |aᴴx_j|² (classique) ou max_θ (1/J) Σ_j |aᴴR_b⁻¹x_j|² / (aᴴR_b⁻¹a) (adaptatif).
+// Xs[i] : TFCT du capteur i ; n : nombre de trames utilisées ; retard(i, θ) : retard (s) du capteur i pour une onde plane venue de θ (degrés).
+// R_b(f) : moyenne des x xᴴ sur les cases f′ avec garde ≤ |f′ − f| ≤ bw, sans les cases anormalement fortes
+// (trace > 2 × médiane glissante), puis charge diagonale (ε + 10⁻⁶) · tr(R_b)/C.
 export function spectreAntenne(Xs: Tfct[], n: number, retard: (c: number, theta: number) => number, reglages: ReglagesAntenne): { f: Float64Array; S: Float64Array } {
   const { variante, bw = 4, garde = 0.55, eps = 0.03, pas = 3, surTrames = false } = reglages;
   const C = Xs.length, f = Xs[0].f, F = f.length, df = Xs[0].df, K = Math.min(n, Xs[0].re.length);
@@ -225,7 +231,7 @@ export function spectreAntenne(Xs: Tfct[], n: number, retard: (c: number, theta:
   for (let t = -90; t <= 90; t += pas) thetas.push(t);
   const trame = (k: number, j: number) => { const x = vec(C); for (let c = 0; c < C; c++) { x[2 * c] = Xs[c].re[k][j]; x[2 * c + 1] = Xs[c].im[k][j]; } return x; };
   const cases = Array.from({ length: F }, (_, j) => Array.from({ length: K }, (_, k) => trame(k, j)));
-  const Cf = cases.map((X) => { const M = mat(C); for (const x of X) ajouteDyade(M, x); return M; }); // Σ_k x xᴴ par case
+  const Cf = cases.map((X) => { const M = mat(C); for (const x of X) ajouteDyade(M, x); return M; }); // Σ_j x xᴴ par case
   const tr = Cf.map(trace);
   const nb = Math.max(3, Math.round(bw / df)), g = Math.ceil(garde / df - 1e-9);
   const ok = tr.map((t, j) => {
@@ -260,13 +266,13 @@ export function spectreAntenne(Xs: Tfct[], n: number, retard: (c: number, theta:
   return { f, S };
 }
 
-// ---------------------------------------------------------------- K_n estimée sur N observations : gain moyen selon N et ε (figure CovarianceFigure)
+// ---------------------------------------------------------------- R_b estimée sur N observations : gain moyen selon N et ε (ancienne ordonnée de CovarianceFigure, gardée telle quelle)
 
 export type GainsEstimes = { Ns: number[]; eps: number[]; gains: number[][]; optimal: number; classique: number; tirages: number };
 const cacheGains = new Map<string, GainsEstimes>();
 
-// Pour chaque N : `tirages` estimations de K_n sur N observations sans raie (bruit + interférents), puis poids adaptatifs avec chaque
-// charge ε, et gain exact de ces poids (calculé avec la vraie K_n). Renvoie la moyenne des gains (rapports de puissances, pas dB).
+// Pour chaque N : `tirages` estimations de R_b sur N observations sans raie (bruit + interférents), puis filtre adaptatif avec chaque
+// charge ε, et gain exact de ce filtre (calculé avec la vraie R_b). Renvoie la moyenne des gains (rapports de puissances, pas dB).
 // gains[i][j] : charge eps[i], N = Ns[j]. Raie visée au gisement 0°.
 export function gainsEstimes(C: number, scene: { theta: number; p: number }[], Ns: number[], eps: number[], tirages = 800, seed = 2026): GainsEstimes {
   const cle = JSON.stringify([C, scene, Ns, eps, tirages, seed]);
@@ -283,4 +289,82 @@ export function gainsEstimes(C: number, scene: { theta: number; p: number }[], N
   const out = { Ns, eps, gains, optimal: gain(poidsAdaptatif(K, a)!, a, K), classique: gain(a, a, K), tirages };
   cacheGains.set(cle, out);
   return out;
+}
+
+// ---------------------------------------------------------------- R_b estimée sur M observations : rapport signal sur bruit en sortie (CovarianceFigure)
+
+export type RsbEstimes = { Ms: number[]; eps: (number | null)[]; rsb: number[][]; connue: number; classique: number; tirages: number };
+const cacheRsb = new Map<string, RsbEstimes>();
+
+// Pour chaque M : `tirages` estimations de R_b sur M observations de bruit seul (bruit indépendant + interférents), filtre adaptatif
+// h = R̂⁻¹a / (aᴴR̂⁻¹a) pointé sur le gisement 0°, puis rapport signal sur bruit exact en sortie de ce filtre (calculé avec la vraie R_b),
+// rapporté à celui des voies classiques sans interférent (C). Moyenne des rapports de puissances (pas des dB). 1 = l'interférent ne coûte rien.
+// rsb[e][m] : charge eps[e], M = Ms[m]. eps = null : aucune charge (la matrice estimée telle quelle) ; NaN pour M < C, où elle n'est pas inversible.
+// eps = nombre : charge du projet, (ε + 10⁻⁶) · ℓ. `connue` : filtre calculé avec la vraie R_b ; `classique` : h = a.
+export function rsbEstimes(C: number, scene: { theta: number; p: number }[], Ms: number[], eps: (number | null)[], tirages = 800, seed = 2026): RsbEstimes {
+  const cle = JSON.stringify([C, scene, Ms, eps, tirages, seed]);
+  const deja = cacheRsb.get(cle);
+  if (deja) return deja;
+  const r = rng(seed), a = pointage(C, 0), R = covarianceExacte(C, scene);
+  const rsb = eps.map(() => Ms.map(() => 0));
+  Ms.forEach((M, m) => {
+    const n = eps.map(() => 0);
+    for (let t = 0; t < tirages; t++) {
+      const Re = covariance(Array.from({ length: M }, () => observation(r, C, scene)));
+      eps.forEach((e, i) => {
+        if (e === null && M < C) return;
+        const h = poidsAdaptatif(e === null ? Re : charge(Re, e), a);
+        if (h) { rsb[i][m] += rsbSortie(h, a, R) / C; n[i]++; }
+      });
+    }
+    eps.forEach((_, i) => (rsb[i][m] = n[i] ? rsb[i][m] / n[i] : NaN));
+  });
+  const out = { Ms, eps, rsb, connue: rsbSortie(poidsAdaptatif(R, a)!, a, R) / C, classique: rsbSortie(a, a, R) / C, tirages };
+  cacheRsb.set(cle, out);
+  return out;
+}
+
+// ---------------------------------------------------------------- essai temporel sur C capteurs (PiegeFigure)
+
+export type SceneCapteurs = { C: number; fRef: number; gisement: number; interferent?: { theta: number; p: number } };
+export type EssaiCapteurs = { fs: number; x: Float64Array[]; retard: (i: number, theta: number) => number };
+
+// Retard (s) du capteur i pour une onde plane venue du gisement θ (degrés), capteurs espacés d'une demi-longueur d'onde à la fréquence fRef.
+// Même signe que `pointage` : à f = fRef, exp(−2πi f τ_i)/√C redonne pointage(C, θ).
+export const retardCapteur = (C: number, fRef: number) => (i: number, theta: number) => (-(i - (C - 1) / 2) * Math.sin((theta * Math.PI) / 180)) / (2 * fRef);
+
+// C capteurs alignés, espacés d'une demi-longueur d'onde à fRef. Bruit de variance 1 sur chaque capteur : une part indépendante entre capteurs,
+// et un interférent large bande (un seul bruit blanc, retardé de τ_i(θ_I) sur le capteur i), p fois plus fort que la part indépendante.
+// Raies : sinusoïdes venues de `gisement`, niveau en dB re bruit dans 1 Hz (bruit total d'un capteur), phase tirée au hasard.
+// Les retards ne sont pas des nombres entiers d'échantillons : l'interférent est retardé par une rampe de phase sur sa FFT (retard circulaire,
+// sans effet sur un bruit blanc).
+export function essaiCapteurs(raies: Raie[], dur: number, seed: number, scene: SceneCapteurs, fs = FS): EssaiCapteurs {
+  const r = rng(seed), n = Math.round(dur * fs), { C, fRef } = scene, retard = retardCapteur(C, fRef);
+  const p = scene.interferent?.p ?? 0, gi = Math.sqrt(p / (1 + p)), gb = Math.sqrt(1 / (1 + p));
+  const x = Array.from({ length: C }, () => new Float64Array(n));
+  for (const { f0, niveau } of raies) {
+    const A = amplitude(niveau, fs), ph = 2 * Math.PI * r();
+    for (let i = 0; i < C; i++) { const tau = retard(i, scene.gisement); for (let m = 0; m < n; m++) x[i][m] += A * Math.cos(2 * Math.PI * f0 * (m / fs - tau) + ph); }
+  }
+  for (let i = 0; i < C; i++) for (let m = 0; m < n; m++) x[i][m] += gb * gauss(r);
+  if (p > 0) {
+    let N = 1;
+    while (N < n) N *= 2;
+    const ur = new Float64Array(N), ui = new Float64Array(N);
+    for (let m = 0; m < N; m++) ur[m] = gi * gauss(r);
+    fft(ur, ui);
+    for (let i = 0; i < C; i++) {
+      const tau = retard(i, scene.interferent!.theta) * fs; // en échantillons
+      // spectre retardé, conjugué : une FFT directe du conjugué donne N fois le conjugué du signal retardé
+      const vr = new Float64Array(N), vi = new Float64Array(N);
+      for (let k = 0; k < N; k++) {
+        const ks = k <= N / 2 ? k : k - N, ph = (-2 * Math.PI * ks * tau) / N;
+        const c = Math.cos(ph), sn = k === N / 2 ? 0 : Math.sin(ph);
+        vr[k] = ur[k] * c - ui[k] * sn; vi[k] = -(ur[k] * sn + ui[k] * c);
+      }
+      fft(vr, vi);
+      for (let m = 0; m < n; m++) x[i][m] += vr[m] / N;
+    }
+  }
+  return { fs, x, retard };
 }

@@ -1,0 +1,73 @@
+---
+// Chapitre 3, section 3 : deux faits sur l'estimation de R_b dans le spectre de détection du traitement adaptatif (spectreAntenne, comme le projet).
+// Un essai (graine 100) : 8 capteurs espacés d'une demi-longueur d'onde à 150 Hz, raie de −6 dB re bruit dans 1 Hz à 150,1 Hz venue de 0°,
+// bruit de variance 1 par capteur dont la part interférent (21°, large bande) est 100 fois la part indépendante. Trames de 4 s (cases de 0,25 Hz).
+// À gauche, 60 s (29 trames) : R_b estimée sur les trames de la case testée (sans charge : charge de 10⁻⁶ · ℓ seulement) → S = 1 partout,
+// la raie disparaît ; R_b estimée sur les fréquences voisines (± 4 Hz, garde 0,55 Hz, ε = 0,03) → la raie ressort.
+// À droite : fréquences voisines, 1 trame (4 s) contre 29 (60 s).
+// Chiffres de la légende (20 essais, graines 100 à 119) : scratchpad/antenne-v2/v5.ts −6 20 et v2.ts 20 ; à refaire par
+//   npx esbuild v5.ts --bundle --platform=node --format=esm --log-level=error | node --input-type=module - -6 20
+// Un trait brun par estimation : épais = fréquences voisines à 60 s, fin plein = 1 trame, pointillé = trames de la case testée.
+import { essaiCapteurs, spectreAntenne } from './antenne';
+import { tfct } from './raies';
+
+const C = 8, F0 = 150.1, SEG = 4, NIV = -6, DUR = 60, F1 = 146, F2 = 154;
+const e = essaiCapteurs([{ f0: F0, niveau: NIV }], DUR, 100, { C, fRef: 150, gisement: 0, interferent: { theta: 21, p: 100 } });
+const Xs = e.x.map((x) => tfct(x, SEG, 140, 160));
+const J = Xs[0].re.length; // 29 trames de 4 s à 50 % de recouvrement dans 60 s
+const voisines60 = spectreAntenne(Xs, J, e.retard, { variante: 'adaptatif' });
+const voisines1 = spectreAntenne(Xs, 1, e.retard, { variante: 'adaptatif' });
+const trames60 = spectreAntenne(Xs, J, e.retard, { variante: 'adaptatif', surTrames: true, eps: 0 });
+const dB = (v: number) => 10 * Math.log10(v);
+// chiffres vérifiés sur 20 essais (voir en tête)
+const C4 = '19,1', C60 = '20,1';
+
+const W = 300, H = 236, ox = 30, top = 44, rm = 10, pw = W - ox - rm, ph = H - top - 44;
+const YMIN = -5, YMAX = 30;
+const X = (f: number) => ox + ((f - F1) / (F2 - F1)) * pw, Y = (d: number) => top + ((YMAX - Math.max(YMIN, Math.min(YMAX, d))) / (YMAX - YMIN)) * ph;
+const n = (v: number) => v.toFixed(1);
+const pl = (sp: { f: Float64Array; S: Float64Array }) => Array.from(sp.f).map((f, k) => [f, dB(sp.S[k])]).filter(([f]) => f >= F1 && f <= F2).map(([f, d]) => `${n(X(f))},${n(Y(d))}`).join(' ');
+function cadre(titre: string) {
+  let s = `<text x="${ox - 24}" y="13" class="lt">${titre}</text>`;
+  for (let d = 0; d <= 30; d += 10) s += `<line x1="${ox}" y1="${n(Y(d))}" x2="${ox + pw}" y2="${n(Y(d))}" stroke="var(--border)" stroke-dasharray="${d === 0 ? '' : '2 4'}"/><text x="${ox - 5}" y="${n(Y(d) + 3.5)}" text-anchor="end" class="ax">${d}</text>`;
+  s += `<text x="${ox - 5}" y="${top - 12}" text-anchor="end" class="ax">dB</text>`;
+  for (let f = F1; f <= F2; f += 2) s += `<text x="${n(X(f))}" y="${top + ph + 15}" text-anchor="middle" class="ax">${f}</text>`;
+  s += `<text x="${ox + pw / 2}" y="${top + ph + 31}" text-anchor="middle" class="ax">fréquence (Hz)</text>`;
+  s += `<line x1="${n(X(F0))}" y1="${top - 2}" x2="${n(X(F0))}" y2="${top + ph}" stroke="var(--text)" stroke-width="1" stroke-dasharray="3 3"/>`;
+  return s;
+}
+// étiquette directe : texte à droite du pic ou au-dessus d'une courbe plate
+const lab = (x: number, y: number, t: string, w = 400, anchor = 'start') => `<text x="${n(x)}" y="${n(y)}" text-anchor="${anchor}" class="lb halo" style="fill:var(--p-mel);font-weight:${w}">${t}</text>`;
+const pic = (sp: { f: Float64Array; S: Float64Array }) => { let m = -Infinity; sp.f.forEach((f, k) => { if (Math.abs(f - F0) < 0.3) m = Math.max(m, dB(sp.S[k])); }); return m; };
+
+let g1 = cadre('R<tspan dy="3" font-size="8.5">b</tspan><tspan dy="-3"> estimée sur…</tspan>');
+g1 += `<polyline points="${pl(trames60)}" fill="none" stroke="var(--p-mel)" stroke-width="1.6" stroke-dasharray="4 3"/>`;
+g1 += `<polyline points="${pl(voisines60)}" fill="none" stroke="var(--p-mel)" stroke-width="2.6" stroke-linejoin="round"/>`;
+g1 += lab(X(F0) + 6, Y(pic(voisines60)) + 4, 'les fréquences voisines', 600);
+g1 += lab(X(F1) + 4, Y(0) - 6, 'les trames de la case testée : S = 1');
+
+let g2 = cadre('Fréquences voisines : 1 trame ou 29');
+g2 += `<polyline points="${pl(voisines1)}" fill="none" stroke="var(--p-mel)" stroke-width="1.2" stroke-linejoin="round" opacity="0.9"/>`;
+g2 += `<polyline points="${pl(voisines60)}" fill="none" stroke="var(--p-mel)" stroke-width="2.6" stroke-linejoin="round"/>`;
+const p1 = pic(voisines1), p60 = pic(voisines60), hautPremier = p1 >= p60;
+g2 += lab(X(F0) + 6, Y(Math.max(p1, p60)) + 4, hautPremier ? '4 s (1 trame)' : '60 s', hautPremier ? 400 : 600);
+g2 += lab(X(F0) + 6, Y(Math.min(p1, p60)) + 4 + 13, hautPremier ? '60 s' : '4 s (1 trame)', hautPremier ? 600 : 400);
+---
+<figure class="pief">
+  <div class="pief-cols">
+    <svg class="pief-svg" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Spectre de détection du traitement adaptatif autour de la raie : plat et égal à 1 quand la covariance est estimée sur les trames de la case testée, avec un pic quand elle est estimée sur les fréquences voisines" set:html={g1} />
+    <svg class="pief-svg" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Spectre de détection du traitement adaptatif après une trame et après 29 trames : le pic de la raie est presque le même" set:html={g2} />
+  </div>
+  <figcaption>Spectre de détection <i>S</i>(<i>f</i>) du traitement adaptatif sur un essai : raie de {String(NIV).replace('-', '−')} dB re bruit dans 1 Hz à {String(F0).replace('.', ',')} Hz, interférent 100 × le bruit à 21°, trames de {SEG} s. À gauche, 60 s ; fréquences voisines à ± 4 Hz, sans les 0,55 Hz autour de la case testée. Contraste moyen sur 20 essais avec les fréquences voisines : {C4} dB à 4 s, {C60} dB à 60 s.</figcaption>
+</figure>
+
+<style is:global>
+  .pief { margin: 1.5rem 0; }
+  .pief .pief-cols { display: flex; flex-wrap: wrap; gap: 6px 24px; justify-content: center; }
+  .pief svg.pief-svg { flex: 1 1 280px; min-width: 0; max-width: 340px; height: auto; display: block; }
+  .pief svg.pief-svg text { font-family: var(--font); }
+  .pief svg.pief-svg text.lt { font-size: 11.5px; font-weight: 600; fill: var(--text); }
+  .pief svg.pief-svg text.ax { font-size: 11px; fill: var(--text-2); }
+  .pief svg.pief-svg text.lb { font-size: 11.5px; }
+  .pief svg.pief-svg text.halo { paint-order: stroke; stroke: var(--surface); stroke-width: 3.5px; stroke-linejoin: round; }
+</style>

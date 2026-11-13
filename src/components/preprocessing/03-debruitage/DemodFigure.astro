@@ -1,0 +1,119 @@
+---
+// Chapitre 3 (Preprocessing), section 4 : la démodulation, sur de vraies valeurs simulées. Une case de 0,5 Hz (trames de 2 s, recouvrement
+// de moitié) suivie sur J = 10 trames ; z_j = X_j / √n0 comme dans les entrées du réservoir (caracMono de masque.ts).
+// Avance de phase d'une raie d'une trame à la suivante (décalage d'une demi-trame, seg/2) : 2π f0 · seg/2 = π (k + d), k indice de la case,
+// d écart au centre en cases. La démodulation multiplie z_j par (−1)^(j·k) et retire π k : il reste π d, soit 180° × d par trame.
+// Vérifié (scratchpad reservoir-v2/demod.ts, raie de 60 dB) : 180,0° sans démodulation pour k = 301, d = 0 ; 0,0° ; 45,0° ; 90,0° démodulé.
+// Rangées : raie de +6 dB au centre de la case 301 (150,5 Hz, indice impair) sans puis avec démodulation ; raie à 1/4 et 1/2 case du centre ;
+// case 312 (156 Hz) de bruit seul. Même graine (52) pour toutes les rangées : même bruit. Graine : la première dont les cinq longueurs |Σ z_j|
+// sont à moins de 25 % de leur moyenne sur 200 graines (reservoir-v2/demodseed.ts) ; moyennes : 2,8 ; 24,7 ; 5,4 ; 4,6 ; 3,7.
+// Chaque rangée est tournée d'un angle commun (choix de la phase de référence) pour que sa somme pointe vers la droite.
+// Cadrans : phase de z_j seule ; chaîne : les z_j bout à bout, longueurs vraies, même échelle pour toutes les rangées.
+import katex from 'katex';
+import { essai, tfct } from './raies';
+import { plancher, SEG } from './masque';
+const tx = (t: string) => katex.renderToString(t, { throwOnError: false });
+const fr = (v: number, d = 1) => v.toFixed(d).replace('.', ',').replace('-', '−');
+const n1 = (v: number) => v.toFixed(1);
+
+const J = 10, KR = 301, NIVEAU = 6, GRAINE = 52;
+const ROWS = [
+  { titre: 'raie au centre, brute', avance: '+180° par trame', d: 0, demod: false, kc: KR },
+  { titre: 'raie au centre, démodulée', avance: '0° par trame', d: 0, demod: true, kc: KR },
+  { titre: 'raie à ¼ de case du centre', avance: '+45° par trame', d: 0.25, demod: true, kc: KR },
+  { titre: 'raie à ½ case du centre', avance: '+90° par trame', d: 0.5, demod: true, kc: KR },
+  { titre: 'case de bruit', avance: 'phase au hasard', d: 0, demod: true, kc: KR + 11 },
+].map((r) => {
+  const X = tfct(essai([{ f0: (KR + r.d) / SEG, niveau: NIVEAU }], 30, GRAINE).x, SEG, 140, 165), k = r.kc - X.k0;
+  const z = Array.from({ length: J }, (_, j) => {
+    const P = Float64Array.from(X.re[j], (v, i) => v * v + X.im[j][i] ** 2);
+    const g = (r.demod && (j * r.kc) % 2 ? -1 : 1) / Math.sqrt(plancher(P, X.df)[k]);
+    return [X.re[j][k] * g, X.im[j][k] * g];
+  });
+  const s = z.reduce((a, v) => [a[0] + v[0], a[1] + v[1]], [0, 0]), L = Math.hypot(s[0], s[1]);
+  const rms = Math.sqrt(z.reduce((a, v) => a + v[0] ** 2 + v[1] ** 2, 0));
+  const c = s[0] / L, sn = s[1] / L; // rotation qui amène la somme sur l'axe réel
+  const zr = z.map(([a, b]) => [a * c + b * sn, b * c - a * sn]);
+  return { ...r, z: zr, L, rms };
+});
+
+function fleche(x1: number, y1: number, x2: number, y2: number, col: string, w: number, head: number) {
+  const dx = x2 - x1, dy = y2 - y1, l = Math.hypot(dx, dy);
+  if (l < 0.5) return '';
+  const ux = dx / l, uy = dy / l, h = Math.min(head, l * 0.6), bx = x2 - ux * h, by = y2 - uy * h, k = h * 0.45;
+  return `<line x1="${n1(x1)}" y1="${n1(y1)}" x2="${n1(bx)}" y2="${n1(by)}" stroke="${col}" stroke-width="${w}" stroke-linecap="round"/>` +
+    `<polygon points="${n1(x2)},${n1(y2)} ${n1(bx - uy * k)},${n1(by + ux * k)} ${n1(bx + uy * k)},${n1(by - ux * k)}" fill="${col}"/>`;
+}
+const GRIS = 'var(--text-2)', NOIR = 'var(--text)';
+
+// une rangée : cadrans (phase de z_j) à partir de (dx0, dy) ; chaîne à partir de l'origine (cx0, cy) ; longueur à droite (xn)
+function rangee(r: (typeof ROWS)[number], dx0: number, pitch: number, Rd: number, dy: number, cx0: number, cy: number, U: number, xn: number) {
+  let s = '';
+  r.z.forEach(([a, b], j) => {
+    const x = dx0 + (j + 0.5) * pitch, l = Math.hypot(a, b) || 1;
+    s += `<circle cx="${n1(x)}" cy="${n1(dy)}" r="${Rd}" fill="none" stroke="var(--border)"/>`;
+    s += fleche(x, dy, x + (a / l) * Rd, dy - (b / l) * Rd, GRIS, 1.4, 4);
+  });
+  // tiret : √(Σ|z_j|²), longueur d'une somme aux phases au hasard
+  const xr = cx0 + r.rms * U;
+  s += `<line x1="${n1(cx0)}" y1="${n1(cy)}" x2="${n1(xr)}" y2="${n1(cy)}" stroke="${GRIS}" stroke-width="1" stroke-dasharray="2 3"/>`;
+  s += `<line x1="${n1(xr)}" y1="${n1(cy - 8)}" x2="${n1(xr)}" y2="${n1(cy + 8)}" stroke="${GRIS}" stroke-width="1.3" stroke-dasharray="3 2"/>`;
+  let x = cx0, y = cy;
+  for (const [a, b] of r.z) { const x2 = x + a * U, y2 = y - b * U; s += fleche(x, y, x2, y2, GRIS, 1.1, 3.6); x = x2; y = y2; }
+  s += fleche(cx0, cy, cx0 + r.L * U, cy, NOIR, 2.6, 6.5);
+  s += `<circle cx="${n1(cx0)}" cy="${n1(cy)}" r="2" fill="${NOIR}"/>`;
+  s += `<text x="${xn}" y="${n1(cy + 4)}" text-anchor="end" class="lv">${fr(r.L)}</text>`;
+  return s;
+}
+// étendue verticale de la chaîne (unités de z), au-dessus et au-dessous de l'origine
+const etendue = (r: (typeof ROWS)[number]) => { let y = 0, hi = 0, lo = 0; for (const [, b] of r.z) { y += b; hi = Math.max(hi, y); lo = Math.min(lo, y); } return [hi, -lo]; };
+
+function svg(W: number, narrow: boolean) {
+  const U = narrow ? 8 : 6.5, xn = W - 4;
+  let s = '', y = 0;
+  if (!narrow) {
+    const LW = 150, pitch = 28, Rd = 11.5, cx0 = LW + 10 * pitch + 26;
+    s += `<text x="${LW + 5 * pitch}" y="12" text-anchor="middle" class="hd">phase de ${'z<tspan baseline-shift="sub" font-size="8.5">j</tspan>'}, trame après trame</text>`;
+    s += `<text x="${cx0}" y="12" class="hd">les ${'z<tspan baseline-shift="sub" font-size="8.5">j</tspan>'} bout à bout</text><text x="${xn}" y="12" text-anchor="end" class="hd">|somme|</text>`;
+    y = 22;
+    ROWS.forEach((r) => {
+      const [hi, lo] = etendue(r), h = Math.max(2 * Rd + 12, (hi + lo) * U + 18), cy = y + 9 + hi * U + (h - 18 - (hi + lo) * U) / 2, mid = y + h / 2;
+      s += `<line x1="0" y1="${n1(y)}" x2="${W}" y2="${n1(y)}" stroke="var(--border)"/>`;
+      s += `<text x="0" y="${n1(mid - 3)}" class="rt">${r.titre}</text><text x="0" y="${n1(mid + 12)}" class="rs">${r.avance}</text>`;
+      s += rangee(r, LW, pitch, Rd, mid, cx0, cy, U, xn);
+      y += h;
+    });
+  } else {
+    const pitch = (W - 4) / J, Rd = Math.min(12, pitch / 2 - 3), cx0 = 14;
+    ROWS.forEach((r, i) => {
+      const [hi, lo] = etendue(r), hc = (hi + lo) * U + 14;
+      if (i) s += `<line x1="0" y1="${n1(y)}" x2="${W}" y2="${n1(y)}" stroke="var(--border)"/>`;
+      s += `<text x="0" y="${n1(y + 15)}" class="rt">${r.titre}<tspan class="rs" dx="6">${r.avance}</tspan></text>`;
+      const dy = y + 22 + Rd, cy = dy + Rd + 8 + hi * U;
+      s += rangee(r, 2, pitch, Rd, dy, cx0, cy + 7, U, xn);
+      y = dy + Rd + 8 + hc + 6;
+    });
+  }
+  return { vb: `0 0 ${W} ${n1(y + 2)}`, s };
+}
+const LAYOUTS = [{ cls: 'dmf-wide', ...svg(700, false) }, { cls: 'dmf-narrow', ...svg(360, true) }];
+---
+<figure class="dmf">
+  {LAYOUTS.map((L) => (
+    <svg class={`dmf-svg ${L.cls}`} viewBox={L.vb} role="img" aria-label="Une case suivie sur dix trames : phase de chaque trame, puis somme bout à bout. Raie centrée démodulée : somme en ligne droite, longue. Raie brute ou hors du centre : la phase tourne et la somme s'enroule, courte. Case de bruit : désordre." set:html={L.s} />
+  ))}
+  <figcaption>Raie de +{NIVEAU} dB, {J} trames de {SEG} s. Démodulée : <Fragment set:html={tx('z_j')} /> multiplié par <Fragment set:html={tx('(-1)^{jk}')} />, <Fragment set:html={tx('k')} /> indice de la case. Tiret : <Fragment set:html={tx('\\sqrt{\\textstyle\\sum_j |z_j|^2}')} />, longueur d'une somme aux phases au hasard. Chaque rangée est tournée pour que sa somme pointe à droite.</figcaption>
+</figure>
+
+<style is:global>
+  .dmf { margin: 1.5rem 0; }
+  .dmf .dmf-svg { width: 100%; height: auto; display: block; margin: 0 auto; }
+  .dmf .dmf-wide { max-width: 700px; }
+  .dmf .dmf-narrow { display: none; max-width: 420px; }
+  @media (max-width: 600px) { .dmf .dmf-wide { display: none; } .dmf .dmf-narrow { display: block; } }
+  .dmf .dmf-svg text.hd { font: 11.5px var(--font); fill: var(--text-2); }
+  .dmf .dmf-svg text.rt { font: 600 12px var(--font); fill: var(--text); }
+  .dmf .dmf-svg text.rs, .dmf .dmf-svg tspan.rs { font: 400 11.5px var(--font); fill: var(--text-2); }
+  .dmf .dmf-svg text.lv { font: 600 11.5px var(--font); fill: var(--text); }
+  .dmf figcaption .katex { font-size: 1em; }
+</style>

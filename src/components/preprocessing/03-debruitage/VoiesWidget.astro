@@ -1,91 +1,132 @@
 ---
 // Chapitre 3, section 3 : voies classiques contre traitement adaptatif, face à un bruit qui vient d'une direction.
-// Antenne linéaire de 8 capteurs espacés d'une demi-longueur d'onde, raie au gisement 0°, interférent à 21°
-// (sommet du premier lobe secondaire des voies classiques). Trois états : interférent absent, égal au bruit, 100 fois le bruit.
-// Tracé : diagramme de directivité |wᴴa(θ)|² des deux traitements pointés sur la raie (K_n exacte, calcul de antenne.ts, aucun tirage).
+// Antenne linéaire de 8 capteurs espacés d'une demi-longueur d'onde, raie au gisement 0°. Interférent (bruit large bande venu d'une seule
+// direction) au gisement 5° (dans le lobe principal), 21° (sommet du premier lobe secondaire) ou 40° ; puissance par capteur : 0, 1 ou 100 fois
+// le bruit propre à chaque capteur. Un seul réglage change à la fois (deux groupes de boutons).
+// Tracé : diagramme de directivité |hᴴa(θ)|² des deux filtres pointés sur la raie (R_b exacte, calcul de antenne.ts, aucun tirage).
+// Pastille : perte de rapport signal sur bruit due à l'interférent = 10 log10(hᴴR_b h), puisque hᴴa(0°) = 1 et que, sans interférent,
+// le bruit en sortie vaut ‖h‖² = 1. hᴴR_b h = ‖h‖² + p·C·|hᴴa(θ_I)|² (bruit des capteurs + interférent) : c'est la ligne de calcul.
+// Vérifié par scratchpad/antenne-v2/v1.ts (perte 21°/100 × : classiques 16,33 dB, adaptatif 0,23 dB ; 5°/100 × : 27,25 et 4,71 dB).
 // Voies classiques en gris, traitement adaptatif en brun (--p-mel), interférent en rouge (--h-py), raie en repère --text.
 import katex from 'katex';
+import { pointage, covarianceExacte, poidsAdaptatif, directivite, herm } from './antenne';
+
 const tx = (t: string) => katex.renderToString(t, { throwOnError: false });
-const fDiag = tx('|\\mathbf{w}^H\\mathbf{a}(\\theta)|^2');
-const fClass = tx('\\mathbf{w}=\\mathbf{a}(\\theta_s)');
-const fAdapt = tx('\\mathbf{w}=\\mathbf{K}_n^{-1}\\mathbf{a}(\\theta_s)\\,/\\,\\mathbf{a}(\\theta_s)^H\\mathbf{K}_n^{-1}\\mathbf{a}(\\theta_s)');
-const fKn = tx('\\mathbf{K}_n');
+const C = 8, POS = [5, 21, 40], FORCES = [0, 1, 100];
+const a0 = pointage(C, 0);
+// nombre en écriture française pour KaTeX : 3 chiffres significatifs, puissance de 10 sous 0,001
+const num = (v: number) => {
+  if (v === 0) return '0';
+  if (Math.abs(v - Math.round(v)) < 1e-9) return String(Math.round(v));
+  if (Math.abs(v) < 1e-3) { const e = Math.floor(Math.log10(Math.abs(v))), m = v / 10 ** e; return `${m.toFixed(1).replace('.', '{,}')}\\cdot 10^{${e}}`; }
+  const d = Math.max(0, 2 - Math.floor(Math.log10(Math.abs(v))));
+  return v.toFixed(Math.min(d, 4)).replace('.', '{,}');
+};
+const deg = (t: number) => `${t}^\\circ`;
+const fClass = tx(`\\mathbf h=\\mathbf a(${deg(0)})`);
+const fAdapt = tx(`\\mathbf h=\\mathbf R_b^{-1}\\mathbf a(${deg(0)})\\,/\\,\\big(\\mathbf a(${deg(0)})^{\\mathsf H}\\mathbf R_b^{-1}\\mathbf a(${deg(0)})\\big)`);
+// pour chaque état (position, force) : formule du bruit en sortie et sa valeur chiffrée pour les deux filtres, perte en dB
+const etats = POS.map((ti) => FORCES.map((p) => {
+  const R = covarianceExacte(C, p > 0 ? [{ theta: ti, p }] : []);
+  const ha = poidsAdaptatif(R, a0)!;
+  const ligne = (h: Float64Array) => {
+    const n2 = herm(h, h)[0], ri = directivite(h, ti), out = n2 + p * C * ri;
+    return { tex: tx(p > 0 ? `${num(n2)} + ${num(p * C)}\\times ${num(ri)} = ${num(out)}` : `${num(n2)}`), perte: 10 * Math.log10(out) };
+  };
+  const pc = p === 1 ? '' : `${p}\\,`;
+  return { gen: tx(p > 0 ? `\\|\\mathbf h\\|^2 + ${pc}C\\,|\\mathbf h^{\\mathsf H}\\mathbf a(${deg(ti)})|^2` : `\\|\\mathbf h\\|^2`), c: ligne(a0), a: ligne(ha) };
+}));
+const pertes = etats.map((l) => l.map((e) => [e.c.perte, e.a.perte]));
 ---
-<div class="widget voiw" data-widget="voiw">
-  <div class="vhead">
-    <div class="vtitle"><b>Que change l'adaptation quand le bruit vient d'une direction ?</b></div>
-    <div class="vstats">
-      <span class="vcap">gain sur un capteur seul</span>
-      <div class="vstat"><span>voies classiques</span><b data-ref="gc"></b></div>
-      <div class="vstat"><span>adaptatif</span><b data-ref="ga"></b></div>
-    </div>
+<div class="widget voiw" data-widget="voiw" data-pertes={JSON.stringify(pertes)}>
+  <div class="fhead">
+    <div class="ftitle"><b>Que change l'adaptation quand le bruit vient d'une direction ?</b></div>
+    <div class="fstat"><span>perte due à l'interférent</span><span class="x">voies classiques <b data-ref="pc"></b></span><span class="y">adaptatif <b data-ref="pa"></b></span></div>
   </div>
-  <div class="vctl"><span>Interférent, sur chaque capteur :</span><span class="vseg" data-ref="seg"></span></div>
+  <div class="ctl">
+    <div class="row"><span>Interférent au gisement</span><span class="seg" data-ref="pos"></span></div>
+    <div class="row"><span>Puissance par capteur</span><span class="seg" data-ref="force"></span></div>
+  </div>
   <svg class="voiw-svg" data-ref="svg" role="img" aria-label="Réponse des voies classiques et du traitement adaptatif en fonction du gisement de l'onde reçue"></svg>
-  <p class="note">8 capteurs espacés d'une demi-longueur d'onde, raie au gisement 0°, interférent à 21° (sommet du premier lobe secondaire des voies classiques). Courbes : réponse <Fragment set:html={fDiag} /> à une onde venue de θ, avec <Fragment set:html={fClass} /> (voies classiques) ou <Fragment set:html={fAdapt} /> (adaptatif), <Fragment set:html={fKn} /> connue exactement. Gain : rapport signal/bruit en sortie divisé par celui d'un capteur seul, qui reçoit l'interférent en entier.</p>
+  <div class="calc">
+    <div class="ch">Bruit en sortie, la raie passant avec un gain de 1 :{etats.map((l, i) => l.map((e, j) => <span class="eq" data-eq={`${i}-${j}`} hidden set:html={e.gen} />))}</div>
+    <div class="cl"><span class="nm x">voies classiques</span><span class="f" set:html={fClass} /><span class="v">{etats.map((l, i) => l.map((e, j) => <span class="eq" data-eq={`${i}-${j}`} hidden set:html={e.c.tex} />))}</span></div>
+    <div class="cl"><span class="nm y">adaptatif</span><span class="f" set:html={fAdapt} /><span class="v">{etats.map((l, i) => l.map((e, j) => <span class="eq" data-eq={`${i}-${j}`} hidden set:html={e.a.tex} />))}</span></div>
+  </div>
+  <p class="note">Raie au gisement 0°. Interférent : bruit large bande venu d'une seule direction ; puissance comptée en multiples du bruit propre à chaque capteur. <span set:html={tx('\\mathbf R_b')} /> connue exactement.</p>
 </div>
 
 <script>
-  import { pointage, covarianceExacte, poidsAdaptatif, directivite, gain } from './antenne';
+  import { pointage, covarianceExacte, poidsAdaptatif, directivite } from './antenne';
 
-  const C = 8, TS = 0, TI = 21, PLANCHER = -80, PAS = 0.25;
+  const C = 8, TS = 0, POS = [5, 21, 40], FORCES = [0, 1, 100], NOMS = ['sans', 'égal au bruit', '100 × le bruit'];
+  const YMAX = 5, PLANCHER = -80, PAS = 0.25;
   const dB = (v: number) => 10 * Math.log10(Math.max(v, 1e-30));
   const fr = (v: number, d = 1) => v.toFixed(d).replace('.', ',').replace('-', '−');
-  const ETATS = [
-    { nom: 'absent', p: 0 },
-    { nom: 'égal au bruit', p: 1 },
-    { nom: '100 × le bruit', p: 100 },
-  ];
   const as = pointage(C, TS);
   const thetas: number[] = [];
   for (let t = -90; t <= 90 + 1e-9; t += PAS) thetas.push(t);
-  // états précalculés : poids, diagrammes, gains
-  const calc = ETATS.map(({ p }) => {
-    const K = covarianceExacte(C, p > 0 ? [{ theta: TI, p }] : []);
-    const wa = poidsAdaptatif(K, as)!;
-    return {
-      p,
-      classique: thetas.map((t) => dB(directivite(as, t))),
-      adaptatif: thetas.map((t) => dB(directivite(wa, t))),
-      gc: dB(gain(as, as, K)), ga: dB(gain(wa, as, K)),
-      ic: dB(directivite(as, TI)), ia: dB(directivite(wa, TI)),
-    };
-  });
+  const classique = thetas.map((t) => dB(directivite(as, t)));
+  const cache = new Map<string, { adaptatif: number[]; ic: number; ia: number }>();
+  const etat = (i: number, j: number) => {
+    const cle = `${i}-${j}`;
+    if (!cache.has(cle)) {
+      const ti = POS[i], p = FORCES[j];
+      const wa = poidsAdaptatif(covarianceExacte(C, p > 0 ? [{ theta: ti, p }] : []), as)!;
+      cache.set(cle, { adaptatif: thetas.map((t) => dB(directivite(wa, t))), ic: dB(directivite(as, ti)), ia: dB(directivite(wa, ti)) });
+    }
+    return cache.get(cle)!;
+  };
+  // bords du lobe principal et des lobes secondaires des voies classiques : zéros à sin θ = ±2/C (±14,5° pour C = 8)
+  const BORD = (Math.asin(2 / C) * 180) / Math.PI;
 
   document.querySelectorAll<HTMLElement>('[data-widget="voiw"]').forEach((root) => {
     const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
-    let etat = 2;
-    ETATS.forEach((e, i) => {
+    const pertes = JSON.parse(root.dataset.pertes!) as number[][][];
+    let pos = 1, force = 2;
+    const boutons = (ref: string, noms: string[], set: (i: number) => void) => noms.forEach((nom, i) => {
       const b = document.createElement('button');
-      b.textContent = e.nom; b.dataset.v = String(i);
-      b.addEventListener('click', () => { etat = i; draw(); });
-      $('seg').appendChild(b);
+      b.textContent = nom; b.dataset.v = String(i);
+      b.addEventListener('click', () => { set(i); draw(); });
+      $(ref).appendChild(b);
     });
+    boutons('pos', POS.map((t) => `${t}°`), (i) => (pos = i));
+    boutons('force', NOMS, (i) => (force = i));
     let etroit = false;
     function draw() {
-      $('seg').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.v! === etat));
-      const st = calc[etat];
-      $('gc').textContent = `${fr(st.gc)} dB`; $('ga').textContent = `${fr(st.ga)} dB`;
-      const W = etroit ? 340 : 640, H = etroit ? 280 : 310, ox = 34, top = 38, rm = 12, pw = W - ox - rm, ph = H - top - 36;
-      const X = (t: number) => ox + ((t + 90) / 180) * pw, Y = (d: number) => top + (Math.max(PLANCHER, Math.min(0, d)) / PLANCHER) * ph;
+      $('pos').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.v! === pos));
+      $('force').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.v! === force));
+      root.querySelectorAll<HTMLElement>('.calc .eq').forEach((e) => (e.hidden = e.dataset.eq !== `${pos}-${force}`));
+      const [pc, pa] = pertes[pos][force];
+      $('pc').textContent = `${fr(Math.abs(pc) < 0.05 ? 0 : pc)} dB`; $('pa').textContent = `${fr(Math.abs(pa) < 0.05 ? 0 : pa)} dB`;
+      const st = etat(pos, force), TI = POS[pos], p = FORCES[force];
+      const W = etroit ? 340 : 640, H = etroit ? 300 : 330, ox = 34, top = 38, rm = 12, pw = W - ox - rm, ph = H - top - 64;
+      const X = (t: number) => ox + ((t + 90) / 180) * pw, Y = (d: number) => top + ((YMAX - Math.max(PLANCHER, Math.min(YMAX, d))) / (YMAX - PLANCHER)) * ph;
       let s = '';
       for (let d = 0; d >= PLANCHER; d -= 20) s += `<line x1="${ox}" y1="${Y(d)}" x2="${ox + pw}" y2="${Y(d)}" stroke="var(--border)" stroke-dasharray="${d === 0 ? '' : '2 4'}"/><text x="${ox - 6}" y="${Y(d) + 3.5}" text-anchor="end" class="ax">${fr(d, 0)}</text>`;
       s += `<text x="${ox - 6}" y="${top - 10}" text-anchor="end" class="ax">dB</text>`;
-      for (let t = -90; t <= 90; t += 30) s += `<text x="${X(t)}" y="${top + ph + 18}" text-anchor="middle" class="ax">${fr(t, 0)}°</text>`;
-      s += `<text x="${ox + pw / 2}" y="${top + ph + 33}" text-anchor="middle" class="ax">gisement θ de l'onde reçue</text>`;
+      // lobes des voies classiques, sous l'axe : accolades plates d'un zéro à l'autre
+      const yb = top + ph + 9;
+      const acco = (t1: number, t2: number) => `<path d="M ${X(t1) + 1.5} ${yb - 4} V ${yb} H ${X(t2) - 1.5} V ${yb - 4}" fill="none" stroke="var(--text-2)" stroke-width="1"/>`;
+      s += acco(-90, -BORD) + acco(-BORD, BORD) + acco(BORD, 90);
+      s += `<text x="${X(0)}" y="${yb + 13}" text-anchor="middle" class="ax lo">lobe principal</text>`;
+      const ts = etroit ? 62 : 52; // centre des étiquettes « lobes secondaires », écartées du lobe principal sur un écran étroit
+      s += `<text x="${X(-ts)}" y="${yb + 13}" text-anchor="middle" class="ax lo">lobes secondaires</text><text x="${X(ts)}" y="${yb + 13}" text-anchor="middle" class="ax lo">lobes secondaires</text>`;
+      for (let t = -90; t <= 90; t += 30) s += `<text x="${X(t)}" y="${yb + 30}" text-anchor="middle" class="ax">${fr(t, 0)}°</text>`;
+      s += `<text x="${ox + pw / 2}" y="${yb + 45}" text-anchor="middle" class="ax">gisement θ de l'onde reçue</text>`;
       // repères : raie (trait fin pointillé), interférent (rouge, plus épais quand il est fort)
       s += `<line x1="${X(TS)}" y1="${top - 4}" x2="${X(TS)}" y2="${top + ph}" stroke="var(--text)" stroke-width="1" stroke-dasharray="3 3"/><text x="${X(TS) - 5}" y="${top - 9}" text-anchor="end" class="lb mk">raie</text>`;
-      if (st.p > 0) s += `<line x1="${X(TI)}" y1="${top - 4}" x2="${X(TI)}" y2="${top + ph}" stroke="var(--h-py)" stroke-width="${st.p > 1 ? 2.4 : 1.2}"/><text x="${X(TI) + 5}" y="${top - 9}" class="lb mk" style="fill:var(--h-py);font-weight:600">interférent</text>`;
+      if (p > 0) s += `<line x1="${X(TI)}" y1="${top - 4}" x2="${X(TI)}" y2="${top + ph}" stroke="var(--h-py)" stroke-width="${p > 1 ? 2.4 : 1.2}"/><text x="${X(TI) + 5}" y="${top - 9}" class="lb mk" style="fill:var(--h-py);font-weight:600">interférent</text>`;
       const pl = (v: number[]) => v.map((d, i) => `${X(thetas[i]).toFixed(1)},${Y(d).toFixed(1)}`).join(' ');
       // gris large dessous, brun fin dessus : les deux restent visibles quand elles sont confondues
-      s += `<polyline points="${pl(st.classique)}" fill="none" stroke="var(--text-2)" stroke-width="4.5" stroke-opacity="0.45" stroke-linejoin="round"/>`;
+      s += `<polyline points="${pl(classique)}" fill="none" stroke="var(--text-2)" stroke-width="4.5" stroke-opacity="0.45" stroke-linejoin="round"/>`;
       s += `<polyline points="${pl(st.adaptatif)}" fill="none" stroke="var(--p-mel)" stroke-width="2" stroke-linejoin="round"/>`;
       // étiquettes des séries, au-dessus du tracé
       s += `<text x="${ox}" y="12" class="lb se" style="fill:var(--text-2);font-weight:600">voies classiques</text>`;
       s += `<text x="${ox + 112}" y="12" class="lb se" style="fill:var(--p-mel);font-weight:600">traitement adaptatif</text>`;
-      if (st.p === 0) s += `<text x="${etroit ? ox : ox + 240}" y="${etroit ? 27 : 12}" class="lb se" style="fill:var(--text-2)">courbes confondues</text>`;
+      if (p === 0) s += `<text x="${etroit ? ox : ox + 240}" y="${etroit ? 27 : 12}" class="lb se" style="fill:var(--text-2)">courbes confondues</text>`;
       // ce que chaque traitement laisse passer de l'interférent
-      if (st.p > 0) {
+      if (p > 0) {
         s += `<circle cx="${X(TI)}" cy="${Y(st.ic)}" r="3.6" fill="var(--text-2)" stroke="var(--surface)" stroke-width="1"/><text x="${X(TI) + 8}" y="${Y(st.ic) - 7}" class="lb halo va" style="fill:var(--text-2);font-weight:600">${fr(st.ic)} dB</text>`;
         s += `<circle cx="${X(TI)}" cy="${Y(st.ia)}" r="3.6" fill="var(--p-mel)" stroke="var(--surface)" stroke-width="1"/><text x="${X(TI) + 8}" y="${Y(st.ia) + 4}" class="lb halo va" style="fill:var(--p-mel);font-weight:600">${fr(st.ia)} dB</text>`;
       }
@@ -100,18 +141,29 @@ const fKn = tx('\\mathbf{K}_n');
 </script>
 
 <style is:global>
-  .voiw .vhead { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px 16px; flex-wrap: wrap; margin-bottom: 10px; }
-  .voiw .vtitle b { font-size: 15px; font-weight: 600; }
-  .voiw .vstats { display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; }
-  .voiw .vcap { font-size: 12px; color: var(--text-2); }
-  .voiw .vstat { display: flex; align-items: baseline; gap: 8px; background: var(--surface-2); border-radius: 8px; padding: 4px 10px; }
-  .voiw .vstat span { font-size: 12px; color: var(--text-2); }
-  .voiw .vstat b { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
-  .voiw .vctl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-bottom: 8px; font-size: 13px; color: var(--text-2); }
-  .voiw .vseg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
-  .voiw .vseg button { font-size: 13px; padding: 4px 12px; }
+  .voiw .fhead { line-height: 1.4; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .voiw .ftitle b { font-size: 15px; font-weight: 600; }
+  .voiw .fstat { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 12px; background: var(--surface-2); border-radius: 8px; padding: 4px 10px; }
+  .voiw .fstat > span { font-size: 12px; color: var(--text-2); white-space: nowrap; }
+  .voiw .fstat b { font-size: 14px; font-weight: 600; margin-left: 2px; font-variant-numeric: tabular-nums; }
+  .voiw .fstat .x b { color: var(--text-2); }
+  .voiw .fstat .y b { color: var(--p-mel); }
+  .voiw .ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 28px; margin-bottom: 6px; }
+  .voiw .ctl .row { margin: 0; font-size: 13px; }
+  .voiw .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .voiw .seg button { font-size: 13px; padding: 4px 10px; }
   .voiw svg.voiw-svg { width: 100%; height: auto; display: block; margin: 0; }
   .voiw svg.voiw-svg text.ax { font: 11px var(--font); fill: var(--text-2); }
   .voiw svg.voiw-svg text.lb { font: 11.5px var(--font); fill: var(--text); }
   .voiw svg.voiw-svg text.halo { paint-order: stroke; stroke: var(--surface); stroke-width: 3.5px; stroke-linejoin: round; }
+  .voiw .calc { margin-top: 8px; padding: 6px 10px; border-radius: 8px; background: color-mix(in srgb, var(--text-2) 6%, transparent); font-size: 13px; color: var(--text-2); }
+  .voiw .calc .ch { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
+  .voiw .calc .cl { display: grid; grid-template-columns: 8.5em auto 1fr; align-items: baseline; gap: 2px 14px; margin-top: 3px; }
+  .voiw .calc .nm { font-weight: 600; }
+  .voiw .calc .nm.x { color: var(--text-2); }
+  .voiw .calc .nm.y { color: var(--p-mel); }
+  .voiw .calc .f, .voiw .calc .v, .voiw .calc .ch .eq { color: var(--text); }
+  .voiw .calc .eq[hidden] { display: none; }
+  .voiw .calc .katex { font-size: 1.02em; }
+  @media (max-width: 560px) { .voiw .calc .cl { grid-template-columns: auto 1fr; } .voiw .calc .cl .v { grid-column: 2; } }
 </style>

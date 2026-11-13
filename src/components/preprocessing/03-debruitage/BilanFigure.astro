@@ -1,0 +1,100 @@
+---
+// Chapitre 3 (Preprocessing), section 6 : AUC raies contre témoins en fonction de la durée d'observation T, une courbe par méthode,
+// trois panneaux (un capteur ; 8 capteurs, bruit indépendant ; 8 capteurs, un interférent). Valeurs figées dans bilan.ts (BILAN, 300 essais,
+// les mêmes dans les trois panneaux) : rien n'est calculé au build.
+// Couleurs : référence (périodogramme moyenné d'un capteur) en gris épais, la même dans les trois panneaux ; voies classiques en gris fin
+// à tirets (classique, sans adaptation) ; moyenne des puissances des 8 capteurs en gris pointillé ; rehausseur et traitement adaptatif en brun --p-mel (méthode classique étudiée) ; masques appris
+// en violet --r-out. Au plus deux séries colorées par panneau. Étiquettes directes au bout des courbes, écartées d'au moins 17 unités.
+import { BILAN, DUREES, N_BILAN, ALE_BILAN } from './bilan';
+
+type Serie = { nom: string[]; v: number[]; c: string; w: number; dash?: string; fw?: number; cap?: boolean };
+const REF = 'var(--text-2)', BRUN = 'var(--p-mel)', VIOLET = 'var(--r-out)';
+const ref: Serie = { nom: ['référence'], v: BILAN.capteur.periodogramme.parT, c: REF, w: 2.8, fw: 600 };
+const L = ALE_BILAN.Ls[2]; // rehausseur : la meilleure des trois longueurs du widget (voir bilan.ts)
+const panneaux: { titre: string; series: Serie[] }[] = [
+  { titre: 'un capteur', series: [ref,
+    { nom: ['rehausseur'], v: BILAN.capteur[`ale${L}` as 'ale2048'].parT, c: BRUN, w: 1.9 },
+    { nom: ['masque'], v: BILAN.capteur.masque.parT, c: VIOLET, w: 1.9 }] },
+  { titre: '8 capteurs, bruit indépendant', series: [ref,
+    { nom: ['voies', 'classiques'], v: BILAN.independant.classique.parT, c: REF, w: 1.5, dash: '5 3' },
+    { nom: ['8 capteurs', 'moyennés'], v: BILAN.independant.incoherent.parT, c: REF, w: 1.7, dash: '0.1 3.4', cap: true },
+    { nom: ['adaptatif'], v: BILAN.independant.adaptatif.parT, c: BRUN, w: 1.9 },
+    { nom: ['masque'], v: BILAN.independant.masqueAntenne.parT, c: VIOLET, w: 1.9 }] },
+  { titre: '8 capteurs, un interférent', series: [ref,
+    { nom: ['voies', 'classiques'], v: BILAN.interferent.classique.parT, c: REF, w: 1.5, dash: '5 3' },
+    { nom: ['8 capteurs', 'moyennés'], v: BILAN.interferent.incoherent.parT, c: REF, w: 1.7, dash: '0.1 3.4', cap: true },
+    { nom: ['adaptatif'], v: BILAN.interferent.adaptatif.parT, c: BRUN, w: 1.9 },
+    { nom: ['masque'], v: BILAN.interferent.masqueAntenne.parT, c: VIOLET, w: 1.9 }] },
+];
+
+const W = 270, H = 236, ox = 30, top = 18, rm = 84, pw = W - ox - rm, ph = 168;
+const TMIN = 5, TMAX = 60, YMIN = 0.5, YMAX = 1, GAP = 17, LIGNE = 13;
+const X = (T: number) => ox + ((T - TMIN) / (TMAX - TMIN)) * pw, Y = (a: number) => top + ((YMAX - a) / (YMAX - YMIN)) * ph;
+const n = (v: number) => v.toFixed(1);
+const fr = (v: number) => String(v).replace('.', ',');
+
+// lignes d'une étiquette (une tspan par ligne)
+const lignes = (nom: string[], x: number) => nom.map((m, j) => '<tspan x="' + x + '" dy="' + (j ? LIGNE : 0) + '">' + m + '</tspan>').join('');
+
+const dessin = (series: Serie[]) => {
+  let s = '';
+  for (let a = 0.5; a <= 1.0001; a += 0.1) {
+    s += `<line x1="${ox}" y1="${n(Y(a))}" x2="${ox + pw}" y2="${n(Y(a))}" stroke="var(--border)"${a > 0.5001 ? ' stroke-dasharray="2 4"' : ''}/>`;
+    s += `<text x="${ox - 5}" y="${n(Y(a) + 4)}" text-anchor="end" class="ax">${a > 0.999 ? '1' : fr(+a.toFixed(1))}</text>`;
+  }
+  s += `<text x="${ox + 4}" y="${n(Y(0.5) - 5)}" class="ax">0,5 : hasard</text>`;
+  s += `<text x="${ox + 2}" y="${top - 6}" class="ax">AUC</text>`;
+  for (const T of [5, 20, 40, 60]) {
+    s += `<line x1="${n(X(T))}" y1="${top + ph}" x2="${n(X(T))}" y2="${top + ph + 4}" stroke="var(--text-2)"/>`;
+    s += `<text x="${n(X(T))}" y="${top + ph + 16}" text-anchor="middle" class="ax">${T}</text>`;
+  }
+  s += `<text x="${ox + pw / 2}" y="${top + ph + 32}" text-anchor="middle" class="ax">durée d'observation T (s)</text>`;
+  // courbes : les grises d'abord, la référence au-dessous des autres
+  for (const r of [...series].sort((a, b) => (a.c === REF ? 0 : 1) - (b.c === REF ? 0 : 1))) {
+    const pts = r.v.map((a, i) => `${n(X(DUREES[i]))},${n(Y(a))}`).join(' ');
+    s += `<polyline points="${pts}" fill="none" stroke="${r.c}" stroke-width="${r.w}" stroke-linejoin="round"${r.dash ? ` stroke-dasharray="${r.dash}"` : ''}${r.cap ? ' stroke-linecap="round"' : ''}/>`;
+    s += r.v.map((a, i) => `<circle cx="${n(X(DUREES[i]))}" cy="${n(Y(a))}" r="${r.w > 2 ? 2.4 : 1.9}" fill="${r.c}"/>`).join('');
+  }
+  // étiquettes directes : on part du bout de chaque courbe, on écarte de GAP vers le bas (plus LIGNE par ligne supplémentaire de l'étiquette
+  // du dessus), puis on remonte si on dépasse le bas du tracé. y = ligne de base de la première ligne, centrée sur le bout de la courbe.
+  const labs = series.map((r) => ({ r, y0: Y(r.v[r.v.length - 1]), y: Y(r.v[r.v.length - 1]) })).sort((a, b) => a.y0 - b.y0);
+  const ecart = (i: number) => GAP + (labs[i - 1].r.nom.length - 1) * LIGNE;
+  for (let i = 1; i < labs.length; i++) labs[i].y = Math.max(labs[i].y, labs[i - 1].y + ecart(i));
+  const bas = top + ph + 6, k = labs.length - 1;
+  if (labs[k].y + (labs[k].r.nom.length - 1) * LIGNE > bas) { labs[k].y = bas - (labs[k].r.nom.length - 1) * LIGNE; for (let i = k - 1; i >= 0; i--) labs[i].y = Math.min(labs[i].y, labs[i + 1].y - ecart(i + 1)); }
+  const x0 = ox + pw, xl = x0 + 14;
+  for (const l of labs) {
+    if (Math.abs(l.y - l.y0) > 2) s += `<polyline points="${x0 + 3},${n(l.y0)} ${x0 + 8},${n(l.y0)} ${xl - 2},${n(l.y)}" fill="none" stroke="${l.r.c}" stroke-width="0.9" opacity="0.8"/>`;
+    s += `<text x="${xl}" y="${n(l.y + 4)}" class="lb" style="fill:${l.r.c === REF ? 'var(--text-2)' : l.r.c};font-weight:${l.r.fw ?? 500}">${lignes(l.r.nom, xl)}</text>`;
+  }
+  return s;
+};
+---
+<figure class="bilf">
+  <div class="bilf-t">Quelle méthode fait apparaître la raie le plus tôt ?</div>
+  <div class="bilf-g">
+    {panneaux.map((p) => (
+      <div class="bilf-p">
+        <div class="bilf-h">{p.titre}</div>
+        <svg class="bilf-svg" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`AUC en fonction de la durée d'observation, ${p.titre}`} set:html={dessin(p.series)} />
+      </div>
+    ))}
+  </div>
+  <figcaption>AUC des raies contre les témoins, sur les mêmes {N_BILAN} essais dans les trois panneaux : bruit blanc, 6 raies de −12 à +3 dB et 13 témoins par essai, fréquences quelconques, trames de 2 s. Référence : périodogramme moyenné d'un capteur, la même courbe partout. 8 capteurs moyennés : moyenne des périodogrammes des 8 capteurs. Rehausseur : L = {L}, δ = {ALE_BILAN.delta}, μ = {fr(ALE_BILAN.mu)}. Interférent : 80 % de la puissance du bruit, à 30°.</figcaption>
+</figure>
+
+<style is:global>
+  .bilf { margin: 1.5rem 0; font-family: var(--font); }
+  .bilf .bilf-t { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+  .bilf .bilf-g { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 14px; }
+  .bilf .bilf-h { font-size: 13px; font-weight: 600; color: var(--text); margin: 0 0 2px 30px; }
+  .bilf svg.bilf-svg { width: 100%; max-width: 270px; height: auto; display: block; }
+  .bilf svg.bilf-svg text { font-family: var(--font); }
+  .bilf svg.bilf-svg text.ax { font-size: 12px; fill: var(--text-2); }
+  .bilf svg.bilf-svg text.lb { font-size: 12.4px; }
+  @media (max-width: 720px) {
+    .bilf .bilf-g { grid-template-columns: 1fr; row-gap: 14px; }
+    .bilf .bilf-p { max-width: 290px; }
+    .bilf svg.bilf-svg { max-width: 290px; }
+  }
+</style>

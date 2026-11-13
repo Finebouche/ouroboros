@@ -1,0 +1,102 @@
+---
+// Chapitre 3, section 2 : ce que le rehausseur a appris. Figure statique calculée au build (filtreAppris, ale.ts), deux panneaux.
+// (a) les L poids w_l à la fin d'un essai (points bruns) et ceux du filtre optimal, (2/L)·q/(1+q)·cos(2π f0 (δ + l)/fs) (pointillé) ;
+// (b) le gain |H(f)| du filtre appris en dB : un pic à f0 de hauteur ≈ q/(1+q), de largeur ≈ fs/L, et un plancher ≈ √(μ/(2−μ)) ailleurs.
+// Réglages : L = 32, δ = 16, μ = 0,01 (mise à jour à chaque échantillon), raie de +24 dB à F0 = 150,1 Hz, essai de 60 s, graine 4.
+// Raie forte, filtre court et petit pas pour que les poids soient nets : avec μ = 0,05 (le widget), le bruit des poids est aussi grand que la sinusoïde.
+// Vérifié (scratchpad ale-v2/filtre.ts, fig2.ts, lobes.ts) avec ces réglages : corrélation poids / sinusoïde 0,97 (0,96 à 0,97 pour les graines 4, 5, 7, 8) ;
+// phase des poids appris 122° contre 124° (= 360° f0 δ / fs) ; gain à f0 0,90 (théorie q/(1+q) = 0,89, q = 7,85) ; phase de H(f0) ≈ 0° ;
+// largeur à mi-puissance 28 Hz (= 0,886 fs/L, fs/L = 32 Hz) ; plancher (moyenne quadratique du gain à plus de 4 fs/L de f0) 0,065
+// (0,060 à 0,068 selon la graine ; √(μ/(2−μ)) = 0,071 ; l'écart vient de la raie forte, qui gonfle la puissance de l'entrée qui normalise le pas).
+// Les lobes de part et d'autre du pic sont ceux du filtre optimal (L poids : sinusoïde tronquée) ; au-delà de 2 à 4 fs/L, le bruit des poids domine.
+import katex from 'katex';
+import { FS } from './raies';
+import { F0, DUR } from './reference';
+import { filtreAppris } from './ale';
+const tex = (s: string) => katex.renderToString(s, { throwOnError: false });
+const fm = (v: number, d = 2) => v.toFixed(d).replace('.', ',').replace('-', '−');
+const L = 32, DELTA = 16, MU = 0.01, NIV = 24, SEED = 4;
+const R = filtreAppris(L, DELTA, MU, NIV, F0, DUR, SEED, 0.5);
+const it = (s: string) => `<tspan font-style="italic">${s}</tspan>`;
+// indice : le texte qui suit (après) revient sur la ligne de base
+const sub = (s: string, ital = false, apres = '\u200b') => `<tspan dy="3" font-size="8.5"${ital ? ' font-style="italic"' : ''}>${s}</tspan><tspan dy="-3">${apres}</tspan>`;
+const dB20 = (v: number) => 20 * Math.log10(v);
+
+// --- (a) les poids ---
+const W1 = 340, H1 = 200, ox1 = 40, pw1 = 288, oy1 = 30, ph1 = 132, WM = 0.07;
+const Xa = (l: number) => ox1 + (l / (L - 1)) * pw1, Ya = (w: number) => oy1 + ph1 / 2 - (w / WM) * (ph1 / 2);
+let pa = '';
+pa += `<path d="M${ox1},${Ya(0)} H${ox1 + pw1}" class="ax0"/><path d="M${ox1},${oy1 + ph1} H${ox1 + pw1}" class="axl"/>`;
+pa += [0.05, -0.05].map((v) => `<path d="M${ox1},${Ya(v).toFixed(1)} H${ox1 + pw1}" class="grd"/>`).join('');
+pa += [[0.05, "0,05"], [0, "0"], [-0.05, "−0,05"]].map(([v, t]) => `<text x="${ox1 - 5}" y="${(Ya(+v) + 3.5).toFixed(1)}" text-anchor="end" class="ax">${t}</text>`).join('');
+pa += [0, 8, 16, 24, 31].map((l) => `<path d="M${Xa(l).toFixed(1)},${oy1 + ph1} v4" class="tk"/><text x="${Xa(l).toFixed(1)}" y="${oy1 + ph1 + 15}" text-anchor="middle" class="ax">${l}</text>`).join('');
+pa += `<text x="${ox1 + pw1 / 2}" y="${H1 - 3}" text-anchor="middle" class="ax">indice ${it('l')} du poids (retard ${it('δ')} + ${it('l')} échantillons)</text>`;
+const opt = (l: number) => ((2 * R.g) / L) * Math.cos((2 * Math.PI * F0 * (DELTA + l)) / FS);
+pa += `<polyline points="${Array.from({ length: (L - 1) * 8 + 1 }, (_, i) => `${Xa(i / 8).toFixed(1)},${Ya(opt(i / 8)).toFixed(1)}`).join(' ')}" class="opt"/>`;
+pa += R.wl.map((w, l) => `<circle cx="${Xa(l).toFixed(1)}" cy="${Ya(w).toFixed(1)}" r="2.3" class="mf"/>`).join('');
+// rangée d'étiquettes au-dessus du tracé
+pa += `<circle cx="${ox1 + 4}" cy="12" r="2.6" class="mf"/><text x="${ox1 + 11}" y="16" class="lb m">poids appris ${it('w')}${sub('l', true)}</text>`;
+pa += `<path d="M${ox1 + 140},12 h18" class="opt"/><text x="${ox1 + 163}" y="16" class="lb">sinusoïde à ${it('f')}${sub('0')}</text>`;
+
+// --- (b) le gain ---
+const W2 = 340, H2 = 200, ox2 = 44, pw2 = 230, oy2 = 14, ph2 = 148, FMIN = 0, FMAX = 512, LO = -50, HI = 4;
+const Xb = (f: number) => ox2 + ((f - FMIN) / (FMAX - FMIN)) * pw2, Yb = (v: number) => oy2 + (1 - (Math.max(LO, Math.min(HI, v)) - LO) / (HI - LO)) * ph2;
+let pb = '';
+pb += [-40, -30, -20, -10].map((v) => `<path d="M${ox2},${Yb(v).toFixed(1)} H${ox2 + pw2}" class="grd"/>`).join('');
+pb += `<path d="M${ox2},${Yb(0).toFixed(1)} H${ox2 + pw2}" class="axl"/><path d="M${ox2},${oy2 + ph2} H${ox2 + pw2}" class="axl"/>`;
+pb += [0, -10, -20, -30, -40].map((v) => `<text x="${ox2 - 5}" y="${(Yb(v) + 3.5).toFixed(1)}" text-anchor="end" class="ax">${v < 0 ? '−' : ''}${Math.abs(v)} dB</text>`).join('');
+pb += [0, 100, 200, 300, 400, 500].map((f) => `<path d="M${Xb(f).toFixed(1)},${oy2 + ph2} v4" class="tk"/><text x="${Xb(f).toFixed(1)}" y="${oy2 + ph2 + 15}" text-anchor="middle" class="ax">${f}</text>`).join('');
+pb += `<text x="${ox2 + pw2 / 2}" y="${H2 - 3}" text-anchor="middle" class="ax">fréquence (Hz)</text>`;
+pb += `<path d="M${Xb(F0).toFixed(1)},${oy2} V${oy2 + ph2}" class="raie"/>`;
+const pts = R.f.map((f, k) => [f, R.G[k]]).filter(([f]) => f >= FMIN && f <= FMAX);
+pb += `<polyline points="${pts.map(([f, g]) => `${Xb(f).toFixed(1)},${Yb(dB20(g)).toFixed(1)}`).join(' ')}" class="gain"/>`;
+// hauteur du pic : q/(1+q)
+const yq = Yb(dB20(R.g)), xr = ox2 + pw2;
+pb += `<path d="M${(Xb(F0) + 12).toFixed(1)},${yq.toFixed(1)} H${xr}" class="ann"/>`;
+pb += `<text x="${xr + 4}" y="${(yq + 1).toFixed(1)}" class="lb">${it('q')}/(1+${it('q')})</text><text x="${xr + 4}" y="${(yq + 16).toFixed(1)}" class="lb g">= ${fm(R.g)}</text>`;
+// largeur à mi-puissance, ≈ fs/L
+const y3 = Yb(dB20(R.g0 / Math.SQRT2)), xa = Xb(F0 - R.largeur / 2), xb = Xb(F0 + R.largeur / 2);
+pb += `<path d="M${xa.toFixed(1)},${(y3 - 4).toFixed(1)} v8 M${xb.toFixed(1)},${(y3 - 4).toFixed(1)} v8 M${xa.toFixed(1)},${y3.toFixed(1)} H${xb.toFixed(1)}" class="brk"/>`;
+pb += `<text x="${(xb + 5).toFixed(1)}" y="${(y3 + 15).toFixed(1)}" class="lb h">≈ ${it('f')}${sub('s', false, '/')}${it('L')} = ${FS / L} Hz</text>`;
+// plancher : √(μ/(2−μ))
+const yp = Yb(dB20(R.plancher));
+pb += `<path d="M${ox2},${yp.toFixed(1)} H${xr}" class="ann"/>`;
+pb += `<text x="${xr + 4}" y="${(yp + 1).toFixed(1)}" class="lb">√(${it('μ')}/(2−${it('μ')}))</text><text x="${xr + 4}" y="${(yp + 16).toFixed(1)}" class="lb g">= ${fm(R.plancher, 3)}</text>`;
+const aria = `Poids appris par le rehausseur : une sinusoïde à la fréquence de la raie. Gain du filtre : un pic étroit à ${fm(F0, 1)} Hz, un plancher bas ailleurs.`;
+const hdef = tex('H(f) = \\textstyle\\sum_l w_l\\, e^{-2i\\pi f(\\delta + l)/f_s}');
+---
+<figure class="alefl" role="group" aria-label={aria}>
+  <div class="gr">
+    <div class="pan"><div class="pt">les poids appris</div><svg viewBox={`0 0 ${W1} ${H1}`} data-alefl set:html={pa} /></div>
+    <div class="pan"><div class="pt">le gain du filtre <span set:html={tex('|H(f)|')} /></div><svg viewBox={`0 0 ${W2} ${H2}`} data-alefl set:html={pb} /></div>
+  </div>
+  <figcaption>Rehausseur de <span set:html={tex(`L = ${L}`)} /> poids après {DUR} s sur une raie de +{NIV} dB à {fm(F0, 1)} Hz (<span set:html={tex(`\\delta = ${DELTA}`)} />, <span set:html={tex(`\\mu = ${String(MU).replace('.', '{,}')}`)} /> : raie forte et petit pas, pour des poids nets). Pointillé : poids du filtre optimal ; corrélation avec les poids appris : {fm(R.corr)}. <span set:html={hdef} />.</figcaption>
+</figure>
+
+<style is:global>
+  .alefl { margin: 1.5rem 0; }
+  .alefl .gr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 28px; align-items: start; }
+  .alefl .pan { min-width: 0; }
+  .alefl .pt { font-size: 12.5px; font-weight: 600; line-height: 1.3; margin-bottom: 6px; }
+  .alefl .pt .katex, .alefl figcaption .katex { font-size: 1em; }
+  .alefl svg[data-alefl] { display: block; width: 100%; height: auto; }
+  .alefl svg[data-alefl] text.lb { font: 11.5px var(--font); fill: var(--text); }
+  .alefl svg[data-alefl] text.lb.g { fill: var(--text-2); }
+  .alefl svg[data-alefl] text.lb.m { fill: var(--p-mel); font-weight: 600; }
+  .alefl svg[data-alefl] text.lb.h { paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
+  .alefl svg[data-alefl] text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .alefl svg[data-alefl] path.ax0 { fill: none; stroke: var(--border); }
+  .alefl svg[data-alefl] path.axl { fill: none; stroke: var(--border); }
+  .alefl svg[data-alefl] path.grd { fill: none; stroke: var(--border); stroke-dasharray: 2 4; }
+  .alefl svg[data-alefl] path.tk { fill: none; stroke: var(--text-2); }
+  .alefl svg[data-alefl] .mf { fill: var(--p-mel); }
+  .alefl svg[data-alefl] .opt { fill: none; stroke: var(--text); stroke-width: 1.1; stroke-dasharray: 3 3; }
+  .alefl svg[data-alefl] path.raie { fill: none; stroke: var(--text); stroke-width: 1; stroke-dasharray: 2 3; }
+  .alefl svg[data-alefl] polyline.gain { fill: none; stroke: var(--p-mel); stroke-width: 1.6; stroke-linejoin: round; }
+  .alefl svg[data-alefl] path.ann { fill: none; stroke: var(--text-2); stroke-width: 1; stroke-dasharray: 5 3; }
+  .alefl svg[data-alefl] path.brk { fill: none; stroke: var(--text); stroke-width: 1.3; }
+  @media (max-width: 640px) {
+    .alefl .gr { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+    .alefl .pan { max-width: 400px; }
+  }
+</style>

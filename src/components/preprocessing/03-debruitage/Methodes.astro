@@ -1,7 +1,8 @@
 ---
 // Chapitre 3 (Preprocessing), section 6 : la référence et les quatre méthodes côte à côte, même mise en forme que les tableaux du cours RL
-// (Families.astro, Evaluation.astro : bandes arrondies, petits schémas). Pas de chiffre de performance ici.
-// Schémas en gris : ce que la méthode exploite (durée, prévisibilité, direction, exemples).
+// (Families.astro, Evaluation.astro : bandes arrondies, petits schémas). Schémas en gris : ce que la méthode exploite (durée, prévisibilité,
+// direction, exemples). Colonne « face à la référence » : ce que montrent les mesures de bilan.ts (BILAN, 300 essais), sans chiffre
+// (les courbes sont dans BilanFigure). Colonne « limite » : seulement ce que le chapitre montre ou que bilan.ts mesure.
 import katex from 'katex';
 const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
 type Glyph = 'duree' | 'prev' | 'dir' | 'ex';
@@ -25,20 +26,20 @@ const part = (g: Glyph, x0: number) => {
   }
   return o;
 };
-const glyph = (gs: Glyph[]) => `<svg viewBox="0 0 ${gs.length * 48} 18" class="mtgl" style="width:${gs.length * 55}px" aria-hidden="true">${gs.map((g, i) => part(g, i * 48)).join('')}</svg>`;
+const glyph = (gs: Glyph[]) => `<svg viewBox="0 0 ${gs.length * 48} 18" class="mtgl" style="width:${gs.length * 50}px" aria-hidden="true">${gs.map((g, i) => part(g, i * 48)).join('')}</svg>`;
 
-type Row = { nom: string; sub: string; glyph: Glyph[]; quoi: string; capt: string; appr: string; ecoute: boolean; comment?: string; limite: string };
+type Row = { nom: string; sub: string; glyph: Glyph[]; quoi: string; capt: string; appr: string; ecoute: boolean; comment?: string; face: string; ref?: boolean; limite: string };
 const rows: Row[] = [
-  { nom: 'Périodogramme moyenné', sub: 'référence (Welch)', glyph: ['duree'], quoi: 'la durée', capt: '1', appr: 'rien', ecoute: false,
-    limite: 'le temps de détection croît comme l\'inverse du carré du rapport signal sur bruit' },
-  { nom: 'Rehausseur de raies adaptatif', sub: 'ALE, en NLMS', glyph: ['prev'], quoi: 'la prévisibilité', capt: '1', appr: `${tx('L')} poids ${tx('\\mathbf{w}')}, adaptés en ligne`, ecoute: true, comment: `la prédiction ${tx('\\hat x(n)')}`,
-    limite: 'suit mal une raie qui dérive vite ; ne sépare pas la raie cherchée de celles d\'autres navires' },
-  { nom: 'Traitement d\'antenne adaptatif', sub: 'filtre adapté adaptatif (AMF)', glyph: ['dir'], quoi: 'la direction', capt: 'C', appr: `la covariance du bruit ${tx('\\mathbf{K}_n(f)')}, sur les fréquences voisines`, ecoute: false,
-    limite: 'il faut plusieurs capteurs et une bonne estimation du bruit entre capteurs' },
-  { nom: 'Masque appris, un capteur', sub: 'réservoir', glyph: ['ex'], quoi: 'des exemples', capt: '1', appr: `la lecture ${tx('W_{out}')}, sur des essais synthétiques`, ecoute: true, comment: 'masque appliqué à la TFCT',
-    limite: 'écart entre essais synthétiques et réels ; peut inventer des raies s\'il est mal validé' },
+  { nom: 'Périodogramme moyenné', sub: 'Welch', glyph: ['duree'], quoi: 'la durée', capt: '1', appr: 'rien', ecoute: false, ref: true, face: '',
+    limite: 'seul levier : attendre (ou allonger les trames)' },
+  { nom: 'Rehausseur de raies adaptatif', sub: 'ALE, en NLMS', glyph: ['prev'], quoi: 'la prévisibilité', capt: '1', appr: `${tx('L')} poids ${tx('w_l')}, adaptés en ligne`, ecoute: true, comment: `la prédiction ${tx('\\hat x[n]')}`,
+    face: 'derrière, à toutes les durées', limite: 'des pics de bruit résiduel rivalisent avec la raie' },
+  { nom: 'Traitement d\'antenne adaptatif', sub: 'filtre adapté adaptatif (AMF)', glyph: ['dir'], quoi: 'la direction', capt: 'C', appr: `la covariance du bruit ${tx('\\mathbf{R}_b(f)')}, sur les fréquences voisines`, ecoute: false,
+    face: 'devant ; le premier dès qu\'il y a un interférent', limite: `plusieurs capteurs, et ${tx('\\mathbf{R}_b')} à estimer` },
+  { nom: 'Masque appris, un capteur', sub: 'réservoir', glyph: ['ex'], quoi: 'des exemples', capt: '1', appr: `la lecture ${tx('W_{out}')}, sur des essais synthétiques`, ecoute: true, comment: 'masque appliqué à la transformée de Fourier à court terme (TFCT)',
+    face: 'derrière, à toutes les durées', limite: 'une raie hors du centre d\'une case lui échappe' },
   { nom: 'Masque appris, antenne', sub: 'réservoir, filtre spectro-spatial appris', glyph: ['ex', 'dir'], quoi: 'des exemples et la direction', capt: 'C', appr: `la lecture ${tx('W_{out}')}, sur des essais synthétiques`, ecoute: true, comment: 'sur le capteur de référence',
-    limite: 'les mêmes ; la géométrie de l\'antenne n\'est pas utilisée' },
+    face: 'devant, mais derrière l\'adaptatif', limite: 'à réentraîner si le bruit change : appris sans interférent, il passe sous la référence' },
 ];
 ---
 <figure class="mt">
@@ -46,26 +47,28 @@ const rows: Row[] = [
     <div>méthode</div>
     <div>ce qu'elle exploite</div>
     <div>capteurs</div>
-    <div>à estimer ou apprendre</div>
-    <div>sortie écoutable</div>
-    <div>limite principale</div>
+    <div>estimé ou appris</div>
+    <div>écoutable</div>
+    <div>face à la référence</div>
+    <div>limite</div>
   </div>
   {rows.map((r, i) => (
     <div class={`mtr mtg${i % 2 ? ' alt' : ''}`}>
       <div class="mtn"><b>{r.nom}</b><small>{r.sub}</small></div>
       <div class="mtq"><div set:html={glyph(r.glyph)} /><span>{r.quoi}</span></div>
       <div><i class="mtl">capteurs : </i><span class={`mtp${r.capt === 'C' ? ' on' : ''}`} set:html={r.capt === 'C' ? tx('C') : '1'} /></div>
-      <div class="mtt"><i class="mtl">à estimer ou apprendre : </i><span set:html={r.appr} /></div>
-      <div class="mte"><i class="mtl">sortie écoutable : </i><span class={`mtp${r.ecoute ? ' on' : ''}`}>{r.ecoute ? 'oui' : 'non'}</span>{r.comment && <small set:html={r.comment} />}</div>
-      <div class="mtt"><i class="mtl">limite : </i>{r.limite}</div>
+      <div class="mtt"><i class="mtl">estimé ou appris : </i><span set:html={r.appr} /></div>
+      <div class="mte"><i class="mtl">écoutable : </i><span class={`mtp${r.ecoute ? ' on' : ''}`}>{r.ecoute ? 'oui' : 'non'}</span>{r.comment && <small set:html={r.comment} />}</div>
+      <div class="mtt"><i class="mtl">face à la référence : </i>{r.ref ? <span class="mtp mtref">référence</span> : r.face}</div>
+      <div class="mtt"><i class="mtl">limite : </i><span set:html={r.limite} /></div>
     </div>
   ))}
 </figure>
 
 <style is:global>
   .mt { margin: 1.5rem 0; font-family: var(--font); }
-  .mt .mtr { display: grid; grid-template-columns: 134px 112px 46px minmax(0, 1fr) 92px minmax(0, 1.2fr); column-gap: 12px; align-items: center; }
-  .mt .mthd { padding: 0 14px 8px; font-size: 11.5px; font-weight: 600; color: var(--text); line-height: 1.3; align-items: end; }
+  .mt .mtr { display: grid; grid-template-columns: 116px 104px 58px minmax(0, 1fr) 74px minmax(0, 1fr) minmax(0, 1fr); column-gap: 9px; align-items: center; }
+  .mt .mthd { padding: 0 14px 8px; font-size: 11.5px; font-weight: 600; color: var(--text); line-height: 1.3; align-items: end; white-space: nowrap; }
   .mt .mtg { border-radius: 8px; background: color-mix(in srgb, var(--text-2) 7%, transparent); padding: 10px 14px; margin-bottom: 6px; }
   .mt .mtg.alt { background: color-mix(in srgb, var(--text-2) 3.5%, transparent); }
   .mt .mtn b { display: block; font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.3; }
@@ -76,6 +79,7 @@ const rows: Row[] = [
   .mt .mtt .katex, .mt .mte .katex, .mt .mtp .katex { font-size: 1em; }
   .mt .mtp { display: inline-block; font-size: 11.5px; padding: 1px 9px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-2); text-align: center; line-height: 1.5; }
   .mt .mtp.on { color: var(--text); border-color: var(--text-2); }
+  .mt .mtp.mtref { color: var(--text); border-color: var(--text-2); font-weight: 600; }
   .mt .mte small { display: block; font-size: 11.5px; color: var(--text-2); margin-top: 3px; line-height: 1.35; }
   .mt .mtl { display: none; font-style: normal; font-size: 11.5px; color: var(--text-2); }
   @media (max-width: 720px) {

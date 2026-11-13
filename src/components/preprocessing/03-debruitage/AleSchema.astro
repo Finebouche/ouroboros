@@ -1,7 +1,7 @@
 ---
 // Chapitre 3, section 2 : schéma du rehausseur de raies adaptatif (ALE). Figure statique, deux panneaux.
-// 1. Le mécanisme : x(n) → retard δ → filtre de L poids w → x̂(n) (sortie) ; e(n) = x(n) − x̂(n) revient régler les poids.
-//    Brun : ce qui est appris (les poids) et la sortie ; gris : le reste.
+// 1. Le mécanisme : x[n] → retard δ → filtre de L poids w_l → x̂[n] (sortie) ; e[n] = x[n] − x̂[n] revient régler les poids.
+//    Brun : ce que produit le rehausseur (ses poids et sa sortie) ; gris : le reste.
 // 2. Pourquoi le retard : ressemblance (autocorrélation normalisée) entre un signal et sa copie retardée, en fonction du retard.
 //    Courbes exactes : bruit blanc lissé sur M échantillons (triangle 1 − retard/M, nul au-delà de M) ; raie de période P (cosinus).
 // Vérifié (scratchpad ale/sim5.ts), bruit lissé sur 6 échantillons + rehausseur L = 128, μ = 0,01 : la sortie garde 65 % de la puissance
@@ -10,7 +10,7 @@ import katex from 'katex';
 const tex = (s: string) => katex.renderToString(s, { throwOnError: false });
 const M = 6, P = 8, DELTA = 16, LAGS = 40;
 const it = (s: string) => `<tspan font-style="italic">${s}</tspan>`;
-const xn = `${it('x')}(${it('n')})`, xh = `${it('x̂')}(${it('n')})`, en = `${it('e')}(${it('n')})`;
+const xn = `${it('x')}[${it('n')}]`, xh = `${it('x̂')}[${it('n')}]`, en = `${it('e')}[${it('n')}]`;
 // pointe de flèche (triangle plein) dont le sommet est en (x, y)
 const ah = (x: number, y: number, dir: 'r' | 'd', cls: string) => dir === 'r'
   ? `<path d="M${x},${y} l-7,-3.6 v7.2 z" class="${cls}"/>` : `<path d="M${x},${y} l-3.6,-7 h7.2 z" class="${cls}"/>`;
@@ -24,7 +24,7 @@ p1 += `<path d="M48,${yD} V${yF} H55" class="g"/>` + ah(62, yF, 'r', 'gf') + `<c
 p1 += `<rect x="62" y="${yF - 18}" width="74" height="36" rx="6" class="bx"/><text x="99" y="${yF + 4}" text-anchor="middle" class="lb">retard ${it('δ')}</text>`;
 p1 += `<path d="M136,${yF} H153" class="g"/>` + ah(160, yF, 'r', 'gf');
 p1 += `<rect x="160" y="${yF - 18}" width="112" height="36" rx="6" class="bx m"/>`;
-p1 += `<text x="216" y="${yF - 3}" text-anchor="middle" class="lb g">filtre</text><text x="216" y="${yF + 11}" text-anchor="middle" class="lb m">${it('L')} poids <tspan font-weight="700">w</tspan></text>`;
+p1 += `<text x="216" y="${yF - 3}" text-anchor="middle" class="lb g">filtre</text><text x="216" y="${yF + 11}" text-anchor="middle" class="lb m">${it('L')} poids ${it('w')}<tspan dy="3" font-size="8.5" font-style="italic">l</tspan></text>`;
 p1 += `<path d="M272,${yF} H325" class="m"/>` + ah(332, yF, 'r', 'mf') + `<circle cx="${xs}" cy="${yF}" r="2.6" class="mf"/>`;
 p1 += `<text x="337" y="${yF + 4}" class="lb m">${xh}</text><text x="337" y="${yF + 18}" class="lb m s">sortie</text>`;
 p1 += `<path d="M${xs},${yF} V${yD - 17}" class="m"/>` + ah(xs, yD - 10, 'd', 'mf');
@@ -53,10 +53,10 @@ const aria = 'Rehausseur de raies adaptatif : le signal retardé passe dans un f
 ---
 <figure class="alesc" role="group" aria-label={aria}>
   <div class="gr">
-    <div class="pan a"><div class="pt">prédire <span set:html={tex('x(n)')} /> à partir de son passé</div><svg viewBox={`0 0 ${W1} ${H1}`} data-alesc set:html={p1} /></div>
-    <div class="pan b"><div class="pt">ressemblance entre <span set:html={tex('x(n)')} /> et <span set:html={tex('x(n-\\delta)')} /></div><svg viewBox={`0 0 ${W2} ${H2}`} data-alesc set:html={p2} /></div>
+    <div class="pan a"><div class="pt">prédire <span set:html={tex('x[n]')} /> à partir de son passé</div><svg viewBox={`0 0 ${W1} ${H1}`} data-alesc set:html={p1} /></div>
+    <div class="pan b"><div class="pt">ressemblance entre <span set:html={tex('x[n]')} /> et <span set:html={tex('x[n-\\delta]')} /></div><svg viewBox={`0 0 ${W2} ${H2}`} data-alesc set:html={p2} /></div>
   </div>
-  <figcaption>Brun : ce qui est appris et la sortie. Ressemblance : autocorrélation, divisée par sa valeur au retard nul. Bruit dessiné : bruit blanc lissé sur {M} échantillons ; raie dessinée : période de {P} échantillons ; <span set:html={tex(`\\delta = ${DELTA}`)} />. Pour un bruit blanc, la ressemblance est nulle dès un échantillon de retard.</figcaption>
+  <figcaption>Brun : ce que produit le rehausseur, ses poids et sa sortie. Ressemblance : autocorrélation divisée par sa valeur au retard nul, pour un bruit lissé sur {M} échantillons (nulle dès un échantillon pour un bruit blanc) et une raie de période {P} échantillons.</figcaption>
 </figure>
 
 <style is:global>

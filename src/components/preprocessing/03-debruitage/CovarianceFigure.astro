@@ -1,58 +1,58 @@
 ---
-// Chapitre 3, section 3 : ce que coûte l'estimation de K_n. Même scène que VoiesWidget (8 capteurs, raie à 0°, interférent 100 × le bruit à 21°).
-// K_n est estimée sur M observations sans raie (M et non N : N est le nombre de neurones du réservoir dans ce chapitre), puis chargée : K_n + (ε + 10⁻⁶) · tr(K_n)/C · I (formule du projet).
-// Courbes : gain moyen sur un capteur seul (moyenne des rapports de puissances sur 800 tirages, calculée au build par antenne.ts), en dB.
-// Trois charges en brun (ce que produit la méthode), repères : K_n connue (pointillé --text) et voies classiques (gris).
-import { gainsEstimes } from './antenne';
+// Chapitre 3, section 3 : ce que coûte l'estimation de R_b. Scène par défaut de VoiesWidget (8 capteurs, raie à 0°, interférent 100 × le bruit à 21°).
+// R_b est estimée sur M observations de bruit seul (M et non N : N est le nombre de neurones du réservoir dans ce chapitre).
+// Ordonnée : même grandeur que la pastille de VoiesWidget, la perte de rapport signal sur bruit due à l'interférent (par rapport au cas sans
+// interférent), moyenne des rapports de puissances sur 800 tirages (antenne.ts, rsbEstimes, calculée au build).
+// Deux estimations : sans aucune charge (la matrice estimée telle quelle, tracée seulement pour M ≥ C : en dessous elle n'est pas inversible),
+// et la charge du projet, R̂_b + (ε + 10⁻⁶) · ℓ · I avec ε = 0,03. Repères : R_b connue (pointillé --text), voies classiques (gris).
+// Vérifié par scratchpad/antenne-v2/v3.ts : sans charge, la perte suit la loi de Reed, Mallett et Brennan, (M + 2 − C)/(M + 1) ;
+// 3 dB de plus que R_b connue à M = 13 = 2C − 3, 2,3 dB à M = 2C.
+import { rsbEstimes } from './antenne';
 
-const C = 8, EPS = [0, 0.03, 30];
-const Ns = [...Array.from({ length: 16 }, (_, i) => i + 1), 20, 24, 32, 48, 64];
-const g = gainsEstimes(C, [{ theta: 21, p: 100 }], Ns, EPS);
-const dB = (v: number) => 10 * Math.log10(v);
+const C = 8;
+const Ms = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 20, 24, 32, 48, 64];
+const g = rsbEstimes(C, [{ theta: 21, p: 100 }], Ms, [null, 0.03]);
+const perte = (v: number) => -10 * Math.log10(v);
 const fr = (v: number, d = 1) => v.toFixed(d).replace('.', ',');
-const opt = dB(g.optimal), cla = dB(g.classique);
-const at = (i: number, N: number) => dB(g.gains[i][Ns.indexOf(N)]);
+const pConnue = perte(g.connue), pClass = perte(g.classique);
+const at = (e: number, M: number) => perte(g.rsb[e][Ms.indexOf(M)]);
+// Loi de Reed, Mallett et Brennan : en moyenne, rapport (M + 2 − C)/(M + 1) sur le RSB, soit 3 dB à M = 2C − 3 (13 ici) ; la simulation
+// donne 3,0 dB à M = 13 (2,96 à 3,04 selon les tirages).
 
-const W = 440, H = 312, ox = 36, top = 26, rm = 106, pw = W - ox - rm, ph = H - top - 54;
-const YMIN = 10, YMAX = 30;
-const X = (N: number) => ox + (Math.log2(N) / 6) * pw, Y = (d: number) => top + ((YMAX - d) / (YMAX - YMIN)) * ph;
+const W = 440, H = 300, ox = 36, top = 30, rm = 100, pw = W - ox - rm, ph = H - top - 58;
+const PMAX = 18;
+const X = (M: number) => ox + (Math.log2(M) / 6) * pw, Y = (d: number) => top + (d / PMAX) * ph;
 const n = (v: number) => v.toFixed(1);
 let s = '';
-for (let d = YMIN; d <= YMAX; d += 5) s += `<line x1="${ox}" y1="${n(Y(d))}" x2="${ox + pw}" y2="${n(Y(d))}" stroke="var(--border)" stroke-dasharray="${d === YMIN ? '' : '2 4'}"/><text x="${ox - 6}" y="${n(Y(d) + 3.5)}" text-anchor="end" class="ax">${d}</text>`;
-s += `<text x="${ox - 6}" y="${top - 12}" text-anchor="end" class="ax">dB</text>`;
-for (const N of [1, 2, 4, 8, 16, 32, 64]) {
-  s += `<line x1="${n(X(N))}" y1="${top + ph}" x2="${n(X(N))}" y2="${top + ph + 4}" stroke="var(--text-2)"/>`;
-  s += `<text x="${n(X(N))}" y="${top + ph + 16}" text-anchor="middle" class="ax">${N}</text>`;
+// zone M < C : pas inversible sans charge
+s += `<rect x="${n(X(1))}" y="${top}" width="${n(X(C) - X(1))}" height="${ph}" fill="var(--text-2)" fill-opacity="0.07"/>`;
+s += `<text x="${n((X(1) + X(C)) / 2)}" y="${n(Y(11.5))}" text-anchor="middle" class="ax">M &lt; C : pas inversible</text><text x="${n((X(1) + X(C)) / 2)}" y="${n(Y(11.5) + 14)}" text-anchor="middle" class="ax">sans charge</text>`;
+for (let d = 0; d <= 15; d += 5) s += `<line x1="${ox}" y1="${n(Y(d))}" x2="${ox + pw}" y2="${n(Y(d))}" stroke="var(--border)" stroke-dasharray="${d === 0 ? '' : '2 4'}"/><text x="${ox - 6}" y="${n(Y(d) + 3.5)}" text-anchor="end" class="ax">${d}</text>`;
+s += `<text x="${ox - 30}" y="${top - 14}" class="ax">perte due à l'interférent (dB)</text>`;
+s += `<line x1="${ox}" y1="${top + ph}" x2="${ox + pw}" y2="${top + ph}" stroke="var(--border)"/>`;
+for (const M of [1, 2, 4, 8, 16, 32, 64]) {
+  s += `<line x1="${n(X(M))}" y1="${top + ph}" x2="${n(X(M))}" y2="${top + ph + 4}" stroke="var(--text-2)"/>`;
+  s += `<text x="${n(X(M))}" y="${top + ph + 16}" text-anchor="middle" class="ax">${M}</text>`;
 }
 s += `<text x="${n(X(C))}" y="${top + ph + 29}" text-anchor="middle" class="ax em">C</text><text x="${n(X(2 * C))}" y="${top + ph + 29}" text-anchor="middle" class="ax em">2C</text>`;
-s += `<text x="${ox + pw / 2}" y="${top + ph + 45}" text-anchor="middle" class="ax">nombre M d'observations qui servent à estimer K<tspan dy="3" font-size="8.5">n</tspan></text>`;
+s += `<text x="${ox + pw / 2}" y="${top + ph + 45}" text-anchor="middle" class="ax">nombre M d'observations qui servent à estimer R<tspan dy="3" font-size="8.5">b</tspan></text>`;
 // repères horizontaux
-s += `<line x1="${ox}" y1="${n(Y(opt))}" x2="${ox + pw}" y2="${n(Y(opt))}" stroke="var(--text)" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.75"/>`;
-s += `<line x1="${ox}" y1="${n(Y(cla))}" x2="${ox + pw}" y2="${n(Y(cla))}" stroke="var(--text-2)" stroke-width="2"/>`;
-// trois charges
-const pl = (i: number) => Ns.map((N, j) => `${n(X(N))},${n(Y(dB(g.gains[i][j])))}`).join(' ');
-s += `<polyline points="${pl(2)}" fill="none" stroke="var(--p-mel)" stroke-width="1.6" stroke-dasharray="5 3" stroke-linejoin="round"/>`;
+s += `<line x1="${ox}" y1="${n(Y(pConnue))}" x2="${ox + pw}" y2="${n(Y(pConnue))}" stroke="var(--text)" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.75"/>`;
+s += `<line x1="${ox}" y1="${n(Y(pClass))}" x2="${ox + pw}" y2="${n(Y(pClass))}" stroke="var(--text-2)" stroke-width="2"/>`;
+// deux estimations
+const pl = (e: number) => Ms.map((M, j) => [M, perte(g.rsb[e][j])]).filter(([, v]) => isFinite(v)).map(([M, v]) => `${n(X(M))},${n(Y(v))}`).join(' ');
 s += `<polyline points="${pl(0)}" fill="none" stroke="var(--p-mel)" stroke-width="1.4" stroke-linejoin="round"/>`;
 s += `<polyline points="${pl(1)}" fill="none" stroke="var(--p-mel)" stroke-width="2.8" stroke-linejoin="round"/>`;
-// étiquettes directes à droite, écartées d'au moins 15 px
-const labs = [
-  { t: `K<tspan dy="3" font-size="8.5">n</tspan><tspan dy="-3"> connue</tspan>`, y: Y(opt), c: 'var(--text)', w: 500 },
-  { t: 'ε = 0,03 (projet)', y: Y(at(1, 64)), c: 'var(--p-mel)', w: 600 },
-  { t: 'ε = 0', y: Y(at(0, 64)), c: 'var(--p-mel)', w: 400 },
-  { t: 'ε = 30', y: Y(at(2, 64)), c: 'var(--p-mel)', w: 400 },
-  { t: 'voies classiques', y: Y(cla), c: 'var(--text-2)', w: 600 },
-].sort((a, b) => a.y - b.y);
-labs[0].y -= 12; // les trois premières arrivent au même endroit : on les étage autour de leur point d'arrivée
-for (let i = 1; i < labs.length; i++) if (labs[i].y - labs[i - 1].y < 17) labs[i].y = labs[i - 1].y + 17;
-labs.forEach((l) => (s += `<text x="${ox + pw + 8}" y="${n(l.y + 4)}" class="lb" style="fill:${l.c};font-weight:${l.w}">${l.t}</text>`));
-// la courbe sans charge se repère à son creux
-const Nc = Ns[g.gains[0].indexOf(Math.min(...g.gains[0].slice(2, 12)))];
-s += `<text x="${n(X(Nc))}" y="${n(Y(at(0, Nc)) + 15)}" text-anchor="middle" class="lb" style="fill:var(--p-mel)">ε = 0 : creux à M = ${Nc}</text>`;
-const perte2C = opt - at(0, 2 * C), perteCreux = opt - at(0, Nc);
+s += `<circle cx="${n(X(C))}" cy="${n(Y(at(0, C)))}" r="2.6" fill="var(--p-mel)"/>`;
+// étiquettes directes : chaque courbe à son départ, les repères à droite
+s += `<text x="${n(X(C) + 7)}" y="${n(Y(at(0, C)) + 4)}" class="lb" style="fill:var(--p-mel)">sans charge</text>`;
+s += `<text x="${n(X(1) + 3)}" y="${n(Y(at(1, 1)) + 17)}" class="lb" style="fill:var(--p-mel);font-weight:600">ε = 0,03 (projet)</text>`;
+s += `<text x="${ox + pw + 8}" y="${n(Y(pConnue) + 4)}" class="lb" style="fill:var(--text)">R<tspan dy="3" font-size="8.5">b</tspan><tspan dy="-3"> connue</tspan></text>`;
+s += `<text x="${ox + pw + 8}" y="${n(Y(pClass) + 4)}" class="lb" style="fill:var(--text-2);font-weight:600">voies classiques</text>`;
 ---
 <figure class="covf">
-  <svg class="covf-svg" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Gain du traitement adaptatif en fonction du nombre d'observations qui servent à estimer la covariance du bruit, pour trois charges diagonales" set:html={s} />
-  <figcaption>Gain sur un capteur seul quand K<sub>n</sub> est estimée sur M observations (scène du widget : {C} capteurs, interférent 100 × le bruit ; moyenne de {g.tirages} tirages). Sans charge (ε = 0), le gain perd {fr(perteCreux, 0)} dB quand M approche C, et encore {fr(perte2C)} dB à M = 2C. Avec ε = 0,03, M = 4 suffit pour être à {fr(opt - at(1, 4))} dB de l'optimum. Avec ε = 30, la charge domine K<sub>n</sub> : on retombe vers les voies classiques.</figcaption>
+  <svg class="covf-svg" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Perte due à l'interférent quand la covariance du bruit est estimée sur M observations, sans charge et avec la charge du projet" set:html={s} />
+  <figcaption>Scène du widget (interférent 100 × le bruit à 21°), R<sub>b</sub> estimée sur M observations de bruit seul ; moyenne de {g.tirages} tirages. Sans charge, l'écart à R<sub>b</sub> connue vaut {fr(at(0, 2 * C - 3) - pConnue)} dB à M = 2C − 3 = {2 * C - 3} et {fr(at(0, 2 * C) - pConnue)} dB à M = 2C. Avec ε = 0,03, l'écart est de {fr(at(1, 1) - pConnue)} dB dès M = 1 et de {fr(at(1, 4) - pConnue)} dB à M = 4.</figcaption>
 </figure>
 
 <style is:global>

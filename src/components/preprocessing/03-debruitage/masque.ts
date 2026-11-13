@@ -2,7 +2,8 @@
 // L'entrée du réservoir est la TFCT : chaque case de fréquence est une séquence de trames ; le même réservoir et la même lecture
 // servent à toutes les cases. La lecture (ridge) est entraînée à prédire le masque idéal m* = P_s / (P_s + P_b) sur des essais
 // synthétiques dont on connaît la raie seule s(n). Spectre de détection : masque moyen sur les trames observées.
-// Réservoir : r_k = (1 − a) r_{k−1} + a tanh(W r_{k−1} + W_in u_k + b), r_0 = 0 ; W creux (10 % de liens), gaussien, ramené au rayon spectral ρ.
+// Notations du chapitre : trame j, entrée u_j, état r_j, taux de fuite λ (champ `fuite`), case normalisée z_j(f) (capteur i : z_{i,j}(f)), masque m_j(f).
+// Réservoir : r_j = (1 − λ) r_{j−1} + λ tanh(W r_{j−1} + W_in u_j + biais), r_0 = 0 ; W creux (10 % de liens), gaussien, ramené au rayon spectral ρ.
 import { FS, rng, gauss, amplitude, essai, tfct, contraste, auc, type Tfct, type Raie } from './raies';
 
 // ---------------------------------------------------------------- antenne : essai à C capteurs (modèle d'onde plane)
@@ -14,7 +15,7 @@ export type Scene = { C: number; gisement: number; interferent?: { part: number;
 export type EssaiAntenne = { fs: number; x: Float64Array[]; s: Float64Array[]; raies: Raie[]; retards: number[] };
 
 // Antenne linéaire de C capteurs espacés de PAS_CAPTEUR. La source des raies est dans la direction `gisement` (degrés, 0 = travers) :
-// le capteur c reçoit la raie avec le retard c · PAS_CAPTEUR · sin(gisement) / C_SON. Bruit de variance 1 sur chaque capteur :
+// le capteur i reçoit la raie avec le retard τ_i = i · PAS_CAPTEUR · sin(gisement) / C_SON. Bruit de variance 1 sur chaque capteur :
 // indépendant entre capteurs, sauf la part `interferent.part` de sa puissance, qui vient d'une seule source large bande
 // (même bruit sur tous les capteurs, retardé de `interferent.retard` échantillons par capteur : 1 échantillon ↔ 30° du travers).
 export function essaiAntenne(raies: Raie[], dur: number, seed: number, scene: Scene, fs = FS): EssaiAntenne {
@@ -48,9 +49,10 @@ export function plancher(P: Float64Array, df: number, demi = 3): Float64Array {
 export const D_MONO = 9;
 export const dAntenne = (C: number) => C + 4 * (C - 1);
 
-// Un capteur, 9 valeurs par case et par trame : pour les cases f−1, f, f+1, Re z, Im z et log10(|z|² + 10⁻³),
-// avec z = X · démod / √n0 ; n0 : plancher local ; démod = (−1)^(trame × indice absolu de la case), qui annule l'avance de phase
-// d'une demi-trame à l'autre (une raie centrée sur la case garde alors une phase constante). Sortie : U[case] = trames × 9, à plat.
+// Un capteur, 9 valeurs par case et par trame j : pour les cases f−1, f, f+1, Re z_j, Im z_j et log10(|z_j|² + 10⁻³),
+// avec z_j = X_j · (−1)^(j·k) / √n0 ; k : indice absolu de la case ; n0 : plancher local. La démodulation (−1)^(j·k) retire π k de l'avance
+// de phase d'une demi-trame à la suivante, 2π f0 · seg/2 = π (k + d) (d : écart de la raie au centre de la case, en cases) : il reste π d,
+// soit 180° × d par trame ; une raie centrée garde une phase constante (vérifié : DemodFigure.astro). Sortie : U[case] = trames × 9, à plat.
 export function caracMono(X: Tfct): Float64Array[] {
   const K = X.re.length, F = X.f.length, D = D_MONO;
   const U = Array.from({ length: F }, () => new Float64Array(K * D));
@@ -67,15 +69,15 @@ export function caracMono(X: Tfct): Float64Array[] {
   return U;
 }
 
-// interspectre comprimé de deux capteurs : Z_a · Z_b* / √(|Z_a Z_b*| + 10⁻³). Sa phase est la différence de phase entre les capteurs.
+// interspectre comprimé de deux capteurs : z_a · z_b* / √(|z_a z_b*| + 10⁻³). Sa phase est la différence de phase entre les capteurs.
 const croise = (ar: number, ai: number, br: number, bi: number): [number, number] => {
   const re = ar * br + ai * bi, im = ai * br - ar * bi, g = 1 / Math.sqrt(Math.hypot(re, im) + 1e-3);
   return [re * g, im * g];
 };
 
-// Antenne, C + 4 (C − 1) valeurs : log10(|Z_c|² + 10⁻³) de chaque capteur, puis parties réelle et imaginaire des interspectres comprimés
-// Z_c · Z_ref* (les C − 1 autres capteurs) et Z_c · Z_{c+1}* (les C − 1 paires de voisins). Z = X / √n0, n0 : plancher local de la
-// puissance moyennée sur les capteurs. Ni cases voisines ni démodulation.
+// Antenne, C + 4 (C − 1) valeurs : log10(|z_{i,j}|² + 10⁻³) de chaque capteur i, puis parties réelle et imaginaire des interspectres comprimés
+// z_{i,j} · z_{ref,j}* (les C − 1 autres capteurs) et z_{i,j} · z_{i+1,j}* (les C − 1 paires de voisins). z_{i,j} = X_{i,j} / √n0, n0 : plancher
+// local de la puissance moyennée sur les capteurs. Ni cases voisines ni démodulation.
 export function caracAntenne(Xs: Tfct[], ref: number): Float64Array[] {
   const C = Xs.length, K = Xs[0].re.length, F = Xs[0].f.length, D = dAntenne(C), nx = 2 * (C - 1);
   const U = Array.from({ length: F }, () => new Float64Array(K * D));
@@ -96,7 +98,7 @@ export function caracAntenne(Xs: Tfct[], ref: number): Float64Array[] {
   return U;
 }
 
-// masque idéal m*[case][trame] = P_s / (P_s + P_b), P_s = |TFCT de la raie seule|², P_b = |TFCT du reçu − TFCT de la raie seule|²
+// masque idéal m*_j[case][trame] = P_s / (P_s + P_b), P_s = |TFCT de la raie seule|², P_b = |TFCT du reçu − TFCT de la raie seule|²
 export function masqueIdeal(X: Tfct, S: Tfct): Float64Array[] {
   const K = X.re.length, F = X.f.length;
   return Array.from({ length: F }, (_, k) => Float64Array.from({ length: K }, (_, t) => {
@@ -137,7 +139,7 @@ export function reservoir(D: number, g: Reglages, lien = 0.1): Reservoir {
   return { N, D, fuite: g.fuite, ptr, col, val, Win, b };
 }
 
-// états du réservoir pour une séquence U (K trames × D, à plat), état initial nul. Sortie : K × N, à plat.
+// états r_j du réservoir pour une séquence U (K trames × D, à plat), état initial nul. Sortie : K × N, à plat.
 export function etats(res: Reservoir, U: Float64Array): Float64Array {
   const { N, D, fuite: a, ptr, col, val, Win, b } = res, K = U.length / D, R = new Float64Array(K * N);
   let prev = new Float64Array(N);
@@ -162,7 +164,7 @@ export type Exemple = { U: Float64Array[]; y: Float64Array[] }; // une séquence
 
 const nLect = (N: number, carres: boolean) => N * (carres ? 2 : 1) + 1;
 
-// lecture d'un état : masque = W_out · [r ; r² ; 1]
+// lecture d'un état : m_j = W_out · [r_j ; r_j² ; 1]
 function lire(wout: Float64Array, R: Float64Array, t: number, N: number, carres: boolean): number {
   let s = wout[wout.length - 1];
   const o = t * N;
@@ -380,10 +382,13 @@ export const MESURES: Record<Cas, { n: number; periodogramme: MesureCours; masqu
   },
 };
 
-// Mesures d'antenne (13/11/2026), même protocole, 150 essais de test par cas, C_ANTENNE capteurs, gisement de la source tiré à chaque essai,
-// AUC moyenne sur les durées et les niveaux. Modèles : modeleCours('hasard', bruit, false) et modeleCours('hasard', bruit, true).
-//   bruit indépendant entre capteurs : périodogramme d'un capteur 0,813 ; masque un capteur 0,772 ; moyenne incohérente des 8 capteurs 0,919 ; masque antenne 0,898
-//   bruit à 80 % directionnel (interférent) : périodogramme d'un capteur 0,810 ; masque un capteur 0,768 ; moyenne incohérente 0,847 ; masque antenne 0,929
-// Non utilisées par un composant : elles documentent ce que le texte du chapitre annonce.
+// Mesures d'antenne, refaites le 13/11/2026 sur 300 essais de test par scène (graines 100000 à 100299 ; scratchpad reservoir-v2/ant.ts) :
+// C_ANTENNE capteurs, essaiAntenne, gisement de la source tiré à chaque essai, fréquences quelconques. Modèles : modeleCours('hasard', bruit, false)
+// (masque un capteur) et modeleCours('hasard', bruit, true) (masque antenne). AUC moyenne sur les niveaux, pour T = 5, 10, 20, 30, 45, 60 s :
+//   bruit indépendant : périodogramme d'un capteur 0,718 0,768 0,822 0,843 0,866 0,884 (moyenne 0,817) ;
+//     moyenne incohérente des 8 capteurs 0,852 0,890 0,923 0,942 0,956 0,966 (0,922) ; masque antenne 0,821 0,862 0,900 0,919 0,938 0,951 (0,898)
+//   interférent (80 % du bruit) : périodogramme d'un capteur 0,720 0,776 0,820 0,840 0,865 0,883 (0,818) ;
+//     moyenne incohérente 0,762 0,811 0,852 0,873 0,895 0,910 (0,851) ; masque antenne 0,859 0,897 0,930 0,947 0,963 0,972 (0,928)
+// Non utilisées par un composant : la figure du bilan (bilan.ts) refait ces mesures sur ses propres essais d'antenne.
 
 export { essai, contraste, auc, tfct };

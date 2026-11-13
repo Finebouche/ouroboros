@@ -1,0 +1,60 @@
+---
+// Chapitre 3, section 3 : la covariance du bruit R_b vue en carte, avant sa formule. Valeurs exactes (antenne.ts, covarianceExacte), aucun tirage.
+// Case (i, i′) = R_b[i, i′] = moyenne de x_i · conj(x_i′) sur du bruit seul. R_b est complexe : chaque case porte une flèche
+// (longueur = module rapporté au plus grand de la carte, direction = phase) sur un fond gris d'autant plus foncé que la partie réelle est grande
+// (partie réelle négative : fond clair, comme zéro). Le fond fait ressortir les bandes ; les flèches portent toute l'information.
+// À gauche : bruit indépendant entre capteurs (R_b = I). À droite : même bruit + interférent 100 × le bruit à 21° (scène par défaut de VoiesWidget) :
+// R_b[i, i′] = δ_ii′ + 100 · exp(iπ sin 21° · (i − i′)) ; la phase avance de π sin 21° ≈ 64,5° par capteur d'écart, d'où des bandes obliques.
+// Couleurs : bruit en gris (--text-2), ce qui vient de l'interférent en rouge (--h-py).
+import { covarianceExacte } from './antenne';
+
+const C = 8, TI = 21, P = 100;
+const cartes = [
+  { titre: 'bruit indépendant', R: covarianceExacte(C, []), col: 'var(--text-2)', bas: ['hors de la diagonale : 0'] },
+  { titre: `avec un interférent à ${TI}°`, R: covarianceExacte(C, [{ theta: TI, p: P }]), col: 'var(--h-py)', bas: ['même écart entre capteurs,', 'même phase'] },
+];
+const pasPhase = (180 * Math.sin((TI * Math.PI) / 180)).toFixed(1).replace('.', ',');
+const n = (v: number) => v.toFixed(1);
+const U = 24, ox = 34, oy = 48, W = ox + C * U + 8, H = oy + C * U + 44;
+
+function carte(R: Float64Array, col: string, titre: string, bas: string[]) {
+  let mx = 0;
+  for (let k = 0; k < C * C; k++) mx = Math.max(mx, Math.hypot(R[2 * k], R[2 * k + 1]));
+  let s = `<text x="${ox}" y="13" class="lt">${titre}</text>`;
+  s += `<text x="${ox + (C * U) / 2}" y="${oy - 21}" text-anchor="middle" class="ls">capteur i′</text>`;
+  s += `<text x="11" y="${oy + (C * U) / 2}" text-anchor="middle" class="ls" transform="rotate(-90 11 ${oy + (C * U) / 2})">capteur i</text>`;
+  for (let j = 0; j < C; j++) {
+    s += `<text x="${ox + (j + 0.5) * U}" y="${oy - 6}" text-anchor="middle" class="ls">${j + 1}</text>`;
+    s += `<text x="${ox - 6}" y="${oy + (j + 0.5) * U + 4}" text-anchor="end" class="ls">${j + 1}</text>`;
+  }
+  for (let i = 0; i < C; i++) for (let j = 0; j < C; j++) {
+    const re = R[2 * (i * C + j)], im = R[2 * (i * C + j) + 1], m = Math.hypot(re, im) / mx;
+    const x = ox + j * U, y = oy + i * U, cx = x + U / 2, cy = y + U / 2;
+    s += `<rect x="${x + 1}" y="${y + 1}" width="${U - 2}" height="${U - 2}" rx="3" fill="var(--text-2)" fill-opacity="${(0.06 + 0.3 * Math.max(0, re / mx)).toFixed(2)}"/>`;
+    if (m < 1e-3) continue;
+    const l = m * (U / 2 - 2.5), ux = re / (m * mx), uy = -im / (m * mx); // phase : sens trigonométrique, y vers le bas en SVG
+    const x0 = cx - ux * l, y0 = cy - uy * l, x2 = cx + ux * l, y2 = cy + uy * l, h = 4.2, bx = x2 - ux * h, by = y2 - uy * h, k = h * 0.5;
+    s += `<line x1="${n(x0)}" y1="${n(y0)}" x2="${n(bx)}" y2="${n(by)}" stroke="${col}" stroke-width="1.5" stroke-linecap="round"/>`;
+    s += `<polygon points="${n(x2)},${n(y2)} ${n(bx - uy * k)},${n(by + ux * k)} ${n(bx + uy * k)},${n(by - ux * k)}" fill="${col}"/>`;
+  }
+  bas.forEach((t, i) => (s += `<text x="${ox + (C * U) / 2}" y="${oy + C * U + 17 + 14 * i}" text-anchor="middle" class="ls">${t}</text>`));
+  return s;
+}
+const svgs = cartes.map((c) => carte(c.R, c.col, c.titre, c.bas));
+---
+<figure class="cobf">
+  <div class="cobf-cols">
+    <svg class="cobf-svg" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Covariance du bruit entre 8 capteurs indépendants : seule la diagonale est non nulle" set:html={svgs[0]} />
+    <svg class="cobf-svg" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Covariance du bruit avec un interférent : toutes les cases sont non nulles et leur phase tourne d'une diagonale à la suivante" set:html={svgs[1]} />
+  </div>
+  <figcaption>Covariance du bruit <b>R</b><sub>b</sub> entre les {C} capteurs (valeurs exactes). Flèche de la case (i, i′) : module (longueur, rapportée à la plus grande case de la carte) et phase (direction) ; fond d'autant plus foncé que la partie réelle est grande. Interférent : {P} × le bruit propre à chaque capteur ; sa phase tourne de {pasPhase}° par capteur d'écart.</figcaption>
+</figure>
+
+<style is:global>
+  .cobf { margin: 1.5rem 0; }
+  .cobf .cobf-cols { display: flex; flex-wrap: wrap; gap: 6px 32px; justify-content: center; }
+  .cobf svg.cobf-svg { flex: 0 1 260px; min-width: 0; max-width: 270px; height: auto; display: block; }
+  .cobf svg.cobf-svg text { font-family: var(--font); }
+  .cobf svg.cobf-svg text.lt { font-size: 11.5px; font-weight: 600; fill: var(--text); }
+  .cobf svg.cobf-svg text.ls { font-size: 11px; fill: var(--text-2); }
+</style>

@@ -1,0 +1,51 @@
+---
+// Chapitre 3, section 1 (la référence) : combien de temps faut-il ? Probabilité de détection du périodogramme moyenné à 5 % de fausses alarmes,
+// en fonction de la durée d'observation T, une petite figure par niveau de raie (NIV_BANC), trames de 4 s (trait plein) et de 1 s (tirets).
+// Valeurs figées BANC_REF (reference.ts) : 1 000 essais, 20 000 raies à des fréquences quelconques et 20 000 témoins par point ; un point par
+// nombre de trames J (T = 4, 6, …, 60 s pour les trames de 4 s ; T = 1, 2, …, 60 s pour celles de 1 s). Tout en gris : c'est la référence.
+import { BANC_REF, NIV_BANC } from './reference';
+const fm = (v: number) => String(v).replace('.', ',').replace('-', '−');
+const W = 176, H = 150, ox = 26, rm = 26, top = 8, bot = 22, pw = W - ox - rm, ph = H - top - bot;
+const X = (T: number) => ox + (T / 60) * pw, Y = (p: number) => top + (1 - p) * ph;
+const n = (v: number) => v.toFixed(1);
+const SEGS = [4, 1];
+const panneaux = NIV_BANC.map((niv, l) => {
+  let s = '';
+  [0, 0.5, 1].forEach((p) => (s += `<line x1="${ox}" y1="${n(Y(p))}" x2="${ox + pw}" y2="${n(Y(p))}" stroke="var(--border)" stroke-dasharray="${p ? '2 4' : ''}"/><text x="${ox - 5}" y="${n(Y(p) + 3.5)}" text-anchor="end" class="ax">${fm(p)}</text>`));
+  [0, 20, 40, 60].forEach((T) => (s += `<line x1="${n(X(T))}" y1="${top + ph}" x2="${n(X(T))}" y2="${top + ph + 3}" stroke="var(--text-2)"/><text x="${n(X(T))}" y="${top + ph + 14}" text-anchor="middle" class="ax">${T}${T === 60 ? ' s' : ''}</text>`));
+  // courbes : trames de 1 s en tirets clairs, puis trames de 4 s en trait plein
+  [...SEGS].reverse().forEach((seg) => {
+    const b = BANC_REF[seg], pts = b.T.map((T, i) => `${n(X(T))},${n(Y(b.pd[l][i]))}`).join(' ');
+    s += seg === 4
+      ? `<polyline points="${pts}" fill="none" stroke="var(--text-2)" stroke-width="2.2" stroke-linejoin="round"/>`
+      : `<polyline points="${pts}" fill="none" stroke="var(--text-2)" stroke-width="1.4" stroke-dasharray="4 3" stroke-opacity="0.7" stroke-linejoin="round"/>`;
+  });
+  // étiquettes directes au bout des courbes, écartées d'au moins 15 px (la plus haute garde sa place)
+  const labs = SEGS.map((seg) => ({ seg, y: Y(BANC_REF[seg].pd[l].at(-1)!) + 4 })).sort((a, b) => a.y - b.y);
+  for (let i = 1; i < labs.length; i++) if (labs[i].y - labs[i - 1].y < 15) labs[i].y = labs[i - 1].y + 15;
+  labs.forEach((a) => (s += `<text x="${ox + pw + 4}" y="${n(a.y)}" class="lb${a.seg === 4 ? ' k' : ' g'}">${a.seg} s</text>`));
+  return { titre: `raie de ${fm(niv)} dB`, s };
+});
+const aria = `Probabilité de détection en fonction de la durée d'observation, pour des raies de ${NIV_BANC.map(fm).join(', ')} dB, avec des trames de 4 s et de 1 s.`;
+---
+<figure class="detf" role="group" aria-label={aria}>
+  <div class="dgrid">
+    {panneaux.map((p) => <div class="dpan"><div class="dt">{p.titre}</div><svg viewBox={`0 0 ${W} ${H}`} data-detf set:html={p.s} /></div>)}
+  </div>
+  <figcaption>Probabilité de détection de la référence à 5 % de fausses alarmes, en fonction de la durée d'observation <i>T</i>, avec des trames de 4 s et de 1 s. Chaque point : 20&nbsp;000 raies à des fréquences quelconques.</figcaption>
+</figure>
+
+<style is:global>
+  .detf { margin: 1.5rem 0; }
+  .detf .dgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px 10px; }
+  .detf .dpan { min-width: 0; }
+  .detf .dt { font-size: 12.5px; font-weight: 600; margin: 0 0 2px 26px; }
+  .detf svg[data-detf] { display: block; width: 100%; height: auto; }
+  .detf svg[data-detf] text.ax { font: 11.5px var(--font); fill: var(--text-2); }
+  .detf svg[data-detf] text.lb { font: 12px var(--font); fill: var(--text); }
+  .detf svg[data-detf] text.lb.g { fill: var(--text-2); }
+  .detf svg[data-detf] text.lb.k { font-weight: 600; }
+  @media (max-width: 640px) {
+    .detf .dgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 10px; }
+  }
+</style>

@@ -1,45 +1,52 @@
 ---
 // Chapitre 3, section 1 (la référence) : périodogramme moyenné (Welch) des T premières secondes d'un essai avec une raie.
 // Un bouton par durée d'observation T et par niveau de raie ; trames de 4 s fixées. États calculés au build (raies.ts, reference.ts).
-// Essai : 60 s de bruit blanc + une raie à F0 = 150,1 Hz, graine 4 (même bruit pour les trois niveaux).
-// Bande grise et seuil des témoins : mesurés sur 24 essais de bruit seul (bruitSeul).
-// Vérifié (scratchpad reference/sim1.ts, sim2.ts, sim6.ts) avec ces réglages :
-//  - bruit seul : moyenne des cases constante (1,00), écart-type relatif 1,00 ; 0,51 ; 0,34 ; 0,27 ; 0,19 pour K = 1, 4, 9, 14, 29 trames (≈ 1,03/√K) ;
-//  - taux de détection à 5 % de fausses alarmes, T = 5, 10, 20, 30, 60 s (800 raies) : +6 dB : 0,92 puis 1 ; −3 dB : 0,17 ; 0,41 ; 0,72 ; 0,84 ; 0,99 ;
-//    −12 dB : 0,06 ; 0,07 ; 0,09 ; 0,10 ; 0,16. Le tirage affiché (graine 4) suit le cas le plus fréquent à chaque réglage.
+// Tirage affiché : 60 s de bruit blanc + une raie à F0 = 150,1 Hz, graine 385 (même bruit pour les quatre niveaux). Graine choisie
+// (scratchpad reference-v2/seed.ts) pour que ce tirage ait l'issue la plus probable dans les 20 états : détectée si et seulement si Pd > 0,5.
+// Axe vertical en dB re puissance moyenne du bruit dans une case (0 dB = moyenne du bruit), fixe pour tous les états (on voit le bruit se resserrer) ;
+// les cases sous le bas de l'axe sont posées sur l'axe et marquées d'un triangle.
+// Seuil de détection tracé = médiane de l'anneau de ce tirage + seuil (dB), seuil = contraste que 5 % des témoins dépassent (BANC_REF) :
+// la raie est détectée si et seulement si le pic de la fenêtre passe au-dessus de ce trait. Pastille : probabilité de détection à ce (T, niveau)
+// sur 20 000 raies (BANC_REF, même seuil). Fluctuation mesurée : BANC_REF (cases de bruit seul de 1 000 essais).
 import katex from 'katex';
-import { essai, contraste } from './raies';
-import { F0, SEG, DUR, welchCumul, bruitSeul, nTrames, dB } from './reference';
+import { essai } from './raies';
+import { F0, SEG, DUR, BANC_REF, NIV_BANC, welchCumul, termesContraste, nTrames, dB } from './reference';
 const tex = (s: string) => katex.renderToString(s, { throwOnError: false });
 const fm = (v: number, d = 2) => v.toFixed(d).replace('.', ',').replace('-', '−');
-const TS = [5, 10, 20, 30, 60], NIV = [6, -3, -12], SEED = 4, SPAN = 5, TIRAGES = 24;
-const B = bruitSeul(TS, SEG, TIRAGES), K = TS.map((T) => nTrames(T));
-let f: number[] = [];
-const etats = NIV.map((niveau) => {
-  const e = essai([{ f0: F0, niveau }], DUR, SEED), W = welchCumul(e.x, SEG, TS, F0 - SPAN, F0 + SPAN);
-  f = Array.from(W.f);
-  return TS.map((_, j) => ({ S: Array.from(W.S[j], (v) => +dB(v).toFixed(2)), c: +contraste(W.f, W.S[j], F0).toFixed(2) }));
+const TS = [5, 10, 20, 30, 60], NIV = NIV_BANC, SEED = 385, SPAN = 5, YMIN = -10;
+const B = BANC_REF[SEG], J = TS.map((T) => nTrames(T)), iB = J.map((j) => B.J.indexOf(j));
+const seuil = iB.map((i) => B.seuil[i]), rel = iB.map((i) => B.rel[i]);
+let f: number[] = [], ymax = 0;
+const etats = NIV.map((niveau, l) => {
+  const e = essai([{ f0: F0, niveau }], DUR, SEED), W = welchCumul(e.x, SEG, TS, F0 - SPAN - 3.2, F0 + SPAN + 3.2);
+  const vis = Array.from(W.f, (_, k) => k).filter((k) => Math.abs(W.f[k] - F0) <= SPAN + 1e-9);
+  f = vis.map((k) => +W.f[k].toFixed(2));
+  return TS.map((_, j) => {
+    const t = termesContraste(W.f, W.S[j], F0), seuilDb = dB(t.ref) + seuil[j], S = vis.map((k) => +dB(W.S[j][k]).toFixed(2));
+    ymax = Math.max(ymax, seuilDb, ...S);
+    return { S, c: +t.c.toFixed(2), pic: +dB(t.pic).toFixed(2), fpic: +t.fpic.toFixed(2), seuil: +seuilDb.toFixed(2), pd: B.pd[l][iB[j]] };
+  });
 });
-const data = { f, f0: F0, span: SPAN, seg: SEG, TS, NIV, K, bruit: B.map((b) => ({ lo: +b.lo.toFixed(2), hi: +b.hi.toFixed(2), rel: +b.rel.toFixed(3), seuil: +b.seuil.toFixed(2) })), etats };
-const eqs = K.map((k) => tex(`\\text{écart-type} \\,/\\, \\text{moyenne} \\approx 1/\\sqrt{K} = 1/\\sqrt{${k}} = ${fm(1 / Math.sqrt(k)).replace(',', '{,}')}`));
+const data = { f, f0: F0, span: SPAN, seg: SEG, TS, NIV, J, seuil, rel, ymin: YMIN, ymax: Math.ceil((ymax + 0.5) / 2) * 2, etats };
+const eqs = J.map((k) => tex(`\\text{écart-type} \\,/\\, \\text{moyenne} \\approx 1/\\sqrt{J} = 1/\\sqrt{${k}} = ${fm(1 / Math.sqrt(k)).replace(',', '{,}')}`));
 ---
 <div class="widget pp intw" data-widget="intw" data-etats={JSON.stringify(data)}>
   <div class="fhead">
     <div class="ftitle"><b>Combien de temps faut-il attendre pour voir la raie ?</b><span data-ref="sub"></span></div>
-    <div class="fstat"><span>contraste <span set:html={tex('c(f_0)')} /> <b data-ref="c"></b></span><span>95 % des témoins sous <b data-ref="seuil"></b></span></div>
+    <div class="fstat"><span>probabilité de détection</span><b data-ref="pd"></b><small>à 5 % de fausses alarmes</small></div>
   </div>
   <div class="ctl">
     <div class="row"><span>Durée <span set:html={tex('T')} /></span><span class="seg" data-ref="T"></span></div>
     <div class="row"><span>Niveau de la raie</span><span class="seg" data-ref="niv"></span></div>
   </div>
-  <svg data-ref="svg" data-intw role="img" aria-label="Périodogramme moyenné autour de la raie, en dB, avec la bande où tombent 90 % des cases de bruit seul"></svg>
+  <svg data-ref="svg" data-intw role="img" aria-label="Périodogramme moyenné autour de la raie, en dB re puissance moyenne du bruit, avec le seuil de détection"></svg>
   <div class="calc"><span>Fluctuation du bruit d'une case à l'autre :</span>{eqs.map((h, j) => <span class="eq" data-eq={j} hidden set:html={h} />)}<span class="ms">mesuré : <b data-ref="rel"></b></span></div>
-  <p class="note">Un essai de {DUR} s : bruit blanc et une raie à {fm(F0, 1)} Hz ; on n'en garde que les <span set:html={tex('T')} /> premières secondes. Trames de {SEG} s (cases de {fm(1 / SEG)} Hz), fenêtre de Hann, recouvrement de 50 %. Niveau de la raie en dB re bruit dans 1 Hz. Bande grise, fluctuation mesurée et seuil des témoins : sur {TIRAGES} essais de bruit seul ; 5 % des fréquences témoins dépassent le seuil.</p>
+  <p class="note">Un tirage : {DUR} s de bruit blanc et une raie à {fm(F0, 1)} Hz, dont on garde les <span set:html={tex('T')} /> premières secondes ; trames de {SEG} s. Seuil : contraste dépassé par 5 % des fréquences témoins. Probabilité : part des raies qui le dépassent (20&nbsp;000 raies).</p>
 </div>
 
 <script>
-  type Etat = { S: number[]; c: number };
-  type Data = { f: number[]; f0: number; span: number; seg: number; TS: number[]; NIV: number[]; K: number[]; bruit: { lo: number; hi: number; rel: number; seuil: number }[]; etats: Etat[][] };
+  type Etat = { S: number[]; c: number; pic: number; fpic: number; seuil: number; pd: number };
+  type Data = { f: number[]; f0: number; span: number; seg: number; TS: number[]; NIV: number[]; J: number[]; seuil: number[]; rel: number[]; ymin: number; ymax: number; etats: Etat[][] };
   document.querySelectorAll<HTMLElement>('[data-widget="intw"]').forEach((root) => {
     const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
     const D = JSON.parse(root.dataset.etats!) as Data;
@@ -47,47 +54,62 @@ const eqs = K.map((k) => tex(`\\text{écart-type} \\,/\\, \\text{moyenne} \\appr
     let iT = 2, iN = 1;
     const mk = (ref: string, labs: string[], set: (i: number) => void) => labs.forEach((t, i) => { const b = document.createElement('button'); b.textContent = t; b.dataset.v = String(i); b.addEventListener('click', () => { set(i); draw(); }); $(ref).appendChild(b); });
     mk('T', D.TS.map((T) => `${T} s`), (i) => (iT = i));
-    mk('niv', D.NIV.map((n) => `${n > 0 ? '+' : '−'}${Math.abs(n)} dB`), (i) => (iN = i));
+    mk('niv', D.NIV.map((n) => (n === 0 ? '0 dB' : `${n > 0 ? '+' : '−'}${Math.abs(n)} dB`)), (i) => (iN = i));
     const svg = $('svg') as unknown as SVGSVGElement;
-    const LO = -22, HI = 14; // axe vertical fixe (dB re niveau moyen du bruit)
 
     function draw() {
       $('T').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.v! === iT));
       $('niv').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.v! === iN));
-      const e = D.etats[iN][iT], bz = D.bruit[iT], K = D.K[iT];
-      $('sub').textContent = `${D.TS[iT]} s : ${K} trame${K > 1 ? 's' : ''} de ${D.seg} s`;
-      $('c').textContent = `${fm(e.c)} dB`;
-      $('seuil').textContent = `${fm(bz.seuil)} dB`;
-      $('rel').textContent = fm(bz.rel, 2);
+      const e = D.etats[iN][iT], J = D.J[iT];
+      $('sub').textContent = `J = ${J} trame${J > 1 ? 's' : ''} de ${D.seg} s`;
+      $('pd').textContent = fm(e.pd, 2);
+      $('rel').textContent = fm(D.rel[iT], 2);
       root.querySelectorAll<HTMLElement>('[data-eq]').forEach((q) => (q.hidden = +q.dataset.eq! !== iT));
 
       const W = Math.max(300, Math.round(svg.getBoundingClientRect().width || 640)), etroit = W < 520;
-      const H = etroit ? 264 : 290, ox = 44, rm = etroit ? 68 : 122, oy = 22, pw = W - ox - rm, ph = H - oy - 36;
-      const X = (f: number) => ox + ((f - D.f0 + D.span) / (2 * D.span)) * pw, Y = (v: number) => oy + (1 - (Math.max(LO, Math.min(HI, v)) - LO) / (HI - LO)) * ph;
+      const H = etroit ? 250 : 270, ox = 44, rm = etroit ? 74 : 124, oy = 22, pw = W - ox - rm, ph = H - oy - 36;
+      const X = (f: number) => ox + ((f - D.f0 + D.span) / (2 * D.span)) * pw, Y = (v: number) => oy + (1 - (Math.max(D.ymin, v) - D.ymin) / (D.ymax - D.ymin)) * ph;
+      const halo = 'paint-order="stroke" stroke="var(--surface)" stroke-width="4" stroke-linejoin="round"';
       let s = '';
-      // bande : 90 % des cases de bruit seul ; trait : niveau moyen du bruit
-      s += `<rect x="${ox}" y="${Y(bz.hi).toFixed(1)}" width="${pw}" height="${(Y(bz.lo) - Y(bz.hi)).toFixed(1)}" class="bd"/>`;
-      [-20, -10, 10].forEach((v) => (s += `<line x1="${ox}" y1="${Y(v)}" x2="${ox + pw}" y2="${Y(v)}" stroke="var(--border)" stroke-dasharray="2 4"/>`));
-      [-20, -10, 0, 10].forEach((v) => (s += `<text x="${ox - 6}" y="${Y(v) + 3.5}" text-anchor="end" class="ax">${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v)} dB</text>`));
-      s += `<line x1="${ox}" y1="${Y(0)}" x2="${ox + pw}" y2="${Y(0)}" stroke="var(--text-2)" stroke-width="1"/>`;
+      // grille et axes (0 dB = puissance moyenne du bruit dans une case)
+      for (let v = D.ymin; v <= D.ymax; v += 5) {
+        if (v !== 0 && v !== D.ymin) s += `<line x1="${ox}" y1="${Y(v)}" x2="${ox + pw}" y2="${Y(v)}" stroke="var(--border)" stroke-dasharray="2 4"/>`;
+        s += `<text x="${ox - 6}" y="${Y(v) + 3.5}" text-anchor="end" class="ax">${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v)} dB</text>`;
+      }
       s += `<line x1="${ox}" y1="${oy + ph}" x2="${ox + pw}" y2="${oy + ph}" stroke="var(--border)"/>`;
+      s += `<line x1="${ox}" y1="${Y(0)}" x2="${ox + pw}" y2="${Y(0)}" stroke="var(--text-2)" stroke-width="1"/>`;
       const f1 = Math.ceil((D.f0 - D.span) / 2) * 2;
       for (let v = f1; v <= D.f0 + D.span; v += 2) s += `<line x1="${X(v).toFixed(1)}" y1="${oy + ph}" x2="${X(v).toFixed(1)}" y2="${oy + ph + 4}" stroke="var(--text-2)"/><text x="${X(v).toFixed(1)}" y="${oy + ph + 16}" text-anchor="middle" class="ax">${v}</text>`;
       s += `<text x="${ox + pw / 2}" y="${H - 3}" text-anchor="middle" class="ax">fréquence (Hz)</text>`;
-      s += `<text x="0" y="12" class="lb s"><tspan font-style="italic">S</tspan>(<tspan font-style="italic">f</tspan>)</text>`;
+      s += `<text x="0" y="12" class="lb g"><tspan font-style="italic">S</tspan>(<tspan font-style="italic">f</tspan>)</text>`;
       // la raie : repère pointillé
       s += `<line x1="${X(D.f0).toFixed(1)}" y1="${oy}" x2="${X(D.f0).toFixed(1)}" y2="${oy + ph}" stroke="var(--text)" stroke-width="1" stroke-dasharray="2 3"/>`;
       s += `<text x="${X(D.f0).toFixed(1)}" y="12" text-anchor="middle" class="lb">raie <tspan font-style="italic">f</tspan><tspan dy="3" font-size="8">0</tspan></text>`;
-      // le spectre
-      s += `<polyline points="${D.f.map((f, k) => `${X(f).toFixed(1)},${Y(e.S[k]).toFixed(1)}`).join(' ')}" fill="none" stroke="var(--p-mel)" stroke-width="2" stroke-linejoin="round"/>`;
-      s += D.f.map((f, k) => `<circle cx="${X(f).toFixed(1)}" cy="${Y(e.S[k]).toFixed(1)}" r="${etroit ? 1.4 : 1.8}" fill="var(--p-mel)"/>`).join('');
+      // le spectre (la référence : gris)
+      s += `<polyline points="${D.f.map((f, k) => `${X(f).toFixed(1)},${Y(e.S[k]).toFixed(1)}`).join(' ')}" fill="none" stroke="var(--text-2)" stroke-width="1.6" stroke-linejoin="round"/>`;
+      s += D.f.map((f, k) => (e.S[k] < D.ymin
+        ? `<path d="M${(X(f) - 3).toFixed(1)},${(oy + ph - 5).toFixed(1)} h6 l-3,5 z" fill="var(--text-2)"/>`
+        : `<circle cx="${X(f).toFixed(1)}" cy="${Y(e.S[k]).toFixed(1)}" r="${etroit ? 1.4 : 1.8}" fill="var(--text-2)"/>`)).join('');
+      // le seuil de détection, ramené sur l'axe
+      s += `<line x1="${ox}" y1="${Y(e.seuil).toFixed(1)}" x2="${ox + pw}" y2="${Y(e.seuil).toFixed(1)}" stroke="var(--text)" stroke-width="1.4"/>`;
+      // le pic de la fenêtre : plein s'il passe le seuil
+      const dessus = e.pic > e.seuil, xp = X(e.fpic), yp = Y(e.pic);
+      s += `<circle cx="${xp.toFixed(1)}" cy="${yp.toFixed(1)}" r="4.6" fill="${dessus ? 'var(--text)' : 'var(--surface)'}" stroke="var(--text)" stroke-width="1.6"/>`;
+      const yl = Math.abs(yp - Y(e.seuil)) < 22 ? (dessus ? yp - 26 : yp + 14) : yp - 3, xl = xp + 9;
+      s += `<text x="${xl.toFixed(1)}" y="${yl.toFixed(1)}" class="lb k" ${halo}><tspan font-style="italic">c</tspan>(<tspan font-style="italic">f</tspan><tspan dy="3" font-size="8">0</tspan><tspan dy="-3">) = ${fm(e.c)} dB</tspan></text>`;
+      s += `<text x="${xl.toFixed(1)}" y="${(yl + 13).toFixed(1)}" class="lb" ${halo}>${dessus ? 'au-dessus du seuil' : 'sous le seuil'}</text>`;
       // étiquettes directes à droite, écartées d'au moins 15 px
-      const xl = ox + pw + 9, lh = 13;
-      const A = etroit ? ['moyenne', 'du bruit'] : ['moyenne du bruit'], Bl = etroit ? ['90 % des', 'cases de', 'bruit seul'] : ['90 % des cases', 'de bruit seul'];
-      const yA = Y(0) + 4 - ((A.length - 1) * lh) / 2, yB = Math.max(Y(bz.lo) + 4, yA + (A.length - 1) * lh + 17);
-      const put = (lines: string[], y: number) => lines.forEach((t, i) => (s += `<text x="${xl}" y="${(y + i * lh).toFixed(1)}" class="lb g">${t}</text>`));
-      put(A, yA); put(Bl, yB);
-      s += `<path d="M${ox + pw + 1},${Y(0)} H${xl - 3} M${ox + pw + 1},${Y(bz.lo).toFixed(1)} L${xl - 3},${(yB - 4).toFixed(1)}" fill="none" stroke="var(--text-2)" stroke-width="1"/>`;
+      const xr = ox + pw + 8, lh = 13;
+      const A = etroit ? ['moyenne', 'du bruit'] : ['moyenne du bruit'];
+      const Sl = etroit ? ['seuil', `médiane`, `+ ${fm(D.seuil[iT])} dB`] : ['seuil de détection', `médiane + ${fm(D.seuil[iT])} dB`];
+      let yS = Y(e.seuil) + 4, yA = Y(0) + 4;
+      const hS = (Sl.length - 1) * lh;
+      if (yA < yS + hS + 15) yA = yS + hS + 15;
+      if (yA + (A.length - 1) * lh > oy + ph + 2) { yA = oy + ph + 2 - (A.length - 1) * lh; yS = Math.min(yS, yA - hS - 15); }
+      Sl.forEach((t, i) => (s += `<text x="${xr}" y="${(yS + i * lh).toFixed(1)}" class="lb${i ? '' : ' k'}">${t}</text>`));
+      A.forEach((t, i) => (s += `<text x="${xr}" y="${(yA + i * lh).toFixed(1)}" class="lb g">${t}</text>`));
+      if (Math.abs(yA - 4 - Y(0)) > 1) s += `<line x1="${ox + pw + 1}" y1="${Y(0)}" x2="${xr - 3}" y2="${(yA - 4).toFixed(1)}" stroke="var(--text-2)" stroke-width="1"/>`;
+      if (Math.abs(yS - 4 - Y(e.seuil)) > 1) s += `<line x1="${ox + pw + 1}" y1="${Y(e.seuil).toFixed(1)}" x2="${xr - 3}" y2="${(yS - 4).toFixed(1)}" stroke="var(--text)" stroke-width="1"/>`;
       svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
       svg.innerHTML = s;
     }
@@ -100,11 +122,11 @@ const eqs = K.map((k) => tex(`\\text{écart-type} \\,/\\, \\text{moyenne} \\appr
   .intw .fhead { line-height: 1.4; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px 12px; flex-wrap: wrap; margin-bottom: 8px; }
   .intw .ftitle b { font-size: 15px; font-weight: 600; margin-right: 10px; }
   .intw .ftitle > span { font-size: 12.5px; color: var(--text-2); white-space: nowrap; }
-  .intw .fstat { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 16px; background: var(--surface-2); border-radius: 8px; padding: 4px 10px; }
-  .intw .fstat > span { font-size: 12px; color: var(--text-2); white-space: nowrap; }
-  .intw .fstat b { font-size: 14px; font-weight: 600; color: var(--text); margin-left: 4px; }
-  .intw .fstat .katex, .intw .ctl .katex, .intw .note .katex { font-size: 1em; }
-  .intw .ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 28px; margin-bottom: 6px; }
+  .intw .fstat { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 6px; background: var(--surface-2); border-radius: 8px; padding: 4px 10px; }
+  .intw .fstat > span, .intw .fstat > small { font-size: 12px; color: var(--text-2); white-space: nowrap; }
+  .intw .fstat b { font-size: 15px; font-weight: 600; color: var(--text); }
+  .intw .ctl .katex, .intw .note .katex { font-size: 1em; }
+  .intw .ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 24px; margin-bottom: 6px; }
   .intw .ctl .row { margin: 0; font-size: 13px; }
   .intw .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
   .intw .seg button { font-size: 13px; padding: 4px 10px; }
@@ -112,9 +134,8 @@ const eqs = K.map((k) => tex(`\\text{écart-type} \\,/\\, \\text{moyenne} \\appr
   .intw svg[data-intw] text.ax { font: 11px var(--font); fill: var(--text-2); }
   .intw svg[data-intw] text.lb { font: 11.5px var(--font); fill: var(--text); }
   .intw svg[data-intw] text.lb.g { fill: var(--text-2); }
-  .intw svg[data-intw] text.lb.s { fill: var(--p-mel); font-weight: 600; }
-  .intw svg[data-intw] rect.bd { fill: color-mix(in srgb, var(--text-2) 20%, transparent); }
-  .intw .calc { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; margin-top: 8px; font-size: 13px; color: var(--text-2); }
+  .intw svg[data-intw] text.lb.k { font-weight: 600; }
+  .intw .calc { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; margin-top: 8px; padding: 6px 10px; border-radius: 8px; background: color-mix(in srgb, var(--text-2) 7%, transparent); font-size: 13px; color: var(--text-2); }
   .intw .calc .eq { color: var(--text); }
   .intw .calc .eq[hidden] { display: none; }
   .intw .calc .katex { font-size: 1.05em; }

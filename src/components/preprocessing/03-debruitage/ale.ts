@@ -1,6 +1,7 @@
 // Chapitre 3 (Preprocessing), section 2 : rehausseur de raies adaptatif (ALE, adaptive line enhancer) en NLMS.
-// Prédicteur x̂(n) = wᵀu(n), u(n) = (x(n−δ−L+1), …, x(n−δ)) ; erreur e(n) = x(n) − x̂(n) ;
-// mise à jour w ← w + μ e(n) u(n) / (‖u(n)‖² + ε), stable pour 0 < μ < 2. Poids nuls à n = 0, traitement causal.
+// Prédiction x̂[n] = Σ_l w_l x[n−δ−l] (l = 0 … L−1) ; erreur e[n] = x[n] − x̂[n] ;
+// mise à jour w_l ← w_l + μ e[n] x[n−δ−l] / (Σ_l x[n−δ−l]² + ε), stable pour 0 < μ < 2. Poids nuls à n = 0, traitement causal.
+// Rangement en mémoire : w[j] multiplie x[n−δ−(L−1−j)], donc w_l = w[L−1−l].
 // Différence avec le projet : mise à jour à chaque échantillon (le projet la fait par blocs de 32 échantillons).
 import { FS, rng, essai, tfct, welch, contraste, auc } from './raies';
 
@@ -40,8 +41,9 @@ export function reponse(w: ArrayLike<number>, delta: number, f: number, fs = FS)
 export const gain = (w: ArrayLike<number>, delta: number, f: number, fs = FS) => Math.hypot(...reponse(w, delta, f, fs));
 
 // Gain du filtre optimal (Wiener) à f0 pour une raie de puissance P dans un bruit blanc de variance σ² :
-// a / (1 + a), avec a = (L/2) P/σ² (valable quand la raie fait beaucoup de périodes dans les L échantillons).
-export const gainWiener = (L: number, snr: number) => { const a = (L / 2) * snr; return a / (1 + a); };
+// q / (1 + q), avec q = (L/2) P/σ² (valable quand la raie fait beaucoup de périodes dans les L échantillons).
+// Ses poids sont une sinusoïde : w_l = (2/L) · q/(1+q) · cos(2π f0 (δ + l) / fs).
+export const gainWiener = (L: number, snr: number) => { const q = (L / 2) * snr; return q / (1 + q); };
 
 // ---------------------------------------------------------------- états du widget AleWidget
 // Réglages fixés du widget : retard, pas (à chaque échantillon), longueurs proposées.
@@ -50,35 +52,71 @@ export const ALE_DELTA = 16, ALE_MU = 0.05, ALE_LS = [128, 512, 2048];
 const dB = (v: number) => 10 * Math.log10(v);
 const mediane = (v: number[]) => { const s = [...v].sort((a, b) => a - b), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 
-export type EtatAle = { S: number[]; c: number; g0: number; gl: number };
-export type EtatsAle = { f: number[]; x: { S: number[]; c: number }[]; y: EtatAle[][] };
+// Les deux termes du contraste de raies.ts (réglages par défaut : fenêtre ±0,3 Hz, garde 0,25 Hz, anneau jusqu'à 3 Hz) :
+// pic = maximum de S dans la fenêtre, ref = médiane de l'anneau ; c = 10 log10(pic / ref) = contraste(f, S, f0).
+function termes(f: ArrayLike<number>, S: ArrayLike<number>, f0: number, hw = 0.3, garde = 0.25, outer = 3) {
+  let pic = -Infinity;
+  const ring: number[] = [];
+  for (let k = 0; k < f.length; k++) {
+    const d = Math.abs(f[k] - f0);
+    if (d <= hw) pic = Math.max(pic, S[k]);
+    else if (d >= hw + garde && d <= outer) ring.push(S[k]);
+  }
+  return { pic, ref: mediane(ring) };
+}
+
+// Un état = un spectre de détection autour de la raie (dB re niveau moyen du bruit) ; c = contraste à f0 (dB) ;
+// ref = médiane de l'anneau (dB, même échelle que S) : le pic doit dépasser ref + seuil pour que la raie soit détectée.
+export type EtatAle = { S: number[]; c: number; ref: number };
+export type EtatsAle = { f: number[]; x: EtatAle[]; y: EtatAle[][] };
 
 // Pour chaque niveau : un essai (une raie à f0, même bruit pour tous les niveaux), le périodogramme moyenné de x sur toute la durée,
-// et pour chaque longueur L celui de la sortie x̂ du rehausseur. S en dB re niveau moyen du bruit, cases de f0 − span à f0 + span.
-// c = contraste à f0 ; g0 = rapport sortie/entrée (dB) dans la case la plus proche de f0 ;
-// gl = médiane de ce rapport (dB) sur les cases de 20 à 490 Hz à plus de max(3 Hz, 2 fs/L) de f0.
+// et pour chaque longueur L celui de la sortie x̂ du rehausseur. Cases de f0 − span à f0 + span.
 const memo = new Map<string, EtatsAle>();
 export function etatsAle(niveaux: number[], f0: number, seg: number, dur: number, seed: number, span: number): EtatsAle {
   const key = [niveaux.join(), f0, seg, dur, seed, span].join('|');
   if (memo.has(key)) return memo.get(key)!;
   let f: number[] = [];
-  const x: EtatsAle['x'] = [], y: EtatAle[][] = [];
+  const x: EtatAle[] = [], y: EtatAle[][] = [];
+  const etat = (W: { f: Float64Array; S: Float64Array }, sel: number[]): EtatAle => {
+    const t = termes(W.f, W.S, f0);
+    return { S: sel.map((k) => +dB(W.S[k]).toFixed(2)), c: contraste(W.f, W.S, f0), ref: dB(t.ref) };
+  };
   for (const niveau of niveaux) {
     const e = essai([{ f0, niveau }], dur, seed), Wx = welch(e.x, seg, dur, 20, 490);
     const sel = Array.from(Wx.f, (_, k) => k).filter((k) => Math.abs(Wx.f[k] - f0) <= span + 1e-9);
-    let k0 = 0;
-    for (let k = 1; k < Wx.f.length; k++) if (Math.abs(Wx.f[k] - f0) < Math.abs(Wx.f[k0] - f0)) k0 = k;
     f = sel.map((k) => Wx.f[k]);
-    x.push({ S: sel.map((k) => +dB(Wx.S[k]).toFixed(2)), c: contraste(Wx.f, Wx.S, f0) });
-    y.push(ALE_LS.map((L) => {
-      const Wy = welch(ale(e.x, L, ALE_DELTA, ALE_MU).y, seg, dur, 20, 490), excl = Math.max(3, (2 * FS) / L);
-      const loin = Array.from(Wy.f, (_, k) => k).filter((k) => Math.abs(Wy.f[k] - f0) > excl).map((k) => dB(Wy.S[k] / Wx.S[k]));
-      return { S: sel.map((k) => +dB(Wy.S[k]).toFixed(2)), c: contraste(Wy.f, Wy.S, f0), g0: dB(Wy.S[k0] / Wx.S[k0]), gl: mediane(loin) };
-    }));
+    x.push(etat(Wx, sel));
+    y.push(ALE_LS.map((L) => etat(welch(ale(e.x, L, ALE_DELTA, ALE_MU).y, seg, dur, 20, 490), sel)));
   }
   const out = { f, x, y };
   memo.set(key, out);
   return out;
+}
+
+// ---------------------------------------------------------------- figure AleFiltreFigure : ce que le filtre a appris
+// Un essai d'une raie forte, le rehausseur jusqu'au bout ; renvoie les poids w_l (l = 0 … L−1, poids de x[n−δ−l]),
+// ceux du filtre optimal (sinusoïde à f0), la corrélation entre les deux, et le gain |H(f)| de 0 à fs/2 (pas df).
+// H(f) = Σ_l w_l exp(−i 2π f (δ + l) / fs) : x̂ = H·x à la fréquence f tant que les poids ne bougent plus.
+export function filtreAppris(L: number, delta: number, mu: number, niveau: number, f0: number, dur: number, seed: number, df = 0.25) {
+  const e = essai([{ f0, niveau }], dur, seed), r = ale(e.x, L, delta, mu);
+  const wl = Array.from({ length: L }, (_, l) => r.w[L - 1 - l]);
+  const P = 10 ** (niveau / 10) / (FS / 2), q = (L / 2) * P, g = q / (1 + q), plancher = Math.sqrt(mu / (2 - mu));
+  const opt = (l: number) => ((2 * g) / L) * Math.cos((2 * Math.PI * f0 * (delta + l)) / FS);
+  const wo = wl.map((_, l) => opt(l));
+  const m = (v: number[]) => v.reduce((a, b) => a + b, 0) / v.length, ma = m(wl), mb = m(wo);
+  let sab = 0, saa = 0, sbb = 0;
+  wl.forEach((v, l) => { sab += (v - ma) * (wo[l] - mb); saa += (v - ma) ** 2; sbb += (wo[l] - mb) ** 2; });
+  const fr: number[] = [], G: number[] = [];
+  for (let k = 0; k * df <= FS / 2 + 1e-9; k++) { fr.push(k * df); G.push(gain(r.w, delta, k * df)); }
+  const g0 = gain(r.w, delta, f0);
+  // largeur du pic à mi-puissance (gain > g0/√2), mesurée par pas de 0,01 Hz
+  let up = 0, dn = 0;
+  while (gain(r.w, delta, f0 + up) > g0 / Math.SQRT2) up += 0.01;
+  while (gain(r.w, delta, f0 - dn) > g0 / Math.SQRT2) dn += 0.01;
+  // plancher mesuré : moyenne quadratique du gain à plus de 4 fs/L de f0 (au-delà des premiers lobes secondaires)
+  const loin = G.filter((_, k) => Math.abs(fr[k] - f0) > (4 * FS) / L && fr[k] > 0);
+  return { wl, wo, corr: sab / Math.sqrt(saa * sbb), q, g, g0, plancher, plancherMesure: Math.sqrt(m(loin.map((v) => v * v))), largeur: up + dn, f: fr, G };
 }
 
 // ---------------------------------------------------------------- banc : le rehausseur détecte-t-il mieux que le périodogramme seul ?
@@ -115,7 +153,9 @@ export function bancAle(niveau: number, L: number, delta: number, mu: number, N:
 }
 
 // Résultats de bancAle(niveau, L, ALE_DELTA, ALE_MU, BANC_N) pour les états du widget (clé « niveau|L »), calculés hors ligne
-// (trop long pour le build : environ 1 à 75 s par ligne). À recalculer si raies.ts, ale() ou les réglages changent.
+// (trop long pour le build : environ 1 à 75 s par ligne). À recalculer si raies.ts, ale() ou les réglages changent :
+// pour chaque L, bancAle(niveau, L, ALE_DELTA, ALE_MU, 200) pour niveau = 6, −3, −12 (script : node banc.mjs L 6,-3,-12 200,
+// banc.ts = boucle sur les niveaux et JSON.stringify des lignes). Dernier recalcul : 13 novembre 2026, valeurs identiques.
 export const BANC_N = 200;
 export const BANC_ALE: Record<string, LigneBanc[]> = {
   '6|128': [{ T: 10, aucX: 1.000, aucY: 0.999, seuilX: 4.17, seuilY: 5.15, detX: 1.000, detY: 1.000 }, { T: 30, aucX: 1.000, aucY: 1.000, seuilX: 2.36, seuilY: 3.13, detX: 1.000, detY: 1.000 }, { T: 60, aucX: 1.000, aucY: 1.000, seuilX: 1.66, seuilY: 2.23, detX: 1.000, detY: 1.000 }],
