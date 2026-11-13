@@ -5,7 +5,7 @@ Site personnel de cours visuels. Il héberge plusieurs cours :
 | Cours | Dossier | Unité | Contenu |
 |---|---|---|---|
 | Post-Transformer | `post-transformer` | Chapitre | le transformer et ses successeurs récurrents : récurrence en profondeur, dans le temps, leur couplage (projet de recherche Ouroboros) |
-| Preprocessing | `preprocessing` | Chapitre | prétraitement des données ; chapitre 1 : MFCC ; chapitre 2 : mémoire de Legendre (LMU) |
+| Preprocessing | `preprocessing` | Chapitre | prétraitement des données ; chapitre 1 : MFCC ; chapitre 2 : mémoire de Legendre (LMU) ; chapitre 3 : débruiter pour détecter une raie (périodogramme moyenné, rehausseur de raies adaptatif, traitement d'antenne adaptatif, masques appris par réservoir) |
 | HPC | `hpc` | Chapitre | calcul haute performance : matériel et roofline ; JAX de Python à l'appareil (exécution, compilation, transformations, sharding, étude de cas `run_batched`) ; moindres carrés (Cholesky, QR, SVD, LSQR) |
 | RL | `rl` | Chapitre | apprentissage par renforcement : mécanismes mathématiques (Bellman), familles d'algorithmes (méthodes de valeur, gradient de politique, stratégies d'évolution, méthodes avec modèle), benchmarks (POPGym, LunarLander) |
 | Reservoir computing | `rc` | Chapitre | réseaux récurrents aléatoires dont seule la lecture est entraînée : principe (ESN), règles d'apprentissage de la lecture (ridge, RLS, LMS, NLMS, EH, ordre 2), propriété d'écho, mémoire, bord du chaos, expressivité, liquid state machines, réservoirs physiques et neuromorphiques, conceptors |
@@ -34,6 +34,7 @@ src/
     preprocessing/
       01-mfcc/                 widgets du chapitre MFCC
       02-legendre/             widgets du chapitre mémoire de Legendre (+ lmu.ts : matrices A, B, discrétisation, reconstruction)
+      03-debruitage/           widgets du chapitre débruitage (+ raies.ts : essais synthétiques, TFCT, périodogramme moyenné, contraste, AUC ; un .ts par méthode)
     hpc/                       Legend (code couleur : opération limitée par le calcul ou la mémoire, surcoût hachuré), JaxSidebar (parties du chapitre 2), hw.ts (matériel de référence), widgets par chapitre
     rc/                        esn.ts (réservoir, ridge, NRMSE partagés), widgets par chapitre
     robotique/                 widgets du chapitre unique (01-vue-densemble/ et un dossier par famille d'origine, 01-robot-cao/ … 07-corps-complet/)

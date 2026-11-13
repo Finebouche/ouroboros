@@ -1,0 +1,95 @@
+---
+// Chapitre 3, section 2 : schéma du rehausseur de raies adaptatif (ALE). Figure statique, deux panneaux.
+// 1. Le mécanisme : x(n) → retard δ → filtre de L poids w → x̂(n) (sortie) ; e(n) = x(n) − x̂(n) revient régler les poids.
+//    Brun : ce qui est appris (les poids) et la sortie ; gris : le reste.
+// 2. Pourquoi le retard : ressemblance (autocorrélation normalisée) entre un signal et sa copie retardée, en fonction du retard.
+//    Courbes exactes : bruit blanc lissé sur M échantillons (triangle 1 − retard/M, nul au-delà de M) ; raie de période P (cosinus).
+// Vérifié (scratchpad ale/sim5.ts), bruit lissé sur 6 échantillons + rehausseur L = 128, μ = 0,01 : la sortie garde 65 % de la puissance
+// de l'entrée avec δ = 1 (le filtre prédit le bruit), 27 % avec δ = 3, 2 % avec δ ≥ 6 (il ne reste que le bruit des poids).
+import katex from 'katex';
+const tex = (s: string) => katex.renderToString(s, { throwOnError: false });
+const M = 6, P = 8, DELTA = 16, LAGS = 40;
+const it = (s: string) => `<tspan font-style="italic">${s}</tspan>`;
+const xn = `${it('x')}(${it('n')})`, xh = `${it('x̂')}(${it('n')})`, en = `${it('e')}(${it('n')})`;
+// pointe de flèche (triangle plein) dont le sommet est en (x, y)
+const ah = (x: number, y: number, dir: 'r' | 'd', cls: string) => dir === 'r'
+  ? `<path d="M${x},${y} l-7,-3.6 v7.2 z" class="${cls}"/>` : `<path d="M${x},${y} l-3.6,-7 h7.2 z" class="${cls}"/>`;
+
+// --- 1. le mécanisme ---
+const W1 = 400, H1 = 176, yT = 14, yF = 64, yD = 140, xs = 306, xr = 392;
+let p1 = '';
+p1 += `<text x="2" y="${yD + 4}" class="lb">${xn}</text>`;
+p1 += `<path d="M32,${yD} H${xs - 17}" class="g"/>` + ah(xs - 10, yD, 'r', 'gf');
+p1 += `<path d="M48,${yD} V${yF} H55" class="g"/>` + ah(62, yF, 'r', 'gf') + `<circle cx="48" cy="${yD}" r="2.6" class="gf"/>`;
+p1 += `<rect x="62" y="${yF - 18}" width="74" height="36" rx="6" class="bx"/><text x="99" y="${yF + 4}" text-anchor="middle" class="lb">retard ${it('δ')}</text>`;
+p1 += `<path d="M136,${yF} H153" class="g"/>` + ah(160, yF, 'r', 'gf');
+p1 += `<rect x="160" y="${yF - 18}" width="112" height="36" rx="6" class="bx m"/>`;
+p1 += `<text x="216" y="${yF - 3}" text-anchor="middle" class="lb g">filtre</text><text x="216" y="${yF + 11}" text-anchor="middle" class="lb m">${it('L')} poids <tspan font-weight="700">w</tspan></text>`;
+p1 += `<path d="M272,${yF} H325" class="m"/>` + ah(332, yF, 'r', 'mf') + `<circle cx="${xs}" cy="${yF}" r="2.6" class="mf"/>`;
+p1 += `<text x="337" y="${yF + 4}" class="lb m">${xh}</text><text x="337" y="${yF + 18}" class="lb m s">sortie</text>`;
+p1 += `<path d="M${xs},${yF} V${yD - 17}" class="m"/>` + ah(xs, yD - 10, 'd', 'mf');
+p1 += `<text x="${xs - 9}" y="${yD - 14}" text-anchor="end" class="sg">−</text>`;
+p1 += `<circle cx="${xs}" cy="${yD}" r="10" class="bx"/><path d="M${xs - 5},${yD} h10 M${xs},${yD - 5} v10" class="g"/>`;
+p1 += `<path d="M${xs + 10},${yD} H${xr}" class="g"/><path d="M${xr},${yD} V${yT} H216 V${yF - 25}" class="g d"/>` + ah(216, yF - 18, 'd', 'gf');
+p1 += `<text x="${(xs + 10 + xr) / 2}" y="${yD - 7}" text-anchor="middle" class="lb">${en}</text><text x="${(xs + 10 + xr) / 2}" y="${yD + 15}" text-anchor="middle" class="lb g">erreur</text>`;
+p1 += `<text x="${(216 + xr) / 2}" y="${yT + 14}" text-anchor="middle" class="lb g">règle les poids (NLMS)</text>`;
+
+// --- 2. pourquoi le retard ---
+const W2 = 300, H2 = 184, ox = 30, pw = 258, yb1 = 22, yb0 = 58, yr0 = 112, ur = 28, yax = 148;
+const X = (lag: number) => ox + (lag / LAGS) * pw;
+const bruit = (lag: number) => Math.max(0, 1 - lag / M), raie = (lag: number) => Math.cos((2 * Math.PI * lag) / P);
+let p2 = '';
+p2 += `<path d="M${ox},${yb0} H${ox + pw} M${ox},${yr0} H${ox + pw}" class="ax0"/><path d="M${ox},${yax} H${ox + pw}" class="axl"/>`;
+p2 += [['1', yb1], ['0', yb0], ['1', yr0 - ur], ['0', yr0], ['−1', yr0 + ur]].map(([t, y]) => `<text x="${ox - 5}" y="${+y + 3.5}" text-anchor="end" class="ax">${t}</text>`).join('');
+p2 += [0, 10, 20, 30, 40].map((l) => `<path d="M${X(l).toFixed(1)},${yax} v4" class="g t"/><text x="${X(l).toFixed(1)}" y="${yax + 15}" text-anchor="middle" class="ax">${l}</text>`).join('');
+p2 += `<text x="${ox + pw / 2}" y="${H2 - 3}" text-anchor="middle" class="ax">retard (échantillons)</text>`;
+p2 += `<path d="M${X(DELTA).toFixed(1)},12 V${yax}" class="g d t"/><text x="${X(DELTA).toFixed(1)}" y="${yax + 15}" text-anchor="middle" class="lb k">${it('δ')}</text>`;
+p2 += `<polyline points="${[0, M, LAGS].map((l) => `${X(l).toFixed(1)},${(yb0 - bruit(l) * (yb0 - yb1)).toFixed(1)}`).join(' ')}" class="cb"/>`;
+p2 += `<polyline points="${Array.from({ length: LAGS * 8 + 1 }, (_, i) => `${X(i / 8).toFixed(1)},${(yr0 - raie(i / 8) * ur).toFixed(1)}`).join(' ')}" class="cr"/>`;
+p2 += `<circle cx="${X(DELTA).toFixed(1)}" cy="${yb0}" r="3.6" class="gf"/><circle cx="${X(DELTA).toFixed(1)}" cy="${(yr0 - raie(DELTA) * ur).toFixed(1)}" r="3.6" class="kf"/>`;
+p2 += `<text x="${ox + pw}" y="${yb1 + 10}" text-anchor="end" class="lb g"><tspan font-weight="600">bruit</tspan> : plus rien à prédire</text>`;
+p2 += `<text x="${ox + pw}" y="${yr0 - ur - 9}" text-anchor="end" class="lb"><tspan font-weight="600">raie</tspan> : toujours prévisible</text>`;
+const aria = 'Rehausseur de raies adaptatif : le signal retardé passe dans un filtre de L poids qui prédit le signal ; l\'erreur de prédiction règle les poids. À droite : après le retard, le bruit ne ressemble plus à lui-même, la raie si.';
+---
+<figure class="alesc" role="group" aria-label={aria}>
+  <div class="gr">
+    <div class="pan a"><div class="pt">prédire <span set:html={tex('x(n)')} /> à partir de son passé</div><svg viewBox={`0 0 ${W1} ${H1}`} data-alesc set:html={p1} /></div>
+    <div class="pan b"><div class="pt">ressemblance entre <span set:html={tex('x(n)')} /> et <span set:html={tex('x(n-\\delta)')} /></div><svg viewBox={`0 0 ${W2} ${H2}`} data-alesc set:html={p2} /></div>
+  </div>
+  <figcaption>Brun : ce qui est appris et la sortie. Ressemblance : autocorrélation, divisée par sa valeur au retard nul. Bruit dessiné : bruit blanc lissé sur {M} échantillons ; raie dessinée : période de {P} échantillons ; <span set:html={tex(`\\delta = ${DELTA}`)} />. Pour un bruit blanc, la ressemblance est nulle dès un échantillon de retard.</figcaption>
+</figure>
+
+<style is:global>
+  .alesc { margin: 1.5rem 0; }
+  .alesc .gr { display: grid; grid-template-columns: 400fr 300fr; gap: 8px 28px; align-items: start; }
+  .alesc .pan { min-width: 0; }
+  .alesc .pt { font-size: 12.5px; font-weight: 600; line-height: 1.3; margin-bottom: 6px; }
+  .alesc .pt .katex, .alesc figcaption .katex { font-size: 1em; }
+  .alesc svg[data-alesc] { display: block; width: 100%; height: auto; }
+  .alesc svg[data-alesc] text.lb { font: 11.5px var(--font); fill: var(--text); }
+  .alesc svg[data-alesc] text.lb.g { fill: var(--text-2); }
+  .alesc svg[data-alesc] text.lb.k { font-weight: 600; font-size: 12.5px; }
+  .alesc svg[data-alesc] text.lb.m { fill: var(--p-mel); font-weight: 600; }
+  .alesc svg[data-alesc] text.lb.m.s { font-weight: 400; }
+  .alesc svg[data-alesc] text.sg { font: 600 14px var(--font); fill: var(--text); }
+  .alesc svg[data-alesc] text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .alesc svg[data-alesc] path.g { fill: none; stroke: var(--text-2); stroke-width: 1.4; stroke-linejoin: round; }
+  .alesc svg[data-alesc] path.g.d { stroke-dasharray: 4 3; }
+  .alesc svg[data-alesc] path.g.t { stroke-width: 1; }
+  .alesc svg[data-alesc] path.g.d.t { stroke-dasharray: 2 3; }
+  .alesc svg[data-alesc] path.m { fill: none; stroke: var(--p-mel); stroke-width: 2; }
+  .alesc svg[data-alesc] .gf { fill: var(--text-2); }
+  .alesc svg[data-alesc] .mf { fill: var(--p-mel); }
+  .alesc svg[data-alesc] .kf { fill: var(--text); }
+  .alesc svg[data-alesc] .bx { fill: var(--surface); stroke: var(--text-2); stroke-width: 1.4; }
+  .alesc svg[data-alesc] .bx.m { fill: color-mix(in srgb, var(--p-mel) 14%, var(--surface)); stroke: var(--p-mel); stroke-width: 1.8; }
+  .alesc svg[data-alesc] path.ax0 { fill: none; stroke: var(--border); stroke-dasharray: 2 4; }
+  .alesc svg[data-alesc] path.axl { fill: none; stroke: var(--border); }
+  .alesc svg[data-alesc] polyline.cb { fill: none; stroke: var(--text-2); stroke-width: 2; stroke-linejoin: round; }
+  .alesc svg[data-alesc] polyline.cr { fill: none; stroke: var(--text); stroke-width: 1.3; stroke-linejoin: round; }
+  @media (max-width: 640px) {
+    .alesc .gr { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+    .alesc .pan.a { max-width: 400px; }
+    .alesc .pan.b { max-width: 320px; }
+  }
+</style>

@@ -1,0 +1,128 @@
+---
+// Chapitre 3, section 3 : le vecteur de pointage par l'exemple. Antenne linéaire de 8 capteurs espacés d'une demi-longueur d'onde,
+// onde plane venue du gisement θ avec sin θ = 1/4 : la phase de la raie avance de 45° d'un capteur au suivant.
+// À gauche : la scène, puis les phaseurs capteur par capteur. À droite : les mêmes phaseurs mis bout à bout (leur somme), à la même échelle.
+// Raie en --text, bruit en --text-2, somme (ce que produit la voie) en --p-mel. Le bruit est un tirage (graine fixe), pas un résultat choisi :
+// le cercle donne la longueur quadratique moyenne √C.
+import { pointage, bruitComplexe } from './antenne';
+import { rng } from './raies';
+
+const C = 8, SIN = 0.25, TH = Math.asin(SIN), THdeg = (TH * 180) / Math.PI;
+const a = pointage(C, THdeg); // phases reçues : a_c · √C
+const recu = Array.from({ length: C }, (_, c) => [a[2 * c] * Math.sqrt(C), a[2 * c + 1] * Math.sqrt(C)]);
+const aligne = Array.from({ length: C }, () => [1, 0]);
+const z = bruitComplexe(rng(205), C); // bruit de même puissance moyenne que la raie sur chaque capteur
+const bruit = Array.from({ length: C }, (_, c) => [z[2 * c], z[2 * c + 1]]);
+const somme = (v: number[][]) => v.reduce((s, p) => [s[0] + p[0], s[1] + p[1]], [0, 0]);
+const lenBruit = Math.hypot(...somme(bruit));
+const fr = (v: number, d = 1) => v.toFixed(d).replace('.', ',');
+const gainDb = fr(10 * Math.log10(C));
+
+const n = (v: number) => v.toFixed(1);
+// flèche : trait + pointe pleine
+function fleche(x1: number, y1: number, x2: number, y2: number, col: string, w: number, head = 5) {
+  const dx = x2 - x1, dy = y2 - y1, l = Math.hypot(dx, dy);
+  if (l < 0.5) return '';
+  const ux = dx / l, uy = dy / l, h = Math.min(head, l * 0.6), bx = x2 - ux * h, by = y2 - uy * h, k = h * 0.45;
+  return `<line x1="${n(x1)}" y1="${n(y1)}" x2="${n(bx)}" y2="${n(by)}" stroke="${col}" stroke-width="${w}" stroke-linecap="round"/>` +
+    `<polygon points="${n(x2)},${n(y2)} ${n(bx - uy * k)},${n(by + ux * k)} ${n(bx + uy * k)},${n(by - ux * k)}" fill="${col}"/>`;
+}
+const RAIE = 'var(--text)', BRUIT = 'var(--text-2)', SORTIE = 'var(--p-mel)';
+
+// ---------------------------------------------------------------- à gauche : scène et phaseurs par capteur
+const W1 = 340, H1 = 348, x0 = 37, dx = 38, ys = 150, xc = (c: number) => x0 + c * dx, xm = (xc(0) + xc(C - 1)) / 2;
+const tan = Math.tan(TH), cos = Math.cos(TH);
+let g1 = '';
+// fronts d'onde : crêtes (plein) et creux (pointillé), espacés d'une demi-longueur d'onde = un pas entre capteurs
+for (let k = 0; k < 4; k++) {
+  const yAt = (x: number) => ys - (k * dx) / cos + (x - xc(C - 1)) * tan;
+  const xa = Math.max(14, xc(C - 1) + (8 - (ys - (k * dx) / cos)) / tan), xb = k === 0 ? xc(C - 1) : 326;
+  if (xa < xb) g1 += `<line x1="${n(xa)}" y1="${n(yAt(xa))}" x2="${n(xb)}" y2="${n(yAt(xb))}" stroke="${BRUIT}" stroke-width="${k % 2 ? 0.9 : 1.3}" ${k % 2 ? 'stroke-dasharray="3 4" opacity="0.6"' : 'opacity="0.85"'}/>`;
+}
+{
+  const lx = 66, ly = ys - (2 * dx) / cos + (lx - xc(C - 1)) * tan + 13;
+  g1 += `<text x="${lx}" y="${n(ly)}" class="ls" transform="rotate(${n(THdeg)} ${lx} ${n(ly)})">fronts d'onde</text>`;
+}
+// perpendiculaire à l'antenne, direction de la raie, angle θ
+g1 += `<line x1="${xm}" y1="${ys}" x2="${xm}" y2="14" stroke="${BRUIT}" stroke-width="0.9" stroke-dasharray="1 4"/>`;
+g1 += `<line x1="${xm}" y1="${ys}" x2="${n(xm + 140 * SIN)}" y2="${n(ys - 140 * cos)}" stroke="${RAIE}" stroke-width="1" stroke-dasharray="4 3"/>`;
+g1 += `<path d="M ${xm} ${ys - 96} A 96 96 0 0 1 ${n(xm + 96 * SIN)} ${n(ys - 96 * cos)}" fill="none" stroke="${RAIE}" stroke-width="1"/>`;
+g1 += `<text x="${n(xm + 108 * Math.sin(TH / 2) - 1)}" y="${n(ys - 108 * Math.cos(TH / 2) + 4)}" class="lt" text-anchor="middle">θ</text>`;
+g1 += `<text x="${n(xm + 140 * SIN + 6)}" y="${n(ys - 140 * cos + 9)}" class="ls" style="fill:${RAIE}">vers la source</text>`;
+// chemin restant quand le front touche le dernier capteur : le retard
+for (let c = 0; c < C - 1; c++) {
+  const l = (xc(C - 1) - xc(c)) * SIN;
+  g1 += fleche(xc(c) + l * SIN, ys - l * cos, xc(c), ys - 3.5, RAIE, 1.3, 4.5);
+}
+{
+  const lx = 16, ly = ys + (lx - xc(C - 1)) * tan - 7;
+  g1 += `<text x="${lx}" y="${n(ly)}" class="ls" style="fill:${RAIE}" transform="rotate(${n(THdeg)} ${lx} ${n(ly)})">retard τ<tspan dy="3" font-size="8.5">c</tspan></text>`;
+}
+for (let c = 0; c < C; c++) g1 += `<circle cx="${xc(c)}" cy="${ys}" r="3.6" fill="${BRUIT}"/><text x="${xc(c)}" y="${ys + 16}" text-anchor="middle" class="ls">${c + 1}</text>`;
+// trois rangées de phaseurs
+const R = 13;
+function rangee(y: number, titre: string, v: number[][], col: string, w: number) {
+  let s = `<text x="14" y="${y - 21}" class="lt">${titre}</text>`;
+  v.forEach(([re, im], c) => {
+    s += `<circle cx="${xc(c)}" cy="${y}" r="${R}" fill="none" stroke="var(--border)"/>`;
+    s += fleche(xc(c), y, xc(c) + re * R, y - im * R, col, w, 4.5);
+  });
+  return s;
+}
+g1 += rangee(208, 'raie reçue : phase −2π f τ<tspan dy="3" font-size="8.5">c</tspan>', recu, RAIE, 1.7);
+g1 += rangee(264, 'raie, phases compensées', aligne, RAIE, 1.7);
+g1 += rangee(322, 'bruit, phases compensées : toujours en désordre', bruit, BRUIT, 1.4);
+
+// ---------------------------------------------------------------- à droite : les sommes, bout à bout, même échelle
+const W2 = 340, H2 = 348, U = 24;
+function chaine(v: number[][], ox: number, oy: number, col: string, w: number) {
+  let s = '', x = ox, y = oy;
+  for (const [re, im] of v) { const x2 = x + re * U, y2 = y - im * U; s += fleche(x, y, x2, y2, col, w, 5); x = x2; y = y2; }
+  return { s, x, y };
+}
+let g2 = '';
+// 1. raie sans compenser : les phaseurs se referment
+g2 += `<text x="14" y="14" class="lt">raie, sans compenser</text>`;
+{
+  const pts = recu.reduce((p, [re, im]) => [...p, [p[p.length - 1][0] + re, p[p.length - 1][1] - im]], [[0, 0]]);
+  const mx = (Math.min(...pts.map((p) => p[0])) + Math.max(...pts.map((p) => p[0]))) / 2, my = (Math.min(...pts.map((p) => p[1])) + Math.max(...pts.map((p) => p[1]))) / 2;
+  const ch = chaine(recu, 62 - mx * U, 62 - my * U, RAIE, 1.7);
+  g2 += ch.s + `<circle cx="${n(ch.x)}" cy="${n(ch.y)}" r="3.2" fill="${SORTIE}"/>`;
+  g2 += `<text x="120" y="58" class="ls">les 8 phaseurs se referment</text><text x="120" y="74" class="lb" style="fill:${SORTIE}">somme : 0</text>`;
+}
+// 2. raie compensée : bout à bout
+g2 += `<text x="14" y="126" class="lt">raie, phases compensées</text>`;
+{
+  const ch = chaine(aligne, 16, 144, RAIE, 1.7);
+  g2 += ch.s + fleche(16, 156, ch.x, 156, SORTIE, 3, 7);
+  g2 += `<text x="${n(ch.x + 8)}" y="160" class="lb" style="fill:${SORTIE}">somme : C = ${C}</text>`;
+}
+// 3. bruit compensé : marche au hasard
+g2 += `<text x="14" y="194" class="lt">bruit, phases compensées</text>`;
+{
+  const ox = 204, oy = 272, rc = Math.sqrt(C) * U;
+  g2 += `<circle cx="${ox}" cy="${oy}" r="${n(rc)}" fill="none" stroke="${BRUIT}" stroke-width="1" stroke-dasharray="3 4"/>`;
+  const ch = chaine(bruit, ox, oy, BRUIT, 1.4);
+  g2 += ch.s + fleche(ox, oy, ch.x, ch.y, SORTIE, 3, 7);
+  g2 += `<circle cx="${ox}" cy="${oy}" r="2.2" fill="${BRUIT}"/>`;
+  g2 += `<text x="14" y="${oy - 30}" class="lb" style="fill:${SORTIE}">somme : ${fr(lenBruit)}</text><text x="14" y="${oy - 14}" class="ls">sur ce tirage</text>`;
+  g2 += `<text x="14" y="${oy + 30}" class="ls">cercle : longueur</text><text x="14" y="${oy + 45}" class="ls">moyenne √C ≈ ${fr(Math.sqrt(C))}</text>`;
+}
+---
+<figure class="antf">
+  <div class="antf-cols">
+    <svg class="antf-svg" viewBox={`0 0 ${W1} ${H1}`} role="img" aria-label="Une onde plane arrive en biais sur huit capteurs alignés : chaque capteur reçoit la raie avec un retard, donc une phase différente ; après compensation, les huit phaseurs de la raie sont alignés, ceux du bruit restent en désordre" set:html={g1} />
+    <svg class="antf-svg" viewBox={`0 0 ${W2} ${H2}`} role="img" aria-label="Sommes des huit phaseurs mis bout à bout : nulle pour la raie non compensée, de longueur 8 pour la raie compensée, courte pour le bruit" set:html={g2} />
+  </div>
+  <figcaption>Antenne de {C} capteurs espacés d'une demi-longueur d'onde, raie venue du gisement θ ≈ {fr(THdeg)}° (sin θ = 1/4) : sa phase avance de 45° d'un capteur au suivant. Bruit de même puissance moyenne que la raie sur chaque capteur, indépendant d'un capteur à l'autre. Les sommes sont à la même échelle. En puissance : C² = {C * C} pour la raie compensée, C = {C} en moyenne pour le bruit, soit un gain de C = {C} (10 log<sub>10</sub> {C} = {gainDb} dB).</figcaption>
+</figure>
+
+<style is:global>
+  .antf { margin: 1.5rem 0; }
+  .antf .antf-cols { display: flex; flex-wrap: wrap; gap: 6px 24px; justify-content: center; }
+  .antf svg.antf-svg { flex: 1 1 300px; min-width: 0; max-width: 400px; height: auto; display: block; }
+  .antf svg.antf-svg text { font-family: var(--font); }
+  .antf svg.antf-svg text.lt { font-size: 11.5px; font-weight: 600; fill: var(--text); }
+  .antf svg.antf-svg text.ls { font-size: 11px; fill: var(--text-2); }
+  .antf svg.antf-svg text.lb { font-size: 11.5px; font-weight: 600; }
+</style>

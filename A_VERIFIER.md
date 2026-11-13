@@ -34,4 +34,9 @@ Dernière vérification complète : 4 novembre 2026 ; les 196 références du si
 
 ## HPC et Preprocessing
 
-- Rien de signalé pour l'instant.
+- **Preprocessing, chapitre 3 (débruitage), références** : titres, auteurs, années et DOI concordent dans plusieurs index (recherche web du 13 novembre 2026), mais aucune page d'éditeur n'a pu être ouverte (doi.org, Crossref, arXiv, IEEE Xplore et swellex96.ucsd.edu bloqués par le réseau de la session). À rouvrir : Welch 1967, Widrow et al. 1975, Nagumo et Noda 1967, Reed, Mallett et Brennan 1974, Robey et al. 1992, Cox, Zeskind et Owen 1987, Wang et Chen 2018, Tan, Wang et Wang 2022, site SWellEx-96.
+- **Preprocessing, chapitre 3, section 2** : que Widrow et al. (1975) emploie le terme « adaptive line enhancer » et en soit la première publication n'est pas confirmé (le texte ne l'affirme pas ; la référence est donnée pour le dispositif).
+- **Preprocessing, chapitre 3, section 3** : la règle « environ 2C observations pour perdre moins de 3 dB » est vérifiée par simulation (perte moyenne (M + 2 − C)/(M + 1)), mais l'énoncé n'a pas été relu dans Reed, Mallett et Brennan (1974). « Près de deux minutes » pour 56 trames de 4 s : chiffre du projet, non recalculé sur les données. « Une grande part du bruit de mer vient de navires lointains, donc d'une direction » : constat du projet sur ses données (bruit surtout vers 315°), sans source.
+- **Preprocessing, chapitre 3, section 4** : Wang et Chen (2018) définissent le masque idéal avec un exposant β, le plus souvent 0,5 (racine carrée) ; le chapitre écrit le cas β = 1, celui du projet. Équation exacte de l'article non relue.
+- **Preprocessing, chapitre 3, section 5** : la description de Tan, Wang et Wang (2022) vient du résumé de la plénière IJCNN 2023 de DeLiang Wang ; l'article n'a pas été lu.
+- **Preprocessing, chapitre 3, section 3** : 28 hydrophones et 255 m pour l'antenne horizontale sud de SWellEx-96 viennent des fichiers du projet ; non confirmés sur le site officiel.

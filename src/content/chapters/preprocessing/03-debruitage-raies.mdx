@@ -1,0 +1,273 @@
+---
+num: 3
+title: "Débruiter pour détecter une raie"
+summary: "Faire apparaître au plus tôt la raie d'un navire noyée dans le bruit de mer : périodogramme moyenné (la référence), rehausseur de raies adaptatif, traitement d'antenne adaptatif, masques appris par un réservoir sur un capteur puis sur toute l'antenne."
+status: premier-jet
+---
+import Reveal from '@/components/shared/Reveal.astro';
+import Quiz from '@/components/shared/Quiz.astro';
+import Refs from '@/components/shared/Refs.astro';
+import ChaineFigure from '@/components/preprocessing/03-debruitage/ChaineFigure.astro';
+import IntegrationWidget from '@/components/preprocessing/03-debruitage/IntegrationWidget.astro';
+import AleSchema from '@/components/preprocessing/03-debruitage/AleSchema.astro';
+import AleWidget from '@/components/preprocessing/03-debruitage/AleWidget.astro';
+import AntenneFigure from '@/components/preprocessing/03-debruitage/AntenneFigure.astro';
+import VoiesWidget from '@/components/preprocessing/03-debruitage/VoiesWidget.astro';
+import CovarianceFigure from '@/components/preprocessing/03-debruitage/CovarianceFigure.astro';
+import MasqueFigure from '@/components/preprocessing/03-debruitage/MasqueFigure.astro';
+import MasqueWidget from '@/components/preprocessing/03-debruitage/MasqueWidget.astro';
+import PhaseFigure from '@/components/preprocessing/03-debruitage/PhaseFigure.astro';
+import Methodes from '@/components/preprocessing/03-debruitage/Methodes.astro';
+
+Les machines d'un navire émettent des sons à fréquence fixe : des **raies** (*tonals*). Un hydrophone posé sur le fond les reçoit noyées dans le bruit de mer. La question du chapitre : **quelle méthode fait apparaître une raie le plus tôt ?**
+
+Toutes les méthodes passent par la même chaîne. Elles reçoivent un **essai** (les $T$ premières secondes du signal) et rendent un **spectre de détection** $S(f)$, une valeur par fréquence. On mesure ensuite de combien $S$ dépasse son voisinage à la fréquence $f_0$ de la raie : le **contraste**.
+
+<ChaineFigure />
+
+$$
+c(f_0) = 10 \log_{10} \frac{\displaystyle \max_{|f - f_0| \le h} S(f)}{\displaystyle \underset{\text{anneau}}{\text{médiane}}\; S(f)}
+$$
+
+- **La fenêtre** $\pm h$ autour de $f_0$ laisse la place à un décalage Doppler : la raie d'une source qui s'approche ou s'éloigne n'arrive pas exactement à sa fréquence d'émission.
+- **L'anneau** donne le niveau du bruit autour de la raie, sans avoir à le connaître d'avance.
+- **Décider** : une raie est détectée si son contraste dépasse celui de **fréquences témoins**, où rien n'est émis. On résume par l'**AUC** : la probabilité qu'une fréquence avec raie ait un contraste plus grand qu'une fréquence témoin (0,5 : hasard ; 1 : toujours).
+- **Niveau d'une raie** : sa puissance rapportée à celle du bruit dans une bande de 1 Hz, en décibels (« dB re bruit dans 1 Hz »).
+
+## 1. La référence : moyenner des spectres
+
+On découpe le signal en trames de durée $\text{seg}$, qui se recouvrent de moitié, et on moyenne leurs spectres de puissance ([chapitre 1, section 2](/preprocessing/01-mfcc/)). C'est le **périodogramme moyenné** (méthode de Welch) :
+
+$$
+S(f) = \frac{1}{K} \sum_{k=1}^{K} |X_k(f)|^2
+$$
+
+<IntegrationWidget />
+
+- **Le bruit ne baisse pas, il se resserre.** La puissance du bruit dans une case varie d'une trame à l'autre autant que sa moyenne. Moyenner $K$ trames ne change pas cette moyenne, mais divise les fluctuations par $\sqrt{K}$.
+- **Le contraste de la raie ne grandit pas avec $T$** : ce sont les témoins qui montent de moins en moins haut. Avec ces réglages, une raie de −3 dB dépasse 95 % des témoins à partir de 20 s ; une raie de +6 dB dès 5 s ; une raie de −12 dB toujours pas à 60 s.
+- **Allonger les trames** affine les cases : $\Delta f = 1/\text{seg}$. La raie garde toute sa puissance dans une case, qui contient moins de bruit : le rapport signal sur bruit de la case croît comme $\text{seg}$. Mais il reste moins de trames à moyenner. Au total, la détection dépend de $\sqrt{\text{seg} \cdot T}$ : doubler la durée des trames vaut doubler l'attente, sans attendre.
+- **Deux limites aux trames longues.** Il faut garder des trames à moyenner : le gain s'éteint quand $\text{seg}$ dépasse $T/8$ à $T/4$. Et la raie doit rester dans sa case : si sa fréquence glisse de plus d'une case pendant l'observation (Doppler), sa puissance s'étale.
+
+Avec un seul capteur et sans rien savoir de plus, c'est tout ce qu'on peut faire : attendre. Les quatre méthodes suivantes ajoutent chacune une information.
+
+## 2. Rehausseur de raies adaptatif : la prévisibilité
+
+Une raie se répète : connaître son passé permet de prédire sa valeur suivante. Le bruit large bande, lui, ne ressemble plus à ce qu'il était quelques échantillons plus tôt. Le **rehausseur de raies adaptatif** (ALE, *adaptive line enhancer*) prédit donc $x(n)$ à partir d'échantillons passés, retardés de $\delta$, et garde la prédiction : ce qui était prévisible, donc les raies.
+
+<AleSchema />
+
+$$
+\begin{gathered}
+\mathbf{u}(n) = (x(n{-}\delta{-}L{+}1), \dots, x(n{-}\delta)) \\
+\hat x(n) = \mathbf{w}^{\mathsf T} \mathbf{u}(n), \quad e(n) = x(n) - \hat x(n) \\
+\mathbf{w} \leftarrow \mathbf{w} + \mu\, \frac{e(n)\, \mathbf{u}(n)}{\|\mathbf{u}(n)\|^2}
+\end{gathered}
+$$
+
+- **Les $L$ poids $\mathbf{w}$** partent de zéro et sont corrigés à chaque échantillon par la règle **NLMS** (*normalized least mean squares*, la règle de [Reservoir computing, chapitre 2](/rc/02-regles-lecture/)) : un pas dans la direction qui réduit l'erreur, divisé par la puissance de l'entrée. Elle est stable pour $0 < \mu < 2$.
+- **Le retard $\delta$** doit dépasser la durée sur laquelle le bruit se ressemble. Sinon le filtre prédit aussi le bruit.
+- **Le filtre appris est un passe-bande** centré sur $f_0$, de largeur environ $f_s / L$. Son gain à $f_0$ vaut $a/(1+a)$, avec $a = \tfrac{L}{2} \cdot$ (puissance de la raie / puissance du bruit) : plus le filtre est long ou la raie forte, plus il la laisse passer.
+- **Ailleurs, le gain n'est pas nul.** Les poids ne cessent d'être corrigés par le bruit, et laissent passer une part $\sqrt{\mu/(2-\mu)}$ de l'amplitude, au hasard d'une fréquence et d'un instant à l'autre.
+- **Il lui faut du temps** : environ $L/\mu$ échantillons pour une raie faible (10 s avec $L = 512$, $\mu = 0{,}05$ et $f_s = 1024$ Hz).
+
+On calcule ensuite le périodogramme moyenné de la sortie $\hat x$. La raie y ressort-elle mieux que dans celui de l'entrée ?
+
+<AleWidget />
+
+- **Le contraste de la raie monte, celui des témoins aussi.** Le filtre abaisse le bruit autour de la raie, mais son gain aléatoire fabrique des pics là où il n'y a rien. Avec ces réglages, la sortie ne détecte mieux que l'entrée pour aucun niveau ni aucune longueur.
+- **Pourquoi** : à la fréquence $f_0$, le filtre multiplie la raie et le bruit de la case par le même gain. Le rapport signal sur bruit de la case, celui qui décide de la détection, ne change pas. Le périodogramme à trames de 4 s a déjà des cases de 0,25 Hz, plus fines que le passe-bande du filtre.
+- **Ce que le rehausseur apporte** : un **signal temporel** débruité, qu'on peut écouter ou traiter ensuite. Pour une raie de +6 dB, le rapport signal sur bruit du signal entier passe de −21 dB à +1,6 dB avec $L = 2048$ et $\mu = 0{,}01$. Il suit aussi une raie qui dérive lentement.
+
+Dans le projet, le NLMS corrige les poids par blocs de 32 échantillons : cela revient à diviser $\mu$ par 32.
+
+## 3. Traitement d'antenne adaptatif : la direction
+
+Avec $C$ capteurs alignés, une onde qui vient d'un gisement $\theta$ atteint chaque capteur avec un retard $\tau_c$ différent. À la fréquence $f$, ce retard est une phase. **Pointer** l'antenne vers $\theta$, c'est compenser ces phases, puis sommer :
+
+<AntenneFigure />
+
+$$
+\begin{gathered}
+a_c(\theta) = \frac{e^{-2\pi i f \tau_c(\theta)}}{\sqrt{C}} \\
+S(f) = \max_\theta\; \frac{1}{K} \sum_{k=1}^{K} \big| \mathbf{a}(\theta)^{\mathsf H}\, \mathbf{x}_k(f) \big|^2
+\end{gathered}
+$$
+
+- $\mathbf{x}_k(f) \in \mathbb{C}^C$ : la case $f$ de la trame $k$ sur les $C$ capteurs ; $\mathbf{a}(\theta)$ : le **vecteur de pointage** (*steering vector*).
+- Ce sont les **voies classiques** (formation de voies de Bartlett). Comme on ne connaît pas la direction de la source, on garde le maximum sur $\theta$.
+- Si le bruit est indépendant d'un capteur à l'autre, le gain en rapport signal sur bruit vaut $C$ : 14,5 dB pour les 28 hydrophones de l'antenne du projet.
+
+Mais le bruit de mer n'est pas indépendant entre capteurs : une grande part vient de navires lointains, donc d'une direction. Un tel **interférent** entre par les lobes secondaires des voies classiques.
+
+<VoiesWidget />
+
+Le traitement **adaptatif** mesure d'abord la **covariance du bruit** entre capteurs, $\mathbf{K}_n(f)$, puis en tient compte dans la somme. C'est le **filtre adapté adaptatif** (AMF, *adaptive matched filter*) :
+
+$$
+S(f) = \max_\theta\; \frac{1}{K} \sum_{k=1}^{K} \frac{\big| \mathbf{a}^{\mathsf H}\, \mathbf{K}_n^{-1}\, \mathbf{x}_k \big|^2}{\mathbf{a}^{\mathsf H}\, \mathbf{K}_n^{-1}\, \mathbf{a}}
+$$
+
+- **$\mathbf{K}_n^{-1}$ atténue les directions d'où vient le bruit** : le diagramme garde un gain de 1 vers $\theta$ et creuse un zéro vers l'interférent, d'autant plus profond que l'interférent est fort.
+- **Sans interférent**, $\mathbf{K}_n$ est proportionnelle à l'identité et on retrouve les voies classiques.
+- **Dans le widget, le gain des voies classiques monte avec l'interférent** parce qu'il se compare à un capteur seul, qui reçoit l'interférent en entier. Il plafonne au niveau du lobe secondaire (12,8 dB ici) ; celui du traitement adaptatif suit la force de l'interférent.
+- **Limite** : un interférent dans le lobe principal, trop près de la direction de la raie, ne peut pas être annulé sans perdre la raie (à 5° ici, le traitement adaptatif perd 4,7 dB).
+
+### Estimer la covariance du bruit
+
+$\mathbf{K}_n$ n'est pas connue : on la moyenne sur des observations $\mathbf{x}\mathbf{x}^{\mathsf H}$ de bruit seul.
+
+<CovarianceFigure />
+
+- **Assez d'observations.** Avec moins de $C$ observations, la matrice estimée n'est pas inversible. Il en faut environ $2C$ pour perdre moins de 3 dB (règle de Reed, Mallett et Brennan). En les prenant dans le temps, à la fréquence testée, 56 trames de 4 s demandent près de deux minutes.
+- **Les prendre sur les fréquences voisines.** Le projet moyenne les cases voisines de $f$ (à $\pm 4$ Hz) dans les mêmes trames : le bruit y a presque la même covariance, et une seule trame fournit déjà des dizaines de cases. Le traitement adaptatif a alors presque tout son contraste dès la première trame.
+- **Écarter la raie.** Si $\mathbf{K}_n$ contient la raie, le filtre l'annule comme un interférent : estimée sur les trames de la case testée, elle donne exactement $S = 1$. Le projet laisse donc une garde autour de $f$ et écarte les cases anormalement fortes.
+- **Charge diagonale** (*diagonal loading*) : on ajoute $\varepsilon\,\ell\,\mathbf{I}$ à l'estimée, où $\ell$ est la puissance moyenne par capteur. Une petite charge stabilise l'inversion quand les observations manquent. Une charge trop forte efface ce que la covariance a appris : on retombe sur les voies classiques.
+
+Les figures de cette section utilisent 8 capteurs régulièrement espacés d'une demi-longueur d'onde. L'antenne du projet (expérience SWellEx-96, antenne horizontale sud) a 28 hydrophones irrégulièrement espacés sur 255 m.
+
+## 4. Masque appris par un réservoir : des exemples
+
+On sait fabriquer des essais synthétiques : un bruit, auquel on ajoute des raies qu'on a choisies. Pour ces essais, on connaît la réponse. Dans chaque case du spectrogramme, la part de la puissance qui vient de la raie est le **masque idéal** (*ideal ratio mask*) :
+
+$$
+m^\star_k(f) = \frac{P_s}{P_s + P_b}
+$$
+
+où $P_s$ est la puissance de la raie seule dans la case et $P_b$ celle du bruit. Le masque vaut près de 1 là où la raie domine, près de 0 ailleurs. On entraîne un modèle à le prédire à partir du seul signal reçu, puis on l'applique à des essais dont on ne connaît pas la réponse.
+
+Le modèle est un **réservoir** ([Reservoir computing, chapitre 1](/rc/01-esn/)) : un réseau récurrent aux poids $W$ et $W_{in}$ tirés au hasard et figés, dont on n'entraîne que la lecture $W_{out}$, par régression ridge.
+
+<MasqueFigure />
+
+- **Une case, une séquence.** Le réservoir ne lit pas les échantillons mais le spectrogramme : il suit une case de fréquence au fil des trames. Le même réservoir et la même lecture servent à toutes les fréquences.
+- **Entrées** (9 valeurs par trame) : pour la case et ses deux voisines, les parties réelle et imaginaire de $z = X_k(f) / \sqrt{n_0}$ et $\log_{10} |z|^2$, où $n_0$ est le niveau du bruit autour de la case (médiane sur $\pm 3$ Hz). Les trames se recouvrent de moitié : on retire d'abord à $z$ l'avance de phase due à ce décalage (**démodulation**), pour qu'une raie au centre de la case garde la même phase d'une trame à l'autre.
+- **État et lecture** :
+
+$$
+\begin{aligned}
+\mathbf{r}_k &= (1 - a)\, \mathbf{r}_{k-1} \\
+&\quad + a \tanh(W \mathbf{r}_{k-1} + W_{in} \mathbf{u}_k + \mathbf{b}) \\
+m_k &= W_{out}\, [\mathbf{r}_k ; \mathbf{r}_k^2 ; 1]
+\end{aligned}
+$$
+
+- **Mémoire** : le coefficient de fuite $a$ la règle. Plus il est petit, plus l'état garde les trames passées.
+- **Spectre de détection** : la moyenne du masque prédit sur les trames, $S(f) = \tfrac{1}{K} \sum_k m_k(f)$.
+- **Signal débruité** : le masque, appliqué au spectrogramme, puis la transformée inverse.
+
+<MasqueWidget />
+
+- **Fréquence quelconque : le masque appris ne bat pas la référence.** Avec ces réglages, l'AUC moyenne sur les durées et les niveaux (300 essais de test) vaut 0,78 contre 0,82 pour le périodogramme moyenné. Aucun réglage essayé (taille, rayon spectral, mémoire, $\alpha$, échelle d'entrée) ne le fait passer devant.
+- **Pourquoi** : sur un capteur, une trame ne donne à une fréquence qu'une puissance et une phase. Moyenner les puissances est déjà le meilleur usage des puissances. La lecture peut au mieux le retrouver.
+- **Raie au centre d'une case : il passe devant** (0,85 contre 0,82). La phase démodulée est alors constante, et la mémoire du réservoir additionne les trames **en phase** au lieu d'additionner leurs puissances. Sans les entrées $\operatorname{Re} z$ et $\operatorname{Im} z$, ce gain disparaît.
+- **Hors du centre**, la phase tourne de $180° \times d$ par trame, où $d$ est l'écart au centre en cases : jusqu'à 90° au bord. Une raie réelle n'est pas centrée, et le Doppler la déplace : c'est le cas « fréquence quelconque ».
+
+## 5. Réservoir sur toute l'antenne : exemples et direction
+
+Avec $C$ capteurs, chaque case contient une information de plus : la **phase entre capteurs**. On la lit dans les **interspectres** $Z_c\, Z_{\text{ref}}^{*}$, le produit de la case d'un capteur par le conjugué de celle d'un capteur de référence.
+
+<PhaseFigure />
+
+- **Raie** : elle vient d'une direction fixe, donc le déphasage entre deux capteurs est le même à chaque trame. **Bruit indépendant** : le déphasage change à chaque trame.
+- Cette stabilité ne dépend pas de la position de la raie dans la case : le décalage de phase d'une trame à l'autre est le même sur tous les capteurs et disparaît dans le produit.
+- **Entrées** : la log-puissance de chaque capteur, et les interspectres de chaque capteur avec la référence et avec son voisin (136 valeurs pour 28 capteurs). Même réservoir, même lecture, même cible que sur un capteur. La géométrie de l'antenne n'est pas donnée au modèle.
+- **Avec un interférent**, la phase entre capteurs est stable dans toutes les cases, y compris celles de bruit : la raie ne se distingue plus par sa stabilité mais par sa direction, différente de celle de l'interférent.
+
+Cette méthode suit une idée de Tan, Wang et Wang (2022) pour la parole : un réseau profond reçoit les spectrogrammes complexes de tous les micros et rend directement celui du signal propre, à la place de la formation de voies. Ici, un réservoir remplace le réseau profond, et il rend un masque entre 0 et 1 plutôt qu'un spectre complexe.
+
+## 6. Comparer
+
+<Methodes />
+
+Sur les essais synthétiques de ce chapitre (bruit blanc, 8 capteurs, raies de −12 à +3 dB à des fréquences quelconques, AUC moyenne sur six durées de 5 à 60 s) :
+
+- **Un capteur** : le périodogramme moyenné reste devant. Le rehausseur de raies (section 2) et le masque appris (section 4) ne le dépassent pas.
+- **Huit capteurs, bruit indépendant** : voies classiques 0,95 ; traitement adaptatif 0,94 ; masque appris sur l'antenne 0,90 ; un capteur seul 0,81.
+- **Huit capteurs, un interférent qui porte 80 % du bruit** : traitement adaptatif 0,98 ; masque appris sur l'antenne 0,93 ; un capteur seul 0,81 ; voies classiques 0,69. Les voies classiques passent sous un capteur seul : leur maximum sur $\theta$ se cale sur l'interférent à toutes les fréquences.
+
+Ces chiffres valent pour un bruit blanc et des raies stables. Sur des enregistrements réels, le bruit est coloré, les raies fluctuent et se décalent par effet Doppler.
+
+<div class="retain">
+
+**À retenir**
+
+- Toutes les méthodes rendent un spectre de détection $S(f)$. On les compare par le contraste d'une raie face à celui de fréquences témoins (AUC).
+- **Périodogramme moyenné** : moyenner $K$ trames resserre les fluctuations du bruit en $1/\sqrt{K}$. La détection dépend de $\sqrt{\text{seg} \cdot T}$.
+- **Rehausseur de raies** : un filtre qui prédit le signal à partir de son passé. Il rend un signal temporel débruité, mais ne change pas le rapport signal sur bruit dans une case : il ne détecte pas plus tôt.
+- **Traitement d'antenne adaptatif** : pointer l'antenne donne un gain de $C$ ; tenir compte de la covariance du bruit $\mathbf{K}_n$ annule en plus un bruit qui vient d'une direction.
+- **Masque appris** : un réservoir entraîné sur des essais synthétiques. Sur un capteur, il ne dépasse le périodogramme que si la phase de la raie est stable d'une trame à l'autre ; sur l'antenne, la phase entre capteurs lui donne cette stabilité.
+
+</div>
+
+<Refs items={[
+  ["The use of fast Fourier transform for the estimation of power spectra: A method based on time averaging over short, modified periodograms", "Welch", 1967, "10.1109/TAU.1967.1161901"],
+  ["Adaptive noise cancelling: Principles and applications", "Widrow, Glover, McCool, Kaunitz, Williams, Hearn, Zeidler, Dong & Goodlin", 1975, "10.1109/PROC.1975.10036"],
+  ["A learning method for system identification", "Nagumo & Noda", 1967, "10.1109/TAC.1967.1098599"],
+  ["Rapid convergence rate in adaptive arrays", "Reed, Mallett & Brennan", 1974, "10.1109/TAES.1974.307893"],
+  ["A CFAR adaptive matched filter detector", "Robey, Fuhrmann, Kelly & Nitzberg", 1992, "10.1109/7.135446"],
+  ["Robust adaptive beamforming", "Cox, Zeskind & Owen", 1987, "10.1109/TASSP.1987.1165054"],
+  ["Supervised Speech Separation Based on Deep Learning: An Overview", "Wang & Chen", 2018, "1708.07524"],
+  ["Neural Spectrospatial Filtering", "Tan, Wang & Wang", 2022, "10.1109/TASLP.2022.3145319"],
+  ["The SWellEx-96 Experiment", "Marine Physical Laboratory, Scripps Institution of Oceanography", 1996, "https://swellex96.ucsd.edu/"]
+]} />
+
+<Quiz>
+
+**Q1.** Dans le widget de la section 1, on passe de 5 s à 60 s d'observation. Le contraste de la raie de −3 dB reste à peu près le même. Pourquoi la détecte-t-on quand même mieux ?
+
+<Reveal>
+
+Parce que le contraste des fréquences témoins baisse. À 5 s il n'y a qu'une trame : la puissance du bruit varie autant que sa moyenne, et des cases sans raie montent aussi haut que la raie. À 60 s, 29 trames sont moyennées : les fluctuations sont divisées par $\sqrt{29} \approx 5$, et plus aucun témoin n'atteint le contraste de la raie.
+
+</Reveal>
+
+**Q2.** On dispose de 60 s. Vaut-il mieux des trames de 0,5 s ou de 4 s ? Quand ce choix cesse-t-il d'être le bon ?
+
+<Reveal>
+
+Des trames de 4 s : les cases sont 8 fois plus fines, la raie y garde toute sa puissance et le bruit de la case est divisé par 8. Il reste 29 trames à moyenner, c'est assez. Le choix cesse d'être bon si on allonge encore jusqu'à n'avoir que quelques trames, ou si la fréquence de la raie glisse de plus d'une case pendant l'observation.
+
+</Reveal>
+
+**Q3.** Dans le widget du rehausseur, le contraste de la raie est plus grand en sortie qu'en entrée. Pourquoi l'AUC ne monte-t-elle pas ?
+
+<Reveal>
+
+À la fréquence de la raie, le filtre multiplie la raie et le bruit de la case par le même gain : leur rapport ne change pas. Le contraste monte parce que le filtre atténue les fréquences voisines. Mais son gain hors raie varie au hasard, ce qui crée des pics aux fréquences témoins : leur contraste monte aussi, autant ou plus.
+
+</Reveal>
+
+**Q4.** Dans le widget de l'antenne, l'interférent passe de « égal au bruit » à « 100 × le bruit ». Que devient la réponse de chaque traitement dans la direction de l'interférent ?
+
+<Reveal>
+
+Celle des voies classiques ne bouge pas : −12,8 dB, le niveau de leur lobe secondaire, fixé par la géométrie. Celle du traitement adaptatif passe de −31,5 à −70,4 dB : plus l'interférent est fort, plus il pèse dans $\mathbf{K}_n$, et plus $\mathbf{K}_n^{-1}$ atténue sa direction.
+
+</Reveal>
+
+**Q5.** Pourquoi ne faut-il pas estimer $\mathbf{K}_n$ sur les trames de la case qu'on teste ?
+
+<Reveal>
+
+Parce qu'une raie est permanente : toutes ces trames la contiennent. $\mathbf{K}_n$ la prend pour du bruit venant d'une direction, et le filtre l'annule comme un interférent. On estime donc $\mathbf{K}_n$ sur les fréquences voisines, avec une garde autour de la case testée.
+
+</Reveal>
+
+**Q6.** Sur un capteur, le masque appris bat le périodogramme quand la raie est au centre d'une case, et pas sinon. Qu'est-ce qui change ?
+
+<Reveal>
+
+La phase. Au centre d'une case, la phase démodulée de la raie est la même à chaque trame : le réservoir peut additionner les trames en phase, ce qui fait mieux qu'additionner leurs puissances. Hors du centre, la phase tourne à chaque trame (jusqu'à 90°), la somme en phase se détruit, et il ne reste que les puissances, que le périodogramme moyenne déjà.
+
+</Reveal>
+
+**Q7.** Qu'apporte l'antenne au masque appris, que la position de la raie dans la case ne gêne pas ?
+
+<Reveal>
+
+La phase entre capteurs. Le déphasage entre deux capteurs ne dépend que de la direction de la source : il est stable d'une trame à l'autre pour une raie, quelle que soit sa fréquence exacte, et changeant pour un bruit indépendant. Les interspectres donnent cette information au réservoir.
+
+</Reveal>
+
+</Quiz>

@@ -1,0 +1,130 @@
+---
+// Chapitre 3, section 2 : que garde le rehausseur de raies adaptatif ? Périodogramme moyenné de l'entrée x (gris) et de la sortie x̂ (brun)
+// autour de la raie, pour un essai. Un bouton par niveau de raie et par longueur L ; δ et μ fixés (ALE_DELTA, ALE_MU, mise à jour à chaque échantillon).
+// Essai : 60 s de bruit blanc + une raie à F0 = 150,1 Hz, graine 4 : le même que celui d'IntegrationWidget (mêmes niveaux, même bruit).
+// États calculés au build (etatsAle). Colonnes « témoins » et « AUC » du tableau : BANC_ALE (200 essais, calculé hors ligne par bancAle, ale.ts).
+// Vérifié (scratchpad ale/st.ts, sim2.ts, banc.ts) avec ces réglages :
+//  - rapport sortie/entrée loin de la raie : −16,0 dB pour les trois L (bruit des poids : 10 log10(μ/(2−μ)) = −15,9 dB) ;
+//  - rapport à f0 : celui du filtre optimal a/(1+a), a = (L/2)·P/σ², quand il dépasse le bruit des poids (raie à +6 dB : −9,1 ; −3,4 ; −1,7 dB
+//    pour L = 128, 512, 2048 ; théorie −9,6 ; −3,5 ; −1,0 dB) ; sinon le filtre ne distingue pas la raie (raie à −12 dB : −15 dB partout) ;
+//  - le contraste de la raie monte avec L, le seuil des témoins aussi ; l'AUC du rehausseur ne dépasse celle du périodogramme seul dans aucun des 9 états.
+import katex from 'katex';
+import { FS } from './raies';
+import { F0, SEG, DUR } from './reference';
+import { etatsAle, ALE_LS, ALE_DELTA, ALE_MU, BANC_ALE, BANC_N } from './ale';
+const tex = (s: string) => katex.renderToString(s, { throwOnError: false });
+const fm = (v: number, d = 1) => v.toFixed(d).replace('.', ',').replace('-', '−');
+const NIV = [6, -3, -12], SEED = 4, SPAN = 10, T = 60;
+const E = etatsAle(NIV, F0, SEG, DUR, SEED, SPAN);
+const banc = NIV.map((n) => ALE_LS.map((L) => BANC_ALE[`${n}|${L}`].find((r) => r.T === T)!));
+const r2 = (v: number) => +v.toFixed(2);
+const data = {
+  f: E.f, f0: F0, span: SPAN, NIV, LS: ALE_LS, fsL: ALE_LS.map((L) => FS / L),
+  x: E.x.map((e) => ({ S: e.S, c: r2(e.c) })),
+  y: E.y.map((row) => row.map((e) => ({ S: e.S, c: r2(e.c), g0: r2(e.g0), gl: r2(e.gl) }))),
+  banc,
+};
+---
+<div class="widget pp alew" data-widget="alew" data-etats={JSON.stringify(data)}>
+  <div class="fhead">
+    <div class="ftitle"><b>Que garde le filtre ?</b><span data-ref="sub"></span></div>
+    <div class="fstat"><span>sortie / entrée, à <span set:html={tex('f_0')} /></span><b data-ref="g0"></b><span>ailleurs</span><b data-ref="gl"></b></div>
+  </div>
+  <div class="ctl">
+    <div class="row"><span>Niveau de la raie</span><span class="seg" data-ref="niv"></span></div>
+    <div class="row"><span>Longueur <span set:html={tex('L')} /> du filtre</span><span class="seg" data-ref="L"></span></div>
+  </div>
+  <svg data-ref="svg" data-alew role="img" aria-label="Périodogrammes moyennés de l'entrée et de la sortie du rehausseur autour de la raie, en dB"></svg>
+  <div class="tab" role="table" aria-label="Contraste de la raie, seuil des témoins et AUC, pour l'entrée et pour la sortie">
+    <div class="tr th" role="row"><span role="columnheader"></span><span role="columnheader">contraste <span set:html={tex('c(f_0)')} />, cet essai</span><span role="columnheader">95 % des témoins sous</span><span role="columnheader">AUC</span></div>
+    <div class="tr x" role="row"><span role="rowheader">entrée <span set:html={tex('x')} /></span><b role="cell" data-ref="cx"></b><b role="cell" data-ref="sx"></b><b role="cell" data-ref="ax"></b></div>
+    <div class="tr y" role="row"><span role="rowheader">sortie <span set:html={tex('\\hat x')} /></span><b role="cell" data-ref="cy"></b><b role="cell" data-ref="sy"></b><b role="cell" data-ref="ay"></b></div>
+  </div>
+  <p class="note">Un essai de {DUR} s : bruit blanc et une raie à {fm(F0)} Hz. Rehausseur : <span set:html={tex(`\\delta = ${ALE_DELTA}`)} />, <span set:html={tex(`\\mu = ${String(ALE_MU).replace('.', '{,}')}`)} />, mise à jour à chaque échantillon, poids nuls au départ. Courbes : périodogrammes moyennés sur les {DUR} s, trames de {SEG} s. Trait du haut : largeur <span set:html={tex('f_s/L')} />. « Ailleurs » : médiane sur les cases loin de la raie. Témoins et AUC : {BANC_N} essais, 5 raies de ce niveau et 5 fréquences témoins par essai, <span set:html={tex(`T = ${T}`)} /> s.</p>
+</div>
+
+<script>
+  type Banc = { aucX: number; aucY: number; seuilX: number; seuilY: number };
+  type Data = { f: number[]; f0: number; span: number; NIV: number[]; LS: number[]; fsL: number[]; x: { S: number[]; c: number }[]; y: { S: number[]; c: number; g0: number; gl: number }[][]; banc: Banc[][] };
+  document.querySelectorAll<HTMLElement>('[data-widget="alew"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const D = JSON.parse(root.dataset.etats!) as Data;
+    const fm = (v: number, d = 1) => v.toFixed(d).replace('.', ',').replace('-', '−');
+    let iN = 1, iL = 1;
+    const mk = (ref: string, labs: string[], set: (i: number) => void) => labs.forEach((t, i) => { const b = document.createElement('button'); b.textContent = t; b.dataset.v = String(i); b.addEventListener('click', () => { set(i); draw(); }); $(ref).appendChild(b); });
+    mk('niv', D.NIV.map((n) => `${n > 0 ? '+' : '−'}${Math.abs(n)} dB`), (i) => (iN = i));
+    mk('L', D.LS.map(String), (i) => (iL = i));
+    const svg = $('svg') as unknown as SVGSVGElement;
+    const LO = -26, HI = 16; // axe vertical fixe (dB re niveau moyen du bruit)
+    const med = (v: number[]) => { const s = [...v].sort((a, b) => a - b); return (s[(s.length - 1) >> 1] + s[s.length >> 1]) / 2; };
+
+    function draw() {
+      $('niv').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.v! === iN));
+      $('L').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.v! === iL));
+      const ex = D.x[iN], ey = D.y[iN][iL], bc = D.banc[iN][iL], n = D.NIV[iN];
+      $('sub').textContent = `raie à ${n > 0 ? '+' : '−'}${Math.abs(n)} dB, ${D.LS[iL]} poids`;
+      $('g0').textContent = `${fm(ey.g0)} dB`; $('gl').textContent = `${fm(ey.gl)} dB`;
+      $('cx').textContent = `${fm(ex.c)} dB`; $('cy').textContent = `${fm(ey.c)} dB`;
+      $('sx').textContent = `${fm(bc.seuilX)} dB`; $('sy').textContent = `${fm(bc.seuilY)} dB`;
+      $('ax').textContent = fm(bc.aucX, 2); $('ay').textContent = fm(bc.aucY, 2);
+
+      const W = Math.max(300, Math.round(svg.clientWidth || 640)), etroit = W < 520;
+      const H = etroit ? 270 : 300, ox = 44, rm = etroit ? 58 : 76, oy = 30, pw = W - ox - rm, ph = H - oy - 36;
+      const X = (f: number) => ox + ((f - D.f0 + D.span) / (2 * D.span)) * pw, Y = (v: number) => oy + (1 - (Math.max(LO, Math.min(HI, v)) - LO) / (HI - LO)) * ph;
+      const it = (t: string) => `<tspan font-style="italic">${t}</tspan>`;
+      let s = '';
+      [-20, -10, 10].forEach((v) => (s += `<line x1="${ox}" y1="${Y(v)}" x2="${ox + pw}" y2="${Y(v)}" stroke="var(--border)" stroke-dasharray="2 4"/>`));
+      [-20, -10, 0, 10].forEach((v) => (s += `<text x="${ox - 6}" y="${Y(v) + 3.5}" text-anchor="end" class="ax">${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v)} dB</text>`));
+      s += `<line x1="${ox}" y1="${Y(0)}" x2="${ox + pw}" y2="${Y(0)}" stroke="var(--border)"/>`;
+      s += `<line x1="${ox}" y1="${oy + ph}" x2="${ox + pw}" y2="${oy + ph}" stroke="var(--border)"/>`;
+      for (let v = Math.ceil((D.f0 - D.span) / 5) * 5; v <= D.f0 + D.span; v += 5) s += `<line x1="${X(v).toFixed(1)}" y1="${oy + ph}" x2="${X(v).toFixed(1)}" y2="${oy + ph + 4}" stroke="var(--text-2)"/><text x="${X(v).toFixed(1)}" y="${oy + ph + 16}" text-anchor="middle" class="ax">${v}</text>`;
+      s += `<text x="${ox + pw / 2}" y="${H - 3}" text-anchor="middle" class="ax">fréquence (Hz)</text>`;
+      // la raie : repère pointillé ; au-dessus, la largeur fs/L du passe-bande
+      const xf = X(D.f0), wb = (D.fsL[iL] / (2 * D.span)) * pw, yb = oy - 6;
+      s += `<line x1="${xf.toFixed(1)}" y1="${oy}" x2="${xf.toFixed(1)}" y2="${oy + ph}" stroke="var(--text)" stroke-width="1" stroke-dasharray="2 3"/>`;
+      s += `<path d="M${(xf - wb / 2).toFixed(1)},${yb - 4} v8 M${(xf + wb / 2).toFixed(1)},${yb - 4} v8 M${(xf - wb / 2).toFixed(1)},${yb} h${wb.toFixed(1)}" fill="none" stroke="var(--text)" stroke-width="1.4"/>`;
+      s += `<text x="${(xf + wb / 2 + 7).toFixed(1)}" y="${yb + 4}" class="lb">${it('f')}<tspan dy="3" font-size="8">s</tspan><tspan dy="-3">/${it('L')} = ${fm(D.fsL[iL], D.fsL[iL] < 1 ? 1 : 0)} Hz</tspan></text>`;
+      s += `<text x="${(xf - wb / 2 - 7).toFixed(1)}" y="${yb + 4}" text-anchor="end" class="lb">raie ${it('f')}<tspan dy="3" font-size="8">0</tspan></text>`;
+      // les deux spectres
+      const pl = (S: number[]) => D.f.map((f, k) => `${X(f).toFixed(1)},${Y(S[k]).toFixed(1)}`).join(' ');
+      s += `<polyline points="${pl(ex.S)}" fill="none" stroke="var(--text-2)" stroke-width="1.5" stroke-linejoin="round"/>`;
+      s += `<polyline points="${pl(ey.S)}" fill="none" stroke="var(--p-mel)" stroke-width="2.2" stroke-linejoin="round"/>`;
+      // étiquettes directes à droite, à la hauteur du fond de chaque courbe
+      const xl = ox + pw + 8;
+      s += `<text x="${xl}" y="${(Y(med(ex.S)) + 4).toFixed(1)}" class="lb g">entrée ${it('x')}</text>`;
+      s += `<text x="${xl}" y="${(Y(med(ey.S)) + 4).toFixed(1)}" class="lb m">sortie ${it('x̂')}</text>`;
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      svg.innerHTML = s;
+    }
+    draw();
+    new ResizeObserver(() => draw()).observe(svg);
+  });
+</script>
+
+<style is:global>
+  .alew .fhead { line-height: 1.4; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .alew .ftitle b { font-size: 15px; font-weight: 600; margin-right: 10px; }
+  .alew .ftitle > span { font-size: 12.5px; color: var(--text-2); white-space: nowrap; }
+  .alew .fstat { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; background: var(--surface-2); border-radius: 8px; padding: 4px 10px; }
+  .alew .fstat > span { font-size: 12px; color: var(--text-2); }
+  .alew .fstat > b { font-size: 14px; font-weight: 600; margin-right: 6px; white-space: nowrap; color: var(--p-mel); }
+  .alew .fstat > b:last-child { margin-right: 0; }
+  .alew .fstat .katex, .alew .ctl .katex, .alew .note .katex, .alew .tab .katex { font-size: 1em; }
+  .alew .ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 28px; margin-bottom: 6px; }
+  .alew .ctl .row { margin: 0; font-size: 13px; }
+  .alew .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .alew .seg button { font-size: 13px; padding: 4px 10px; }
+  .alew svg[data-alew] { display: block; width: 100%; height: auto; margin: 0; }
+  .alew svg[data-alew] text.ax { font: 11px var(--font); fill: var(--text-2); }
+  .alew svg[data-alew] text.lb { font: 11.5px var(--font); fill: var(--text); }
+  .alew svg[data-alew] text.lb.g { fill: var(--text-2); }
+  .alew svg[data-alew] text.lb.m { fill: var(--p-mel); font-weight: 600; }
+  .alew .tab { display: grid; grid-template-columns: max-content repeat(3, minmax(0, 1fr)); gap: 3px 0; align-items: baseline; margin-top: 8px; font-size: 13px; }
+  .alew .tab .tr { display: contents; }
+  .alew .tab .th > span { font-size: 12px; line-height: 1.3; color: var(--text-2); padding-bottom: 3px; border-bottom: 1px solid var(--border); align-self: stretch; }
+  .alew .tab .tr > :nth-child(n + 2) { text-align: right; padding-left: 14px; }
+  .alew .tab .tr > b { font-size: 14px; font-weight: 600; white-space: nowrap; }
+  .alew .tab .x > * { color: var(--text-2); }
+  .alew .tab .y > * { color: var(--p-mel); }
+  .alew .tab .y > span { font-weight: 600; }
+</style>

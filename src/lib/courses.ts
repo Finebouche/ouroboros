@@ -12,9 +12,9 @@ export const COURSES = {
   preprocessing: {
     title: 'Preprocessing',
     unit: 'Chapitre',
-    tagline: 'Préparer les données avant le modèle : le son (MFCC), puis la mémoire d\'un signal sur une fenêtre glissante (Legendre).',
+    tagline: 'Préparer les données avant le modèle : le son (MFCC), la mémoire d\'un signal sur une fenêtre glissante (Legendre), puis le débruitage pour détecter une raie.',
     intro:
-      "Un cours visuel sur le prétraitement des données avant qu'elles n'arrivent dans un modèle. Chapitre 1 : du signal audio aux MFCC (Mel-Frequency Cepstral Coefficients). Chapitre 2 : la mémoire de Legendre, qui résume les derniers pas d'un signal en quelques coefficients.",
+      "Un cours visuel sur le prétraitement des données avant qu'elles n'arrivent dans un modèle. Chapitre 1 : du signal audio aux MFCC (Mel-Frequency Cepstral Coefficients). Chapitre 2 : la mémoire de Legendre, qui résume les derniers pas d'un signal en quelques coefficients. Chapitre 3 : débruiter pour détecter une raie (périodogramme moyenné, rehausseur de raies adaptatif, traitement d'antenne adaptatif, masques appris par un réservoir).",
   },
   hpc: {
     title: 'HPC',

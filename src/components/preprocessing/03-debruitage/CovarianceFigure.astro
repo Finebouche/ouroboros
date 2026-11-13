@@ -1,0 +1,65 @@
+---
+// Chapitre 3, section 3 : ce que coûte l'estimation de K_n. Même scène que VoiesWidget (8 capteurs, raie à 0°, interférent 100 × le bruit à 21°).
+// K_n est estimée sur M observations sans raie (M et non N : N est le nombre de neurones du réservoir dans ce chapitre), puis chargée : K_n + (ε + 10⁻⁶) · tr(K_n)/C · I (formule du projet).
+// Courbes : gain moyen sur un capteur seul (moyenne des rapports de puissances sur 800 tirages, calculée au build par antenne.ts), en dB.
+// Trois charges en brun (ce que produit la méthode), repères : K_n connue (pointillé --text) et voies classiques (gris).
+import { gainsEstimes } from './antenne';
+
+const C = 8, EPS = [0, 0.03, 30];
+const Ns = [...Array.from({ length: 16 }, (_, i) => i + 1), 20, 24, 32, 48, 64];
+const g = gainsEstimes(C, [{ theta: 21, p: 100 }], Ns, EPS);
+const dB = (v: number) => 10 * Math.log10(v);
+const fr = (v: number, d = 1) => v.toFixed(d).replace('.', ',');
+const opt = dB(g.optimal), cla = dB(g.classique);
+const at = (i: number, N: number) => dB(g.gains[i][Ns.indexOf(N)]);
+
+const W = 440, H = 312, ox = 36, top = 26, rm = 106, pw = W - ox - rm, ph = H - top - 54;
+const YMIN = 10, YMAX = 30;
+const X = (N: number) => ox + (Math.log2(N) / 6) * pw, Y = (d: number) => top + ((YMAX - d) / (YMAX - YMIN)) * ph;
+const n = (v: number) => v.toFixed(1);
+let s = '';
+for (let d = YMIN; d <= YMAX; d += 5) s += `<line x1="${ox}" y1="${n(Y(d))}" x2="${ox + pw}" y2="${n(Y(d))}" stroke="var(--border)" stroke-dasharray="${d === YMIN ? '' : '2 4'}"/><text x="${ox - 6}" y="${n(Y(d) + 3.5)}" text-anchor="end" class="ax">${d}</text>`;
+s += `<text x="${ox - 6}" y="${top - 12}" text-anchor="end" class="ax">dB</text>`;
+for (const N of [1, 2, 4, 8, 16, 32, 64]) {
+  s += `<line x1="${n(X(N))}" y1="${top + ph}" x2="${n(X(N))}" y2="${top + ph + 4}" stroke="var(--text-2)"/>`;
+  s += `<text x="${n(X(N))}" y="${top + ph + 16}" text-anchor="middle" class="ax">${N}</text>`;
+}
+s += `<text x="${n(X(C))}" y="${top + ph + 29}" text-anchor="middle" class="ax em">C</text><text x="${n(X(2 * C))}" y="${top + ph + 29}" text-anchor="middle" class="ax em">2C</text>`;
+s += `<text x="${ox + pw / 2}" y="${top + ph + 45}" text-anchor="middle" class="ax">nombre M d'observations qui servent à estimer K<tspan dy="3" font-size="8.5">n</tspan></text>`;
+// repères horizontaux
+s += `<line x1="${ox}" y1="${n(Y(opt))}" x2="${ox + pw}" y2="${n(Y(opt))}" stroke="var(--text)" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.75"/>`;
+s += `<line x1="${ox}" y1="${n(Y(cla))}" x2="${ox + pw}" y2="${n(Y(cla))}" stroke="var(--text-2)" stroke-width="2"/>`;
+// trois charges
+const pl = (i: number) => Ns.map((N, j) => `${n(X(N))},${n(Y(dB(g.gains[i][j])))}`).join(' ');
+s += `<polyline points="${pl(2)}" fill="none" stroke="var(--p-mel)" stroke-width="1.6" stroke-dasharray="5 3" stroke-linejoin="round"/>`;
+s += `<polyline points="${pl(0)}" fill="none" stroke="var(--p-mel)" stroke-width="1.4" stroke-linejoin="round"/>`;
+s += `<polyline points="${pl(1)}" fill="none" stroke="var(--p-mel)" stroke-width="2.8" stroke-linejoin="round"/>`;
+// étiquettes directes à droite, écartées d'au moins 15 px
+const labs = [
+  { t: `K<tspan dy="3" font-size="8.5">n</tspan><tspan dy="-3"> connue</tspan>`, y: Y(opt), c: 'var(--text)', w: 500 },
+  { t: 'ε = 0,03 (projet)', y: Y(at(1, 64)), c: 'var(--p-mel)', w: 600 },
+  { t: 'ε = 0', y: Y(at(0, 64)), c: 'var(--p-mel)', w: 400 },
+  { t: 'ε = 30', y: Y(at(2, 64)), c: 'var(--p-mel)', w: 400 },
+  { t: 'voies classiques', y: Y(cla), c: 'var(--text-2)', w: 600 },
+].sort((a, b) => a.y - b.y);
+labs[0].y -= 12; // les trois premières arrivent au même endroit : on les étage autour de leur point d'arrivée
+for (let i = 1; i < labs.length; i++) if (labs[i].y - labs[i - 1].y < 17) labs[i].y = labs[i - 1].y + 17;
+labs.forEach((l) => (s += `<text x="${ox + pw + 8}" y="${n(l.y + 4)}" class="lb" style="fill:${l.c};font-weight:${l.w}">${l.t}</text>`));
+// la courbe sans charge se repère à son creux
+const Nc = Ns[g.gains[0].indexOf(Math.min(...g.gains[0].slice(2, 12)))];
+s += `<text x="${n(X(Nc))}" y="${n(Y(at(0, Nc)) + 15)}" text-anchor="middle" class="lb" style="fill:var(--p-mel)">ε = 0 : creux à M = ${Nc}</text>`;
+const perte2C = opt - at(0, 2 * C), perteCreux = opt - at(0, Nc);
+---
+<figure class="covf">
+  <svg class="covf-svg" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Gain du traitement adaptatif en fonction du nombre d'observations qui servent à estimer la covariance du bruit, pour trois charges diagonales" set:html={s} />
+  <figcaption>Gain sur un capteur seul quand K<sub>n</sub> est estimée sur M observations (scène du widget : {C} capteurs, interférent 100 × le bruit ; moyenne de {g.tirages} tirages). Sans charge (ε = 0), le gain perd {fr(perteCreux, 0)} dB quand M approche C, et encore {fr(perte2C)} dB à M = 2C. Avec ε = 0,03, M = 4 suffit pour être à {fr(opt - at(1, 4))} dB de l'optimum. Avec ε = 30, la charge domine K<sub>n</sub> : on retombe vers les voies classiques.</figcaption>
+</figure>
+
+<style is:global>
+  .covf { margin: 1.5rem 0; }
+  .covf svg.covf-svg { width: 100%; max-width: 480px; height: auto; display: block; margin: 0 auto; }
+  .covf svg.covf-svg text { font-family: var(--font); }
+  .covf svg.covf-svg text.ax { font-size: 11px; fill: var(--text-2); }
+  .covf svg.covf-svg text.ax.em { font-weight: 600; fill: var(--text); }
+  .covf svg.covf-svg text.lb { font-size: 11.5px; }
+</style>

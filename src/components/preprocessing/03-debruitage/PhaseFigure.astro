@@ -1,0 +1,71 @@
+---
+// Chapitre 3 (Preprocessing), section 5 : ce que l'antenne apporte au réservoir. Petites figures répétées, sur un essai simulé (masque.ts) :
+// 8 capteurs, une raie de +6 dB venue du gisement 30°, bruit indépendant entre capteurs. Pour quatre capteurs, les interspectres comprimés
+// Z_c · Z_ref* / √|Z_c Z_ref*| des 12 premières trames (les valeurs que reçoit le réservoir) sont dessinés en phaseurs : dans la case de la raie
+// ils gardent la même direction d'une trame à l'autre, dans une case de bruit seul ils partent dans tous les sens.
+// Tout en gris (signal reçu) ; trait épais : moyenne des 12 trames ; pointillés --text : phase attendue pour la raie, −2π f0 τ_c.
+import { essaiAntenne, caracAntenne, tfct, dAntenne, PAS_CAPTEUR, C_SON, SEG, REF } from './masque';
+
+const C = 8, F0 = 150, F_BRUIT = 155, NIVEAU = 6, GISEMENT = 30, K = 12, CAPTEURS = [1, 2, 3, 4];
+const e = essaiAntenne([{ f0: F0, niveau: NIVEAU }], 16, 1, { C, gisement: GISEMENT });
+const Xs = e.x.map((x) => tfct(x, SEG, 140, 165)), U = caracAntenne(Xs, REF), D = dAntenne(C), nx = 2 * (C - 1);
+const kase = (f: number) => Math.round((f - Xs[0].f[0]) / Xs[0].df);
+// interspectre comprimé du capteur c avec la référence, trame t : indice c − 1 parmi les « autres capteurs » (REF = 0)
+const phaseurs = (k: number, c: number) => Array.from({ length: K }, (_, t) => [U[k][t * D + C + (c - 1)], U[k][t * D + C + nx + (c - 1)]]);
+const moy = (p: number[][]) => [p.reduce((s, v) => s + v[0], 0) / p.length, p.reduce((s, v) => s + v[1], 0) / p.length];
+const rows = [
+  { titre: 'case de la raie', sous: `${F0} Hz`, k: kase(F0), raie: true },
+  { titre: 'case de bruit seul', sous: `${F_BRUIT} Hz`, k: kase(F_BRUIT), raie: false },
+].map((r) => ({ ...r, dials: CAPTEURS.map((c) => { const p = phaseurs(r.k, c), m = moy(p); return { c, p, m, attendu: -2 * Math.PI * F0 * ((c * PAS_CAPTEUR * Math.sin((GISEMENT * Math.PI) / 180)) / C_SON) }; }) }));
+const AMAX = 4.2; // amplitude au bord du cadran
+const n1 = (v: number) => v.toFixed(1);
+const fr = (v: number, d = 1) => v.toFixed(d).replace('.', ',').replace('-', '−');
+
+function svg(W: number, narrow: boolean) {
+  const lab = narrow ? 0 : 118, cw = (W - lab) / CAPTEURS.length, Rd = Math.min(cw / 2 - 8, 50), top = 30, rh = 2 * Rd + (narrow ? 50 : 34);
+  const H = top + rows.length * rh;
+  let s = '';
+  CAPTEURS.forEach((c, j) => (s += `<text x="${lab + (j + 0.5) * cw}" y="14" text-anchor="middle" class="hd">Z<tspan baseline-shift="sub" font-size="8.5">${c}</tspan> · Z<tspan baseline-shift="sub" font-size="8.5">ref</tspan>*</text>`));
+  rows.forEach((r, i) => {
+    const y0 = top + i * rh + (narrow ? 18 : 0), cy = y0 + Rd;
+    if (narrow) s += `<text x="4" y="${y0 - 6}" class="rt"><tspan font-weight="600">${r.titre}</tspan> (${r.sous})</text>`;
+    else s += `<text x="0" y="${cy - 3}" class="rt" font-weight="600">${r.titre}</text><text x="0" y="${cy + 13}" class="rs">${r.sous}</text>`;
+    r.dials.forEach((d, j) => {
+      const cx = lab + (j + 0.5) * cw, px = (a: number) => (Math.min(AMAX, a) / AMAX) * Rd;
+      const tip = ([re, im]: number[]) => { const a = Math.hypot(re, im), q = a > 0 ? px(a) / a : 0; return [cx + re * q, cy - im * q]; };
+      s += `<circle cx="${n1(cx)}" cy="${cy}" r="${n1(Rd)}" fill="none" stroke="var(--border)"/>`;
+      s += `<line x1="${n1(cx - Rd)}" y1="${cy}" x2="${n1(cx + Rd)}" y2="${cy}" stroke="var(--border)" stroke-dasharray="2 4"/><line x1="${n1(cx)}" y1="${cy - Rd}" x2="${n1(cx)}" y2="${cy + Rd}" stroke="var(--border)" stroke-dasharray="2 4"/>`;
+      if (r.raie) s += `<line x1="${n1(cx)}" y1="${cy}" x2="${n1(cx + Rd * Math.cos(d.attendu))}" y2="${n1(cy - Rd * Math.sin(d.attendu))}" stroke="var(--text)" stroke-width="1" stroke-dasharray="2 3"/>`;
+      d.p.forEach((v) => { const [x, y] = tip(v); s += `<line x1="${n1(cx)}" y1="${cy}" x2="${n1(x)}" y2="${n1(y)}" stroke="var(--text-2)" stroke-width="1" stroke-opacity="0.55"/><circle cx="${n1(x)}" cy="${n1(y)}" r="1.7" fill="var(--text-2)"/>`; });
+      // moyenne des K trames : trait épais et pointe
+      const [mx, my] = tip(d.m), l = Math.hypot(mx - cx, my - cy);
+      if (l > 1) {
+        const ux = (mx - cx) / l, uy = (my - cy) / l, h = Math.min(7, l * 0.6), bx = mx - ux * h, by = my - uy * h, w = h * 0.5;
+        s += `<line x1="${n1(cx)}" y1="${cy}" x2="${n1(bx)}" y2="${n1(by)}" stroke="var(--text-2)" stroke-width="3.2" stroke-linecap="round"/><polygon points="${n1(mx)},${n1(my)} ${n1(bx - uy * w)},${n1(by + ux * w)} ${n1(bx + uy * w)},${n1(by - ux * w)}" fill="var(--text-2)"/>`;
+      }
+      s += `<circle cx="${n1(cx)}" cy="${cy}" r="2" fill="var(--text-2)"/>`;
+      s += `<text x="${n1(cx)}" y="${cy + Rd + 14}" text-anchor="middle" class="vl">moyenne : ${fr(Math.hypot(d.m[0], d.m[1]))}</text>`;
+    });
+  });
+  return { vb: `0 0 ${W} ${H}`, s };
+}
+const LAYOUTS = [{ cls: 'phf-wide', ...svg(640, false) }, { cls: 'phf-narrow', ...svg(360, true) }];
+---
+<figure class="phf">
+  {LAYOUTS.map((L) => (
+    <svg class={`phf-svg ${L.cls}`} viewBox={L.vb} role="img" aria-label="Interspectres entre capteurs, trame par trame : même direction dans la case de la raie, directions quelconques dans une case de bruit seul" set:html={L.s} />
+  ))}
+  <figcaption>Un trait fin par trame ({K} trames de {SEG} s), trait épais : leur moyenne ; pointillés : phase attendue pour la raie. Essai simulé : {C} capteurs, raie de +{NIVEAU} dB au gisement {GISEMENT}°, bruit indépendant entre capteurs ; interspectres comprimés, tels que le réservoir les reçoit.</figcaption>
+</figure>
+
+<style is:global>
+  .phf { margin: 1.5rem 0; }
+  .phf .phf-svg { width: 100%; height: auto; display: block; margin: 0 auto; }
+  .phf .phf-wide { max-width: 640px; }
+  .phf .phf-narrow { display: none; max-width: 420px; }
+  @media (max-width: 600px) { .phf .phf-wide { display: none; } .phf .phf-narrow { display: block; } }
+  .phf .phf-svg text.hd { font: 11.5px var(--font); fill: var(--text); }
+  .phf .phf-svg text.rt { font: 12.5px var(--font); fill: var(--text); }
+  .phf .phf-svg text.rs { font: 11.5px var(--font); fill: var(--text-2); }
+  .phf .phf-svg text.vl { font: 11px var(--font); fill: var(--text-2); }
+</style>
