@@ -18,11 +18,11 @@ const glyph = (g: Glyph) => {
   return o + '</svg>';
 };
 const rows: { name: string; src: string; how: string; upd: string; loc: string; sig: Glyph; sigt: string; hp: string }[] = [
-  { name: 'Ridge', src: 'régression ridge (Hoerl et Kennard, 1970)', how: 'hors ligne : tous les états à la fois', upd: txs('W = Y \\tilde X^{\\top}\\big(\\tilde X \\tilde X^{\\top} + \\alpha I\\big)^{-1}'), loc: 'non : un système linéaire global', sig: 'batch', sigt: 'toutes les cibles', hp: 'α (ici 1)' },
-  { name: 'RLS', src: 'moindres carrés récursifs (Plackett, 1950)', how: 'en ligne, une passe', upd: txs('g = \\frac{P \\tilde x}{1 + \\tilde x^{\\top} P \\tilde x}') + BR + txs('W \\leftarrow W - e\\,g^{\\top},\\; P \\leftarrow P - g\\,\\tilde x^{\\top} P'), loc: 'non : chaque poids passe par P, de taille (N+1)²', sig: 'err', sigt: 'erreur exacte de chaque sortie', hp: 'α, P(0) = I/α (ici 1)' },
-  { name: 'LMS', src: 'Widrow et Hoff (1960)', how: 'en ligne, plusieurs époques', upd: txs('W_{out} \\leftarrow W_{out} - \\eta\\, e\\, x^{\\top},\\; b_{out} \\leftarrow b_{out} - \\eta\\, e') + BR + txs('\\eta = c\\,/\\,(\\langle \\lVert x \\rVert^2 \\rangle + 1)'), loc: 'oui : le poids de j vers i n’utilise que xⱼ et eᵢ', sig: 'err', sigt: 'erreur exacte de chaque sortie', hp: 'c (ici 0,1)' },
-  { name: 'NLMS', src: 'LMS normalisé (Nagumo et Noda, 1967 ; Albert et Gardner, 1967)', how: 'en ligne, plusieurs époques', upd: txs('W_{out} \\leftarrow W_{out} - \\eta\\, e\\, x^{\\top},\\; b_{out} \\leftarrow b_{out} - \\eta\\, e') + BR + txs('\\eta = c\\,/\\,\\big(\\lVert x \\rVert^2 + 1\\big)'), loc: 'oui, plus un scalaire commun : ‖x‖²', sig: 'err', sigt: 'erreur exacte de chaque sortie', hp: 'c (ici 0,1)' },
-  { name: 'EH', src: 'Hoerzer et al. (2014) et variantes (section 3)', how: 'en ligne, plusieurs époques', upd: txs('z = W_{out}\\,x + b_{out} + \\xi') + BR + txs('W_{out} \\leftarrow W_{out} + \\eta\\, M\\,(z - \\bar z)\\, x^{\\top}'), loc: 'oui, plus M', sig: 'rew', sigt: 'une récompense M ∈ {0, 1}, commune ou par sortie, calculée avec la cible', hp: 'section 3' },
+  { name: 'Ridge', src: 'régression ridge (Hoerl et Kennard, 1970)', how: 'hors ligne : tous les états à la fois', upd: txs('W = Y \\tilde X^{\\top}\\big(\\tilde X \\tilde X^{\\top} + \\alpha I\\big)^{-1}'), loc: 'non : un système linéaire global', sig: 'batch', sigt: 'toutes les cibles', hp: 'α' },
+  { name: 'RLS', src: 'moindres carrés récursifs (Plackett, 1950)', how: 'en ligne, une passe', upd: txs('g = \\frac{P \\tilde x}{1 + \\tilde x^{\\top} P \\tilde x}') + BR + txs('W \\leftarrow W - e\\,g^{\\top},\\; P \\leftarrow P - g\\,\\tilde x^{\\top} P'), loc: 'non : chaque poids passe par P, de taille (N+1)²', sig: 'err', sigt: 'erreur exacte de chaque sortie', hp: 'α, P(0) = I/α' },
+  { name: 'LMS', src: 'Widrow et Hoff (1960)', how: 'en ligne, plusieurs époques', upd: txs('W_{out} \\leftarrow W_{out} - \\eta\\, e\\, x^{\\top},\\; b_{out} \\leftarrow b_{out} - \\eta\\, e') + BR + txs('\\eta = c\\,/\\,(\\langle \\lVert x \\rVert^2 \\rangle + 1)'), loc: 'oui : le poids de j vers i n’utilise que xⱼ et eᵢ', sig: 'err', sigt: 'erreur exacte de chaque sortie', hp: 'c' },
+  { name: 'NLMS', src: 'LMS normalisé (Nagumo et Noda, 1967 ; Albert et Gardner, 1967)', how: 'en ligne, plusieurs époques', upd: txs('W_{out} \\leftarrow W_{out} - \\eta\\, e\\, x^{\\top},\\; b_{out} \\leftarrow b_{out} - \\eta\\, e') + BR + txs('\\eta = c\\,/\\,\\big(\\lVert x \\rVert^2 + 1\\big)'), loc: 'oui, plus un scalaire commun : ‖x‖²', sig: 'err', sigt: 'erreur exacte de chaque sortie', hp: 'c' },
+  { name: 'EH', src: 'Hoerzer et al. (2014) et variantes (section 3)', how: 'en ligne, plusieurs époques', upd: txs('z = W_{out}\\,x + b_{out} + \\xi') + BR + txs('W_{out} \\leftarrow W_{out} + \\eta\\, M\\,(z - \\bar z)\\, x^{\\top}'), loc: 'oui, plus M', sig: 'rew', sigt: 'une récompense M ∈ {0, 1}, commune ou par sortie, calculée avec la cible', hp: 'σ, c (section 3)' },
 ];
 ---
 <figure class="rg">
@@ -42,7 +42,7 @@ const rows: { name: string; src: string; how: string; upd: string; loc: string; 
       <div class="rgp">{r.hp}</div>
     </div>
   ))}
-  <figcaption>Règles en ligne (LMS, NLMS, EH) : <i>x</i> est l'état standardisé neurone par neurone et le biais <i>b</i><sub>out</sub> est appris par la même règle. Ridge et RLS : <i>x̃</i> = [<i>x</i> ; 1] et <i>W</i> = [<i>W</i><sub>out</sub>, <i>b</i><sub>out</sub>], le biais est pénalisé comme un poids. Les synapses d'EH ne reçoivent pas l'erreur, mais la récompense est calculée avec la cible <i>d</i> : l'apprentissage reste supervisé, par un signal scalaire ou un par sortie.</figcaption>
+  <figcaption>Avec un biais <i>b</i><sub>out</sub> : les règles en ligne (LMS, NLMS, EH) l'apprennent par la même règle que les poids. Ridge et RLS : <i>x̃</i> = [<i>x</i> ; 1] et <i>W</i> = [<i>W</i><sub>out</sub>, <i>b</i><sub>out</sub>], le biais est pénalisé comme un poids. Les synapses d'EH ne reçoivent pas l'erreur, mais la récompense est calculée avec la cible <i>d</i> : l'apprentissage reste supervisé, par un signal scalaire ou un par sortie.</figcaption>
 </figure>
 
 <style is:global>

@@ -1,10 +1,10 @@
 ---
-// Cours Reservoir computing, chapitre 2, section 5 : ce que change un pas de NLMS d'ordre 2 sur la phrase ℓ, en primal et en dual (figure statique).
-// Jeu des chants : N = 60 neurones, 1 890 monômes, 6 sorties, m = 382 phrases d'apprentissage. Largeurs des bandes à l'échelle (1 890 contre 382 colonnes).
+// Cours Reservoir computing, chapitre 2, section 5 : ce que change un pas de NLMS d'ordre 2 sur l'exemple ℓ, en primal et en dual (figure statique).
+// Exemple chiffré : N = 100 neurones (5 150 monômes), 3 sorties, m = 1 000 exemples d'apprentissage. Largeurs des bandes à l'échelle (5 150 contre 1 000 colonnes).
 // Violet --r-out : la lecture entraînée ; plein = ce que le pas modifie, pâle = inchangé.
 import katex from 'katex';
 const km = (s: string) => katex.renderToString(s, { throwOnError: false });
-const NS = 6, NMON = 1890, NPH = 382, L = 140; // L : la phrase vue (position arbitraire)
+const NS = 3, NMON = 5150, NPH = 1000, L = 360; // L : l'exemple vu (position arbitraire)
 const RH = 8, GAP = 2, H = NS * (RH + GAP) - GAP;
 const rows = (w: number, op: number) => Array.from({ length: NS }, (_, k) => `<rect x="0" y="${k * (RH + GAP)}" width="${w}" height="${RH}" fill="var(--r-out)" fill-opacity="${op}"/>`).join('');
 const primal = rows(NMON, 0.75);
@@ -15,16 +15,16 @@ const fD = km('a_\\ell \\leftarrow a_\\ell - \\eta_\\ell\\, e_\\ell');
 const fS = km('W_{out} = \\textstyle\\sum_\\ell a_\\ell\\, \\varphi_c(x_\\ell)^{\\top}');
 ---
 <figure class="dlf">
-  <div class="dlt"><b>Que change un pas de NLMS sur la phrase ℓ ?</b><span>chant : 6 sorties ; largeurs à l'échelle</span></div>
+  <div class="dlt"><b>Que change un pas de NLMS sur l'exemple ℓ ?</b><span>exemple : N = 100 neurones, 3 sorties, m = 1 000 exemples ; largeurs à l'échelle</span></div>
   <div class="dlr">
     <div class="dll"><b>primal</b><span set:html={fP} /></div>
-    <svg viewBox={`0 0 ${NMON} ${H}`} preserveAspectRatio="none" style="width:100%" role="img" aria-label="Primal : 6 lignes de 1 890 poids, toutes modifiées" set:html={primal} />
-    <div class="dlc">6 × 1 890 poids, un par monôme et par sortie : tous bougent.</div>
+    <svg viewBox={`0 0 ${NMON} ${H}`} preserveAspectRatio="none" style="width:100%" role="img" aria-label="Primal : 3 lignes de 5 150 poids, toutes modifiées" set:html={primal} />
+    <div class="dlc">3 × 5 150 poids, un par monôme et par sortie : tous bougent.</div>
   </div>
   <div class="dlr">
     <div class="dll"><b>dual</b><span set:html={fD} /></div>
-    <svg viewBox={`0 0 ${NPH} ${H}`} preserveAspectRatio="none" style={`width:${((100 * NPH) / NMON).toFixed(1)}%`} role="img" aria-label="Dual : 6 lignes de 382 coefficients, seule la colonne de la phrase vue est modifiée" set:html={dual} />
-    <div class="dlc">6 × 382 coefficients, un vecteur <i>a</i><sub>ℓ</sub> par phrase : seule la colonne ℓ bouge.</div>
+    <svg viewBox={`0 0 ${NPH} ${H}`} preserveAspectRatio="none" style={`width:${((100 * NPH) / NMON).toFixed(1)}%`} role="img" aria-label="Dual : 3 lignes de 1 000 coefficients, seule la colonne de l'exemple vu est modifiée" set:html={dual} />
+    <div class="dlc">3 × 1 000 coefficients, un vecteur <i>a</i><sub>ℓ</sub> par exemple : seule la colonne ℓ bouge.</div>
   </div>
   <figcaption>Parties de zéro, les deux formes donnent les mêmes sorties : <Fragment set:html={fS} />. Plein : modifié par le pas ; pâle : inchangé.</figcaption>
 </figure>

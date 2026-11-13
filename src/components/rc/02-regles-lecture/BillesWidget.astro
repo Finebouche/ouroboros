@@ -5,7 +5,7 @@
 // (bleu-vert) se rejoignent au milieu de chaque fil de lecture, qui s'allume (violet) et change d'épaisseur.
 // ridge : états et cibles mis de côté puis une résolution ; RLS : x entre dans P, qui en tire un gain g par neurone ; LMS : l'erreur e_k
 // rencontre x_i ; eh_np : sorties bruitées, une seule récompense M, puis le bruit ξ_k rencontre x_i. Modèle réel (billes.ts).
-// Un seul bouton : lecture / pause (la pause fige le pas en cours).
+// Boutons : « un pas » joue une seule étape (①, ② ou ③) puis s'arrête ; lecture / pause (la pause fige l'étape en cours).
 import katex from 'katex';
 const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
 // boucle fermée (FORCE) : la sortie du pas précédent revient dans le réservoir par W_fb, figé
@@ -139,9 +139,9 @@ const FM: Record<string, string> = {
     }
     function endStep() {
       wShow = L.W.map((r) => r.slice()); yDisp = wShow.map((w) => w.reduce((s, v, i) => s + v * x[i], 0)); dDisp = targets(n); n++; phase = 'idle'; balls = []; info = null;
-      if (once) { once = false; running = false; play.textContent = 'lecture'; play.classList.remove('active'); }
       dirty = true;
     }
+    function stop() { once = false; running = false; play.textContent = 'lecture'; play.classList.remove('active'); dirty = true; }
     function advance(now: number) {
       const dt = Math.min(100, now - lastNow); lastNow = now;
       if (!running) return;
@@ -154,7 +154,11 @@ const FM: Record<string, string> = {
         wShow = wFrom.map((r, k) => r.map((v, i) => v + (wTo[k][i] - v) * spring(q)));
         if (rule === 'eh' && !verdict && p >= 0.4) verdict = true;
       }
-      if (p >= 1) { if (phase === 'prop') setPhase('read'); else if (phase === 'read') setPhase('learn'); else endStep(); }
+      if (p >= 1) {
+        // « un pas » : on s'arrête à la fin de l'étape (①, ② ou ③), sur sa dernière image ; le clic suivant passe à l'étape d'après
+        if (once) { T = tPhase + DUR[phase]; if (phase === 'learn') wShow = wTo.map((r) => r.slice()); stop(); return; }
+        if (phase === 'prop') setPhase('read'); else if (phase === 'read') setPhase('learn'); else endStep();
+      }
     }
     function frame(now: number) { advance(now); if (dirty) { draw(); dirty = running; } requestAnimationFrame(frame); }
 
@@ -380,8 +384,13 @@ const FM: Record<string, string> = {
     RULES.forEach(([r, l]) => { const b = mk('rule', l, () => { rule = r; reset(); }); b.dataset.r = r; });
     const loop = mk('rule', 'boucle fermée', () => { closed = !closed; reset(); }) as HTMLButtonElement;
     loop.classList.add('blloop'); loop.title = 'principe de FORCE : la sortie revient dans le réservoir par des poids figés';
-    // « un pas » : joue jusqu'à la fin du pas en cours (ou un pas entier), puis s'arrête
-    mk('ctl', 'un pas', () => { once = true; if (!running) { running = true; lastNow = performance.now(); } play.textContent = 'lecture'; play.classList.remove('active'); dirty = true; });
+    // « un pas » : joue une étape (① propagation, ② lecture, ③ apprentissage) puis s'arrête ; à la fin de ③, le clic suivant commence le pas de temps suivant
+    mk('ctl', 'un pas', () => {
+      once = true; play.textContent = 'lecture'; play.classList.remove('active'); dirty = true;
+      if (!running) { running = true; lastNow = performance.now(); }
+      // étape déjà finie (arrêt sur sa dernière image) : passer à la suivante
+      if (phase !== 'idle' && pNow() >= 1) { if (phase === 'prop') setPhase('read'); else if (phase === 'read') setPhase('learn'); else endStep(); }
+    });
     const play = mk('ctl', 'lecture', () => {
       running = !running || once; once = false; play.textContent = running ? 'pause' : 'lecture'; play.classList.toggle('active', running);
       lastNow = performance.now(); dirty = true;
