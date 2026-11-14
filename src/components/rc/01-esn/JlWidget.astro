@@ -52,7 +52,7 @@ const RD = tex(`\\mathbb{R}^{${D}}`);
     $('draw').addEventListener('click', () => { G = makeG(++gseed); draw(); });
 
     function draw() {
-      $('ms').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +(b as HTMLElement).dataset.v! === m));
+      $('ms').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.classList.toggle('active', +(b as HTMLElement).dataset.v! === m))));
       root.querySelectorAll<HTMLElement>('.jlsub').forEach((s) => (s.hidden = +s.dataset.m! !== m));
       const rs = ratios(X, G, m), n = rs.length;
       const out = rs.filter((r) => Math.abs(r - 1) > EPS).length, above = rs.filter((r) => r > 3).length;

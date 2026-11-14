@@ -33,6 +33,7 @@ const FL = tex('\\dot x = (w - 1)\\,x + I(t)');
 </div>
 
 <script>
+  import { pauseOffscreen } from '../offscreen';
   document.querySelectorAll<HTMLElement>('[data-widget="bist"]').forEach((root) => {
     const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
     const inp = (r: string) => $(r) as HTMLInputElement;
@@ -74,6 +75,7 @@ const FL = tex('\\dot x = (w - 1)\\,x + I(t)');
     function play() { if (timer) return; playB!.textContent = '⏸ pause'; timer = window.setInterval(() => { advance(); draw(); }, 30); }
     const mk = (label: string, fn: () => void) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', fn); $('ctl').appendChild(b); return b; };
     playB = mk('▶ lecture', () => (timer ? stop() : play()));
+    pauseOffscreen(root, { playing: () => timer !== null, pause: stop, resume: play });
     mk('impulsion +', () => { pulse = lin ? 0.5 : 2; pulseEnd = t + PULSE; play(); });
     mk('impulsion −', () => { pulse = lin ? -0.5 : -2; pulseEnd = t + PULSE; play(); });
     mk('recommencer', reset);
@@ -85,7 +87,7 @@ const FL = tex('\\dot x = (w - 1)\\,x + I(t)');
     ['w', 'wl'].forEach((r) => inp(r).addEventListener('input', () => draw()));
 
     function draw() {
-      $('mode').querySelectorAll('button').forEach((b) => b.classList.toggle('active', (b as HTMLElement).dataset.v === (lin ? '1' : '0')));
+      $('mode').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.classList.toggle('active', (b as HTMLElement).dataset.v === (lin ? '1' : '0')))));
       $('w-out').textContent = fm(+inp('w').value); $('wl-out').textContent = fm(+inp('wl').value);
       const fps = fixedPoints();
       // --- droite des phases ---

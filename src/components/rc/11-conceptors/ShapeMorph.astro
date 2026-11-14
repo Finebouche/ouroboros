@@ -71,6 +71,14 @@ const data = { NAMES, MUS, single: E.single, mixes: E.mixes, trans: E.trans, TRA
       draw();
     });
     function start() { if (playing) return; playing = true; last = performance.now(); raf = requestAnimationFrame(loop); }
+    // hors de l'écran, l'animation s'arrête ; elle reprend au retour si elle tournait (même règle que rc/offscreen.ts,
+    // recopiée ici : un script define:vars ne peut pas importer de module)
+    let held = false;
+    new IntersectionObserver((es) => {
+      const vis = es[es.length - 1].isIntersecting;
+      if (!vis && playing) { held = true; playing = false; cancelAnimationFrame(raf); draw(); }
+      else if (vis && held) { held = false; start(); draw(); }
+    }, { rootMargin: '100px' }).observe(root);
     function loop(now) {
       if (!playing) return;
       const i0 = Math.floor(t);
@@ -88,7 +96,7 @@ const data = { NAMES, MUS, single: E.single, mixes: E.mixes, trans: E.trans, TRA
 
     function drawStrip() {
       cells.forEach((c, i) => {
-        c.classList.toggle('active', i === k);
+        c.setAttribute('aria-pressed', String(c.classList.toggle('active', i === k)));
         const p = c.querySelector('path');
         if (p) { p.setAttribute('stroke', i === k ? 'var(--r-out)' : 'var(--text-2)'); p.setAttribute('stroke-width', i === k ? 1.8 : 1.1); }
       });
@@ -122,8 +130,8 @@ const data = { NAMES, MUS, single: E.single, mixes: E.mixes, trans: E.trans, TRA
       $('big').innerHTML = g;
     }
     function draw() {
-      btA.forEach((b, i) => b.classList.toggle('active', i === A));
-      btB.forEach((b, i) => b.classList.toggle('active', i === B));
+      btA.forEach((b, i) => b.setAttribute('aria-pressed', String(b.classList.toggle('active', i === A))));
+      btB.forEach((b, i) => b.setAttribute('aria-pressed', String(b.classList.toggle('active', i === B))));
       const nA = data.NAMES[A], nB = data.NAMES[B];
       $('go').textContent = `▶ transition ${nA} → ${nB}`;
       $('play').textContent = playing ? '⏸ pause' : '▶ lecture';

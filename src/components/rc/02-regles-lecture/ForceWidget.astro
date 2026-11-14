@@ -49,7 +49,7 @@ const KPI = Object.fromEntries(CASES.map(([c]) => [c, fm(R[c].rmseTest, 3)]));
     <b>La sortie tient-elle quand on coupe l'apprentissage&nbsp;?</b>
     <div class="fcstat"><span>RMSE après coupure</span><b data-ref="te">{KPI.force}</b></div>
   </div>
-  <div class="row"><span class="seg" data-ref="cases">{CASES.map(([c, l]) => <button data-c={c} class={c === 'force' ? 'active' : ''}>{l}</button>)}</span></div>
+  <div class="row"><span class="seg" data-ref="cases">{CASES.map(([c, l]) => <button data-c={c} class={c === 'force' ? 'active' : ''} aria-pressed={c === 'force' ? 'true' : 'false'}>{l}</button>)}</span></div>
   <p class="fcdesc" data-ref="desc">{CASES[2][2]}</p>
   {views.map((v) => (
     <svg data-fcw={v.nar ? 'etroit' : 'large'} viewBox={`0 0 ${v.W} ${v.H}`} role="img" aria-label="Sortie et cible pendant puis après l'apprentissage, et trois neurones du réservoir">
@@ -67,7 +67,7 @@ const KPI = Object.fromEntries(CASES.map(([c]) => [c, fm(R[c].rmseTest, 3)]));
     const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
     root.querySelectorAll<HTMLButtonElement>('[data-c]').forEach((b) => b.addEventListener('click', () => {
       const c = b.dataset.c!;
-      root.querySelectorAll<HTMLElement>('[data-c]').forEach((x) => x.classList.toggle('active', x === b));
+      root.querySelectorAll<HTMLElement>('[data-c]').forEach((x) => x.setAttribute('aria-pressed', String(x.classList.toggle('active', x === b))));
       root.querySelectorAll<SVGGElement>('[data-g]').forEach((g) => (g.style.display = g.dataset.g === c ? '' : 'none'));
       $('te').textContent = kpi[c]; $('desc').textContent = desc[c];
     }));

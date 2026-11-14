@@ -30,7 +30,7 @@ const ALPHAS = [1, 10, 100, 1000];
     ALPHAS.forEach((a) => { const b = document.createElement('button'); b.textContent = String(a).replace(/\B(?=(\d{3})+$)/g, ' '); b.dataset.v = String(a); b.addEventListener('click', () => { alpha = a; draw(); }); $('alpha').appendChild(b); });
     const W = 320, H = 130, ox = 26, pw = W - ox - 6, top = 8, ph = H - 30, K = 40;
     function draw() {
-      $('alpha').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.v === alpha));
+      $('alpha').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.classList.toggle('active', +b.dataset.v === alpha))));
       sig.forEach((sg, p) => {
         const s = sg.map((v) => v / (v + alpha ** -2));
         const bw = pw / K, Y = (v) => top + (1 - v) * ph;

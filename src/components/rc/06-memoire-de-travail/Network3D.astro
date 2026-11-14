@@ -36,6 +36,7 @@ const FL = tex('\\dot{\\mathbf x} = (W - \\mathrm{Id})\\,\\mathbf x + \\mathbf I
 <script>
   import { rng } from '../esn';
   import { makeView } from '../view3d';
+  import { pauseOffscreen } from '../offscreen';
 
   document.querySelectorAll<HTMLElement>('[data-widget="n3d"]').forEach((root) => {
     const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
@@ -75,6 +76,7 @@ const FL = tex('\\dot{\\mathbf x} = (W - \\mathrm{Id})\\,\\mathbf x + \\mathbf I
     function play() { if (timer) return; playB!.textContent = '⏸ pause'; timer = window.setInterval(() => { advance(); draw(); }, 30); }
     const mk = (box: string, label: string, fn: () => void) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', fn); $(box).appendChild(b); return b; };
     playB = mk('ctl', '▶ lecture', () => (timer ? stop() : play()));
+    pauseOffscreen(root, { playing: () => timer !== null, pause: stop, resume: play });
     mk('ctl', 'nouvelles trajectoires', () => { newGhosts(); play(); });
     mk('ctl', 'recommencer', reset);
     [0, 1, 2].forEach((i) => {
@@ -91,7 +93,7 @@ const FL = tex('\\dot{\\mathbf x} = (W - \\mathrm{Id})\\,\\mathbf x + \\mathbf I
     ($('lam') as HTMLInputElement).addEventListener('input', () => draw());
 
     function draw() {
-      $('mode').querySelectorAll('button').forEach((b) => b.classList.toggle('active', (b as HTMLElement).dataset.v === (lin ? '1' : '0')));
+      $('mode').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.classList.toggle('active', (b as HTMLElement).dataset.v === (lin ? '1' : '0')))));
       $('lam-out').textContent = fm(lam());
       const P = (p: number[]) => view.proj(p).map((v) => v.toFixed(1)).join(',');
       let g = '';
@@ -166,7 +168,7 @@ const FL = tex('\\dot{\\mathbf x} = (W - \\mathrm{Id})\\,\\mathbf x + \\mathbf I
   .n3d .ft { font-size: 12.5px; font-weight: 500; margin-bottom: 2px; }
   .n3d .ft span { font-weight: 400; color: var(--text-2); font-size: 11.5px; margin-left: 6px; }
   .n3d svg { width: 100%; height: auto; display: block; }
-  .n3d svg.v3 { cursor: grab; touch-action: none; border-radius: 8px; background: color-mix(in srgb, var(--text-2) 3%, transparent); }
+  .n3d svg.v3 { cursor: grab; touch-action: pan-y; border-radius: 8px; background: color-mix(in srgb, var(--text-2) 3%, transparent); }
   .n3d svg text.ax { font: 10.5px var(--font); fill: var(--text-2); }
   .n3d svg text.vn { font: 600 11px var(--font); fill: var(--text); }
   .n3d .note { font-size: 13px; color: var(--text-2); line-height: 1.5; margin: 8px 0 0; }

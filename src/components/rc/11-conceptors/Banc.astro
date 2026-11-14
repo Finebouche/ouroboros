@@ -39,6 +39,7 @@
   import { unpack, step, readout, order, type Model, type Packed } from './banc/model';
   import { catmull, fish, tank, tankPath, VIEW, type Colors } from './banc/draw';
   import { SCENARIOS, type Target } from './banc/inter';
+  import { pauseOffscreen } from '../offscreen';
 
   const SPS = 8, TR_MODE = 60, TR_QUICK = 12, DWELL = 40, H = 64, TRAIL = 480;
   const fr = (v: number, d = 2) => v.toFixed(d).replace('.', ',').replace('-', '−');
@@ -193,10 +194,10 @@
       const nA = m.names[A], nB = B >= 0 ? m.names[B] : '';
       const lab = B < 0 ? `Conceptor « ${nA} »` : `(1 − μ) C<sub>${nA}</sub> + μ C<sub>${nB}</sub>, μ = ${fr(mu())}`;
       $('title').innerHTML = trT < 1 && trDur === TR_MODE ? `Transition vers ${B < 0 ? `« ${nA} »` : 'le mélange'} : ${Math.round(trT * 100)} %` : lab;
-      btA.forEach((b, j) => { b.classList.toggle('active', j === A); b.style.setProperty('--w', w[j].toFixed(3)); });
+      btA.forEach((b, j) => { b.setAttribute('aria-pressed', String(b.classList.toggle('active', j === A))); b.style.setProperty('--w', w[j].toFixed(3)); });
       sel.value = String(B);
       [...sel.options].forEach((o) => (o.disabled = +o.value === A));
-      btI.forEach((b, k) => b.classList.toggle('active', k === scen));
+      btI.forEach((b, k) => b.setAttribute('aria-pressed', String(b.classList.toggle('active', k === scen))));
       $('mul').classList.toggle('off', B < 0);
       $('mu-out').textContent = fr(mu());
       $('k1').textContent = fr(sm.P); $('k2').textContent = fr(sm.Mr); $('k3').textContent = fr(sm.R);
@@ -219,6 +220,7 @@
     }
     function start() { if (playing) return; playing = true; last = performance.now(); raf = requestAnimationFrame(loop); }
     function pause() { playing = false; cancelAnimationFrame(raf); }
+    pauseOffscreen(root, { playing: () => playing, pause: () => { pause(); drawInfo(); }, resume: () => { start(); drawInfo(); } });
 
     // boutons
     const mk = (key: string, label: string, onClick: () => void, cls = '') => {

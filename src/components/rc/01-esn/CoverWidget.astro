@@ -40,7 +40,7 @@
     const sx = (v: number) => X0 + ((v + LIM) / (2 * LIM)) * S, sy = (v: number) => Y0 + (1 - (v + LIM) / (2 * LIM)) * S;
 
     function draw() {
-      $('N').querySelectorAll('button').forEach((b) => b.classList.toggle('active', +(b as HTMLElement).dataset.v! === N));
+      $('N').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.classList.toggle('active', +(b as HTMLElement).dataset.v! === N))));
       const proj = makeProj(NMAX, seed);
       const F = pts.x.map((x) => phi(proj, N, x));
       const ex = separable(F, pts.y), hk = fit(F, pts.y);

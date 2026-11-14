@@ -29,6 +29,7 @@ const FM: Record<string, string> = {
 </div>
 
 <script>
+  import { watchVisible } from '../offscreen';
   import { makeNet, stepNet, makeLearner, input, targets, NR, NK, WASH, NCOL, TNAMES, type Rule, type Learn } from './billes';
 
   document.querySelectorAll<HTMLElement>('[data-widget="blw"]').forEach((root) => {
@@ -104,7 +105,7 @@ const FM: Record<string, string> = {
       const dpr = window.devicePixelRatio || 1;
       W = Math.max(200, cv.clientWidth); H = W < 500 ? 210 : Math.round(Math.min(340, Math.max(240, W * 0.5)));
       cv.width = W * dpr; cv.height = H * dpr; cv.style.height = H + 'px';
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0); dirty = true;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0); need();
     }
 
     // ---- un pas : propagation, lecture, retour
@@ -135,18 +136,18 @@ const FM: Record<string, string> = {
           for (let k = 0; k < NK; k++) balls.push({ a: () => P.d(k), b: P.box, t0: 0, dur: 0.75, r: size(info.d[k], 1), col: 'ink' });
         }
       }
-      dirty = true;
+      need();
     }
     function endStep() {
       wShow = L.W.map((r) => r.slice()); yDisp = wShow.map((w) => w.reduce((s, v, i) => s + v * x[i], 0)); dDisp = targets(n); n++; phase = 'idle'; balls = []; info = null;
-      dirty = true;
+      need();
     }
-    function stop() { once = false; running = false; play.textContent = 'lecture'; play.classList.remove('active'); dirty = true; }
+    function stop() { once = false; running = false; play.textContent = 'lecture'; play.classList.remove('active'); need(); }
     function advance(now: number) {
       const dt = Math.min(100, now - lastNow); lastNow = now;
       if (!running) return;
       const dead = phase === 'learn' && info && ((rule === 'ridge' && info.solved && !info.dw.flat().some((v) => v)) || (rule === 'eh' && verdict && !info.M));
-      T += dt * (n === WASH ? 0.45 : fastRidge() ? (n - WASH < 2 ? 1 : 6) : dead ? 3 : 1); dirty = true;
+      T += dt * (n === WASH ? 0.45 : fastRidge() ? (n - WASH < 2 ? 1 : 6) : dead ? 3 : 1); need();
       if (phase === 'idle') { startStep(); return; }
       const p = pNow();
       if (phase === 'learn') {
@@ -160,7 +161,16 @@ const FM: Record<string, string> = {
         if (phase === 'prop') setPhase('read'); else if (phase === 'read') setPhase('learn'); else endStep();
       }
     }
-    function frame(now: number) { advance(now); if (dirty) { draw(); dirty = running; } requestAnimationFrame(frame); }
+    // boucle de dessin à la demande : elle ne tourne que tant qu'il reste quelque chose à dessiner (lecture en cours ou
+    // changement), et seulement si le widget est à l'écran. need() signale un changement et relance la boucle au besoin.
+    let raf = 0, visible = true;
+    function frame(now: number) {
+      raf = 0; advance(now);
+      if (dirty) { draw(); dirty = running; }
+      if (dirty) kick();
+    }
+    function kick() { if (!raf && visible) raf = requestAnimationFrame(frame); }
+    function need() { dirty = true; kick(); }
 
     // ---- dessin
     const css = (v: string) => getComputedStyle(root).getPropertyValue(v).trim();
@@ -377,23 +387,23 @@ const FM: Record<string, string> = {
       if (rule === 'ridge') closed = false;
       root.querySelectorAll<HTMLElement>('[data-fm]').forEach((d) => (d.hidden = d.dataset.fm !== rule));
       root.querySelector<HTMLElement>('[data-fb]')!.toggleAttribute('hidden', !closed);
-      $('rule').querySelectorAll<HTMLElement>('button').forEach((b) => b.classList.toggle('active', b.dataset.r === rule));
-      loop.classList.toggle('active', closed); loop.disabled = rule === 'ridge';
-      dirty = true;
+      $('rule').querySelectorAll<HTMLElement>('button').forEach((b) => b.setAttribute('aria-pressed', String(b.classList.toggle('active', b.dataset.r === rule))));
+      loop.setAttribute('aria-pressed', String(loop.classList.toggle('active', closed))); loop.disabled = rule === 'ridge';
+      need();
     }
     RULES.forEach(([r, l]) => { const b = mk('rule', l, () => { rule = r; reset(); }); b.dataset.r = r; });
     const loop = mk('rule', 'boucle fermée', () => { closed = !closed; reset(); }) as HTMLButtonElement;
     loop.classList.add('blloop'); loop.title = 'principe de FORCE : la sortie revient dans le réservoir par des poids figés';
     // « un pas » : joue une étape (① propagation, ② lecture, ③ apprentissage) puis s'arrête ; à la fin de ③, le clic suivant commence le pas de temps suivant
     mk('ctl', 'un pas', () => {
-      once = true; play.textContent = 'lecture'; play.classList.remove('active'); dirty = true;
+      once = true; play.textContent = 'lecture'; play.classList.remove('active'); need();
       if (!running) { running = true; lastNow = performance.now(); }
       // étape déjà finie (arrêt sur sa dernière image) : passer à la suivante
       if (phase !== 'idle' && pNow() >= 1) { if (phase === 'prop') setPhase('read'); else if (phase === 'read') setPhase('learn'); else endStep(); }
     });
     const play = mk('ctl', 'lecture', () => {
       running = !running || once; once = false; play.textContent = running ? 'pause' : 'lecture'; play.classList.toggle('active', running);
-      lastNow = performance.now(); dirty = true;
+      lastNow = performance.now(); need();
     });
     const nearest = (ev: MouseEvent) => {
       const r = cv.getBoundingClientRect(), px = ev.clientX - r.left, py = ev.clientY - r.top;
@@ -404,10 +414,13 @@ const FM: Record<string, string> = {
       }
       return best;
     };
-    cv.addEventListener('click', (ev) => { sel = nearest(ev); dirty = true; });
+    cv.addEventListener('click', (ev) => { sel = nearest(ev); need(); });
     cv.addEventListener('mousemove', (ev) => { cv.style.cursor = nearest(ev) ? 'pointer' : 'default'; });
     new ResizeObserver(resize).observe(cv);
-    resize(); reset(); requestAnimationFrame(frame);
+    resize(); reset(); need();
+    watchVisible(root, (v) => { visible = v; if (v) need(); });
+    // changement de thème du système : redessiner avec les nouvelles couleurs
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', need);
     // les phases avancent aussi quand le dessin est suspendu (onglet masqué)
     window.setInterval(() => { if (running) advance(performance.now()); }, 50);
   });

@@ -15,18 +15,30 @@ export function makeView(o: { W: number; H: number; S: number; center: number[];
     const z2 = y1 * Math.sin(phi) + z * Math.cos(phi);
     return [o.W / 2 + o.S * x1, o.H / 2 - o.S * z2];
   };
-  const attach = (svg: Element, onChange: () => void) => {
-    let drag: [number, number] | null = null;
-    svg.addEventListener('pointerdown', (e) => { const ev = e as PointerEvent; drag = [ev.clientX, ev.clientY]; (svg as SVGElement).setPointerCapture(ev.pointerId); });
-    svg.addEventListener('pointermove', (e) => {
-      const ev = e as PointerEvent;
-      if (!drag) return;
-      psi -= (ev.clientX - drag[0]) * 0.01;
-      phi = Math.max(-1.45, Math.min(1.45, phi + (ev.clientY - drag[1]) * 0.01));
-      drag = [ev.clientX, ev.clientY];
-      onChange();
-    });
-    svg.addEventListener('pointerup', () => (drag = null));
-  };
+  const attach = (svg: Element, onChange: () => void) => dragRotate(svg, (dx, dy) => {
+    psi -= dx * 0.01;
+    phi = Math.max(-1.45, Math.min(1.45, phi + dy * 0.01));
+    onChange();
+  });
   return { proj, attach };
+}
+
+// Glisser pour tourner. À la souris, les deux axes ; au doigt, seulement l'horizontal (dy = 0) : le CSS de la figure
+// pose touch-action: pan-y, si bien qu'un glissement vertical fait défiler la page (le navigateur envoie alors pointercancel).
+export function dragRotate(svg: Element, rotate: (dx: number, dy: number) => void) {
+  let drag: [number, number] | null = null, touch = false;
+  svg.addEventListener('pointerdown', (e) => {
+    const ev = e as PointerEvent;
+    drag = [ev.clientX, ev.clientY]; touch = ev.pointerType !== 'mouse';
+    (svg as SVGElement).setPointerCapture(ev.pointerId);
+  });
+  svg.addEventListener('pointermove', (e) => {
+    const ev = e as PointerEvent;
+    if (!drag) return;
+    rotate(ev.clientX - drag[0], touch ? 0 : ev.clientY - drag[1]);
+    drag = [ev.clientX, ev.clientY];
+  });
+  const end = () => (drag = null);
+  svg.addEventListener('pointerup', end);
+  svg.addEventListener('pointercancel', end);
 }
