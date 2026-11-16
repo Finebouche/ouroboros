@@ -33,7 +33,7 @@ const ROWS = [{ t: 'Re', k: 're' }, { t: 'Im', k: 'im' }];
     <span></span>
     {COLS.map(() => <span class="phif-x"><i>0</i><i>{fr(DUREE2)} s</i></span>)}
   </div>
-  <figcaption>Parole synthétique (trois syllabes voisées, fondamental de 108 à 150 Hz, et deux fricatives de 2 à 7,5 kHz), deux micros à {fr(PAS2 * 100, 0)} cm, source à {AZ2}° de la perpendiculaire : l'onde atteint le micro 1 τ = {fr(tau * 1000, 2)} ms avant le micro 0. TFCT et compression log symétrique (α = 100) de l'article ; teinte d'autant plus marquée que |valeur| est grande, couleur du texte pour une valeur positive, bleu-gris pour une négative. Repère 1/τ = {fr(f1 / 1000, 2)} kHz : la différence s'y annule (la phase entre micros y fait un tour complet).</figcaption>
+  <figcaption>Parole synthétique (trois syllabes voisées, fondamental de 108 à 150 Hz, et deux fricatives de 2 à 7,5 kHz), deux micros à {fr(PAS2 * 100, 0)} cm, source à {AZ2}° de la perpendiculaire : l'onde atteint le micro 1 τ = {fr(tau * 1000, 2)} ms avant le micro 0. TFCT et compression log symétrique (α = 100) ; teinte d'autant plus marquée que |valeur| est grande, couleur du texte pour une valeur positive, bleu-gris pour une négative. Repère 1/τ = {fr(f1 / 1000, 2)} kHz : la différence s'y annule (la phase entre micros y fait un tour complet).</figcaption>
 </figure>
 
 <script>

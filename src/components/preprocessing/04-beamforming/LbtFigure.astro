@@ -82,7 +82,7 @@ const ariaB = 'LBT : 37 positions possibles sur un demi-cercle de 2 m, de −90�
       <div class={`lbtf-r lbtf-b${i % 2 ? ' alt' : ''}`} role="row"><span role="rowheader"><b>{r.c}</b></span>{[...r.an, ...r.rev].map((v) => <span role="cell">{fr(v)}</span>)}</div>
     ))}
   </div>
-  <figcaption>MC-CSM (DC-CRN) entraîné avec l'un ou l'autre critère (article, section VI-C, tableaux XI et XII). Positions possibles : 37 azimuts de −90° à 90° par pas de 5°, à 2 m de l'antenne ; les deux azimuts dessinés sont un exemple. Les deux critères restent à moins de {fr(Math.ceil(ecartMax * 10) / 10).replace(/0$/, '')} dB l'un de l'autre, sans gagnant constant. LBT ne s'applique pas à un seul micro : sans indice spatial, la position ne se voit pas.</figcaption>
+  <figcaption>MC-CSM (DC-CRN) entraîné avec l'un ou l'autre critère. Positions possibles : 37 azimuts de −90° à 90° par pas de 5°, à 2 m de l'antenne ; les deux azimuts dessinés sont un exemple. Les deux critères restent à moins de {fr(Math.ceil(ecartMax * 10) / 10).replace(/0$/, '')} dB l'un de l'autre, sans gagnant constant. LBT ne s'applique pas à un seul micro : sans indice spatial, la position ne se voit pas.</figcaption>
 </figure>
 
 <style is:global>

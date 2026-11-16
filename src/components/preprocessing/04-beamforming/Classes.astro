@@ -68,7 +68,7 @@ const groupes: { titre: string; rows: Row[] }[] = [
     <div>à savoir d'avance</div>
     <div>passes du réseau</div>
     <div>un seul micro</div>
-    <div>dans l'article</div>
+    <div>résultats</div>
   </div>
   {groupes.map((g) => (
     <>
@@ -79,7 +79,7 @@ const groupes: { titre: string; rows: Row[] }[] = [
           <div class="clt"><i class="cll">à savoir d'avance : </i>{r.avance}</div>
           <div class="clps"><i class="cll">passes du réseau : </i><Fragment set:html={glyph(r.glyph)} /><span class="clpt" set:html={r.passes} /></div>
           <div><i class="cll">un seul micro : </i><span class={`clp${r.monoOn ? ' on' : ''}`}>{r.mono}</span>{r.monoOn && <small class="cls">SC-CSM</small>}</div>
-          <div class="clt"><i class="cll">dans l'article : </i>{r.article}</div>
+          <div class="clt"><i class="cll">résultats : </i>{r.article}</div>
         </div>
       ))}
     </>

@@ -36,7 +36,7 @@ const payload = JSON.stringify({
       { label: 'MC-CSM', kind: 'mc', src: k.mc },
       { label: 'non traité', kind: 'brut', src: 'Unprocessed' },
     ].map((r) => ({ label: r.label, kind: r.kind as Kind, v: MESURES.map((m) => ANTENNES.map((a) => val(k.t, r.src, a.id, m))) }));
-    return { bouton: k.bouton, sous: `tableau ${k.t.nom} (p. ${k.t.page}) · ${k.titre}`, rows };
+    return { bouton: k.bouton, sous: k.titre, rows };
   }),
 });
 ---
@@ -50,7 +50,7 @@ const payload = JSON.stringify({
     <div class="row"><span>Mesure</span><span class="seg" data-ref="mesure"></span></div>
   </div>
   <svg data-ref="svg" data-rsw role="img" aria-label="Scores de chaque classe de méthodes, pour trois antennes"></svg>
-  <p class="note">Moyennes sur le jeu de test, recopiées de l'article ; tous les réseaux sont des DC-CRN. Oracle : formules de la formation de voies appliquées à la vraie cible. + PF : le réseau monocanal réappliqué à la sortie du MVDR (pas de post-filtre en séparation, où MC-CSM est entraîné par LBT). SI-SNR : rapport en dB entre la part de la sortie alignée sur la cible et le reste, insensible au gain. PESQ : note de qualité perçue, calculée par un modèle d'écoute.</p>
+  <p class="note">Moyennes sur le jeu de test ; tous les réseaux sont des DC-CRN. Oracle : formules de la formation de voies appliquées à la vraie cible. + PF : le réseau monocanal réappliqué à la sortie du MVDR (pas de post-filtre en séparation, où MC-CSM est entraîné par LBT). SI-SNR : rapport en dB entre la part de la sortie alignée sur la cible et le reste, insensible au gain. PESQ : note de qualité perçue, calculée par un modèle d'écoute.</p>
 </div>
 
 <script>

@@ -79,7 +79,7 @@ const LABELS: Record<string, string> = { oracle: 'masques idéaux', imparfait: '
     <svg data-ref="diag" class="mcw-diag" role="img" aria-label="Réponse du filtre selon la direction d'arrivée, en décibels"></svg>
     <p class="mcw-calc" data-ref="l-h"></p>
   </div>
-  <p class="note">Signaux synthétiques, une case de fréquence ({G.f / 1000} kHz), un tirage. Cible à {G.azS}° qui parle par intermittence ; bruit à {G.azN}°, continu, de même puissance moyenne ; bruit propre à chaque micro à −20 dB. Masque idéal : éq. 20 de l'article ; masque imparfait : bruit gaussien ajouté à son logit (écart-type {G.sigma} commun aux micros d'une trame, {G.sigma / 2} propre à chaque micro). Gain en RSB : sortie du filtre contre micro de référence, sur ces {G.J} trames ; avec la vraie cible (MVDR oracle de l'article) : <span data-ref="oracle"></span>.</p>
+  <p class="note">Signaux synthétiques, une case de fréquence ({G.f / 1000} kHz), un tirage. Cible à {G.azS}° qui parle par intermittence ; bruit à {G.azN}°, continu, de même puissance moyenne ; bruit propre à chaque micro à −20 dB. Masque idéal : celui de la section 3 ; masque imparfait : bruit gaussien ajouté à son logit (écart-type {G.sigma} commun aux micros d'une trame, {G.sigma / 2} propre à chaque micro). Gain en RSB : sortie du filtre contre micro de référence, sur ces {G.J} trames ; avec la vraie cible (MVDR oracle) : <span data-ref="oracle"></span>.</p>
 </div>
 
 <script>

@@ -1,7 +1,7 @@
 ---
 num: 4
 title: "Formation de voies : du filtre calculé au filtre appris"
-summary: "Extraire une voix captée par plusieurs micros : somme après retard, MVDR, MVDR guidé par un réseau (masques ou projection spectrale complexe), puis un réseau qui devient lui-même le filtre (projection spectrale complexe multicanal), d'après Tan, Wang et Wang (2022)."
+summary: "Extraire une voix captée par plusieurs micros : somme après retard, MVDR, MVDR guidé par un réseau (masques ou projection spectrale complexe), puis un réseau qui devient lui-même le filtre (projection spectrale complexe multicanal)."
 status: premier-jet
 ---
 import Reveal from '@/components/shared/Reveal.astro';
@@ -25,23 +25,23 @@ import Classes from '@/components/preprocessing/04-beamforming/Classes.astro';
 
 Une enceinte connectée, un téléphone, une prothèse auditive captent la voix avec plusieurs micros, au milieu de l'écho de la pièce, du bruit et d'autres voix. Il faut en extraire une voix : la **cible**. Depuis des décennies, l'outil standard est la **formation de voies** (*beamforming*) : un filtre linéaire qui combine les micros pour écouter dans la direction de la cible. Au [chapitre 3, section 3](/preprocessing/03-debruitage-raies/), on l'a vue pour une raie de navire ; ici, la cible est une voix.
 
-Ce chapitre suit un article qui pose une question simple : un réseau de neurones qui reçoit tous les micros peut-il **devenir lui-même le filtre**, et faire aussi bien que la formation de voies (Tan, Wang et Wang, 2022) ? L'article compare trois familles. La première calcule le filtre ; la deuxième le calcule aussi, mais avec des grandeurs estimées par un réseau ; la troisième remplace tout par un réseau.
+La question du chapitre : un réseau de neurones qui reçoit tous les micros peut-il **devenir lui-même le filtre**, et faire aussi bien que la formation de voies ? On compare trois familles. La première calcule le filtre ; la deuxième le calcule aussi, mais avec des grandeurs estimées par un réseau ; la troisième remplace tout par un réseau.
 
 <ClassesGrille />
 
-| Ce cours | Article | Sens |
-|---|---|---|
-| $C$, $i$, micro 0 | $P$, $p$, micro $q$ | nombre de micros, indice, micro de référence |
-| $j$, $f$ | $t$, $f$ | trame, fréquence de la TFCT |
-| $\mathbf{y}_j(f)$ | $\mathbf{Y}(t,f)$ | mélange reçu sur les $C$ micros |
-| $s_j(f)$, $\mathbf{d}(f)$, $\mathbf{v}_j(f)$ | $S_q$, $\mathbf{d}_q$, $\mathbf{V}$ | cible au micro de référence, RTF, tout le reste |
-| $\mathbf{R}_s$, $\mathbf{R}_v$, $\mathbf{h}$ | $\boldsymbol\Phi_s$, $\boldsymbol\Phi_v$, $\mathbf{w}$ | covariances, filtre |
+| Notation | Sens |
+|---|---|
+| $C$, $i$, micro 0 | nombre de micros, indice, micro de référence |
+| $j$, $f$ | trame, fréquence de la TFCT |
+| $\mathbf{y}_j(f)$ | mélange reçu sur les $C$ micros |
+| $s_j(f)$, $\mathbf{d}(f)$, $\mathbf{v}_j(f)$ | cible au micro de référence, RTF, tout le reste |
+| $\mathbf{R}_s$, $\mathbf{R}_v$, $\mathbf{h}$ | covariances, filtre |
 
 ## 1. Ce que reçoivent les micros
 
 <SceneFigure />
 
-La voix part de la bouche du locuteur. Une partie arrive tout droit sur chaque micro : le **trajet direct**. Le reste arrive après des réflexions sur les murs (la **réverbération**), mêlé au bruit et aux autres sources. L'article appelle **cible** le seul trajet direct de la voix, tel que le reçoit un micro de référence (le micro 0) : c'est la voix sans écho ni bruit qu'on veut retrouver. Tout le reste, y compris l'écho de la cible elle-même, forme $\mathbf{v}$.
+La voix part de la bouche du locuteur. Une partie arrive tout droit sur chaque micro : le **trajet direct**. Le reste arrive après des réflexions sur les murs (la **réverbération**), mêlé au bruit et aux autres sources. On appelle **cible** le seul trajet direct de la voix, tel que le reçoit un micro de référence (le micro 0) : c'est la voix sans écho ni bruit qu'on veut retrouver. Tout le reste, y compris l'écho de la cible elle-même, forme $\mathbf{v}$.
 
 Dans le domaine temps-fréquence (TFCT, [chapitre 1, section 2](/preprocessing/01-mfcc/)), chaque case $(j, f)$ du mélange reçu par les $C$ micros s'écrit :
 
@@ -53,7 +53,7 @@ $\mathbf{d}(f) \in \mathbb{C}^C$ est la **fonction de transfert relative** (RTF,
 
 <RtfFigure />
 
-Pour un trajet direct, passer d'un micro à l'autre n'est qu'un retard : $d_i(f) \approx e^{-\mathrm{i}\, 2\pi f \tau_i}$, une phase qui tourne d'autant plus vite que la fréquence est haute. C'est le vecteur de pointage du chapitre 3. Si l'on y mettait la réverbération, $\mathbf{d}$ dépendrait de toute la pièce et deviendrait irrégulier ; c'est pourquoi l'article la range dans $\mathbf{v}$.
+Pour un trajet direct, passer d'un micro à l'autre n'est qu'un retard : $d_i(f) \approx e^{-\mathrm{i}\, 2\pi f \tau_i}$, une phase qui tourne d'autant plus vite que la fréquence est haute. C'est le vecteur de pointage du chapitre 3. Si l'on y mettait la réverbération, $\mathbf{d}$ dépendrait de toute la pièce et deviendrait irrégulier ; c'est pourquoi on la range dans $\mathbf{v}$.
 
 Tout filtre linéaire combine les micros case par case, avec des poids $\mathbf{h}(f)$ :
 
@@ -84,7 +84,7 @@ $$
 
 $\mathbf{R}_v(f)$ est la **covariance** de tout ce qui n'est pas la cible : sa case $(i, i')$ dit combien les micros $i$ et $i'$ reçoivent la même chose, et avec quel décalage. C'est le filtre adaptatif du [chapitre 3, section 3](/preprocessing/03-debruitage-raies/), où $\mathbf{R}_b$ ne contenait que le bruit ; ici $\mathbf{R}_v$ contient aussi l'écho de la cible et les autres voix.
 
-Le MVDR a besoin de deux choses que personne ne donne : la RTF $\mathbf{d}$ et la covariance $\mathbf{R}_v$. En simulation, on connaît la cible vraie : on peut alors les calculer exactement. C'est le **MVDR oracle** de l'article, une borne haute de ce que la formation de voies peut faire.
+Le MVDR a besoin de deux choses que personne ne donne : la RTF $\mathbf{d}$ et la covariance $\mathbf{R}_v$. En simulation, on connaît la cible vraie : on peut alors les calculer exactement. C'est le **MVDR oracle**, une borne haute de ce que la formation de voies peut faire.
 
 <MvdrSchema />
 
@@ -136,7 +136,7 @@ $$
 
 <CsmMvdrSchema />
 
-- **Plus de médiane ni de pondération ad hoc** : si les spectres étaient parfaitement estimés, ces formules donneraient les vraies covariances. L'article y voit l'avantage principal sur les masques.
+- **Plus de médiane ni de pondération ad hoc** : si les spectres étaient parfaitement estimés, ces formules donneraient les vraies covariances. C'est l'avantage principal sur les masques.
 - **Invariant ou variable dans le temps.** Avec une seule covariance par énoncé, le filtre est le même du début à la fin (TI, *time-invariant*). La variante TV (*time-varying*) recalcule $\hat{\mathbf{R}}_v$ à chaque trame en mêlant la trame et l'énoncé : le filtre suit alors un bruit qui change.
 - **Post-filtre.** La sortie du MVDR garde un peu de bruit. On peut lui appliquer une dernière fois le même réseau monocanal : c'est le **post-filtre** (PF). Le réseau tourne alors $C + 1$ fois par énoncé.
 
@@ -153,7 +153,7 @@ $$
 \end{gathered}
 $$
 
-C'est un système à $C$ entrées et une sortie (MISO, *multiple-input single-output*). Aucune covariance, aucun vecteur propre, aucun MVDR : le réseau, une fois entraîné, est un filtre non linéaire, qui varie dans le temps et utilise à la fois le spectre et l'espace. L'article l'appelle **filtre spectro-spatial neuronal**.
+C'est un système à $C$ entrées et une sortie (MISO, *multiple-input single-output*). Aucune covariance, aucun vecteur propre, aucun MVDR : le réseau, une fois entraîné, est un filtre non linéaire, qui varie dans le temps et utilise à la fois le spectre et l'espace. On l'appelle **filtre spectro-spatial neuronal** (*neural spectrospatial filter*).
 
 Pourquoi un réseau pourrait-il apprendre la direction sans qu'on la lui donne ? Parce qu'elle est déjà dans les spectrogrammes complexes : passer d'un micro à l'autre décale la phase de chaque case d'une quantité qui dépend de la direction de la source.
 
@@ -161,8 +161,8 @@ Pourquoi un réseau pourrait-il apprendre la direction sans qu'on la lui donne ?
 
 La différence entre deux micros a une structure nette, fixée par le retard entre eux. Avec une **antenne de géométrie fixe**, ce retard correspond à une direction : en voyant pendant l'entraînement des sources à toutes sortes de positions, dans toutes sortes de pièces, le réseau apprend à garder ce qui vient de la cible et à atténuer le reste.
 
-- **Réseau** : l'article en essaie deux, un réseau récurrent (BLSTM) et un réseau convolutif à encodeur et décodeur avec une partie récurrente au milieu (DC-CRN). Le DC-CRN est meilleur partout.
-- **Perte** : l'écart en valeur absolue sur les parties réelle et imaginaire, plus un terme sur le module, que l'article juge important en multicanal :
+- **Réseau** : deux architectures ont été essayées, un réseau récurrent (BLSTM) et un réseau convolutif à encodeur et décodeur avec une partie récurrente au milieu (DC-CRN). Le DC-CRN est meilleur partout.
+- **Perte** : l'écart en valeur absolue sur les parties réelle et imaginaire, plus un terme sur le module, important en multicanal :
 
 $$
 \begin{aligned}
@@ -179,15 +179,15 @@ Pour séparer deux locuteurs, le réseau a deux sorties. Laquelle doit rendre qu
 
 <LbtFigure />
 
-La règle usuelle (uPIT, *utterance-level permutation invariant training*) essaie les deux appariements et garde le meilleur. L'article en propose une autre : la sortie 1 reçoit toujours le locuteur d'azimut le plus petit (LBT, *location-based training*). Le réseau doit alors s'appuyer sur la position des voix.
+La règle usuelle (uPIT, *utterance-level permutation invariant training*) essaie les deux appariements et garde le meilleur. Une autre règle est possible : la sortie 1 reçoit toujours le locuteur d'azimut le plus petit (LBT, *location-based training*). Le réseau doit alors s'appuyer sur la position des voix.
 
 ## 5. Ce que montrent les expériences
 
-L'article teste trois antennes (2 micros à 10 cm, 8 micros alignés à 5 cm, 7 micros en cercle comme une enceinte connectée) sur trois tâches : retirer l'écho, retirer un bruit, séparer des locuteurs. Les signaux sont simulés (de la parole lue, placée dans des pièces calculées par la méthode des sources images), sauf un jeu de test binaural enregistré. Un modèle est entraîné pour chaque configuration.
+Les expériences portent sur trois antennes (2 micros à 10 cm, 8 micros alignés à 5 cm, 7 micros en cercle comme une enceinte connectée) sur trois tâches : retirer l'écho, retirer un bruit, séparer des locuteurs. Les signaux sont simulés (de la parole lue, placée dans des pièces calculées par la méthode des sources images), sauf un jeu de test binaural enregistré. Un modèle est entraîné pour chaque configuration.
 
 <ResultatsWidget />
 
-Le résumé de l'article annonce des résultats « comparables ou meilleurs » que la formation de voies. Ses tableaux sont plus nuancés : face à un bruit ponctuel, le MVDR guidé par projection spectrale complexe avec post-filtre garde l'avantage aux trois antennes ; et le MVDR oracle variable dans le temps, qui connaît la cible, reste devant en SI-SNR avec 8 et 7 micros dans les quatre tâches du widget.
+Le bilan est nuancé : face à un bruit ponctuel, le MVDR guidé par projection spectrale complexe avec post-filtre garde l'avantage aux trois antennes ; et le MVDR oracle variable dans le temps, qui connaît la cible, reste devant en SI-SNR avec 8 et 7 micros dans les quatre tâches du widget.
 
 <CoutFigure />
 
@@ -252,7 +252,7 @@ Avec des masques, on pondère les cases du mélange par la médiane des masques 
 
 <Reveal>
 
-$C + 1$ fois pour le CSM-MVDR avec post-filtre (une par micro, une pour le post-filtre), une seule fois pour MC-CSM. Avec 8 micros, l'article compte 168,8 milliards de multiplications-additions contre 18,9 milliards pour 4 s de signal.
+$C + 1$ fois pour le CSM-MVDR avec post-filtre (une par micro, une pour le post-filtre), une seule fois pour MC-CSM. Avec 8 micros, cela fait 168,8 milliards de multiplications-additions contre 18,9 milliards pour 4 s de signal.
 
 </Reveal>
 
