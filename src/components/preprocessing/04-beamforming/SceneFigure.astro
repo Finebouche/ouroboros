@@ -1,0 +1,117 @@
+---
+// Chapitre 4, modèle de signal (éq. 1 de l'article) en image. Illustration calculée, signaux synthétiques (sim.ts : PIECE, formesOnde).
+// À gauche : la pièce vue de dessus (6 × 4,5 m), l'antenne de 8 micros espacés de 5 cm (fig. 5b de l'article) en encart, la cible (repère --text)
+// avec son trajet direct, les quatre réflexions du premier ordre sur les murs (gris : la réverbération), la source de bruit (rouge --h-py).
+// À droite : au micro de référence, y_0 = s (trajet direct, la cible) + v_0, v_0 = réverbération de la cible (H de l'article) + bruit réverbéré (N), même échelle.
+// H et N ne reçoivent pas de symbole ici : h est le filtre dans le cours.
+// Le calcul des formes d'onde garde toutes les sources images dont le trajet dure moins de 0,3 s (pas seulement celles dessinées).
+import { PIECE, CENTRE, AZ_CIBLE, AZ_BRUIT, R_CIBLE, R_BRUIT, pointA, micro, formesOnde, images, C8, FS, SYLLABE_SCENE, type P3 } from './sim';
+import { fleche, fr } from './phaseurs';
+import { sym } from './schema';
+
+const CIBLE = 'var(--text)', REV = 'var(--text-2)', BRUIT = 'var(--h-py)', ONDE = 'var(--p-wave)';
+const n = (v: number) => v.toFixed(1);
+
+// ---------------------------------------------------------------- pièce vue de dessus
+const k = 48, ox = 16, oy = 10, [Lx, Ly] = PIECE.L, W1 = ox + Lx * k + 16, H1 = oy + Ly * k + 12;
+const X = (x: number) => ox + x * k, Y = (y: number) => oy + (Ly - y) * k;
+const src = pointA(AZ_CIBLE, R_CIBLE), bru = pointA(AZ_BRUIT, R_BRUIT), c = CENTRE;
+let g1 = `<rect x="${X(0)}" y="${Y(Ly)}" width="${Lx * k}" height="${Ly * k}" fill="none" stroke="var(--text-2)" stroke-width="2"/>`;
+// réflexions du premier ordre sur les quatre murs : source → point de réflexion → centre de l'antenne
+const refl: [number, number][] = [];
+for (const [ax, w] of [[0, 0], [0, Lx], [1, 0], [1, Ly]] as [number, number][]) {
+  const im: [number, number] = [src[0], src[1]];
+  im[ax] = 2 * w - src[ax];
+  const t = (w - im[ax]) / (c[ax] - im[ax]), p: [number, number] = [im[0] + t * (c[0] - im[0]), im[1] + t * (c[1] - im[1])];
+  refl.push(p);
+  g1 += `<polyline points="${n(X(src[0]))},${n(Y(src[1]))} ${n(X(p[0]))},${n(Y(p[1]))} ${n(X(c[0]))},${n(Y(c[1]))}" fill="none" stroke="${REV}" stroke-width="1.1" stroke-linejoin="round" opacity="0.75"/>`;
+}
+// bruit : trajet direct seulement (sa réverbération n'est pas dessinée)
+g1 += fleche(X(bru[0]), Y(bru[1]), X(c[0]) - 6, Y(c[1]) - 4, BRUIT, 1.4, 5);
+// trajet direct de la cible
+g1 += fleche(X(src[0]), Y(src[1]), X(c[0]) + 4, Y(c[1]) - 5, CIBLE, 2, 6);
+// antenne (barre) et sources
+const a0 = micro(0), a7 = micro(C8 - 1);
+g1 += `<line x1="${n(X(a0[0]))}" y1="${n(Y(c[1]))}" x2="${n(X(a7[0]))}" y2="${n(Y(c[1]))}" stroke="var(--text-2)" stroke-width="4" stroke-linecap="round"/>`;
+g1 += `<circle cx="${n(X(src[0]))}" cy="${n(Y(src[1]))}" r="6" fill="${CIBLE}"/>`;
+g1 += `<circle cx="${n(X(bru[0]))}" cy="${n(Y(bru[1]))}" r="6" fill="${BRUIT}"/>`;
+g1 += `<text x="${n(X(src[0]) + 10)}" y="${n(Y(src[1]) - 6)}" class="lt">cible</text>`;
+g1 += `<text x="${n(X(bru[0]) - 10)}" y="${n(Y(bru[1]) - 6)}" text-anchor="end" class="lt" style="fill:${BRUIT}">bruit</text>`;
+// étiquettes des trajets
+{
+  const mx = (X(src[0]) + X(c[0])) / 2, my = (Y(src[1]) + Y(c[1])) / 2;
+  g1 += `<text x="${n(mx + 8)}" y="${n(my + 10)}" class="ls" style="fill:${CIBLE}">trajet direct</text>`;
+  const top = refl[3];
+  g1 += `<text x="${n(X(top[0]) - 8)}" y="${n(Y(top[1]) + 14)}" text-anchor="end" class="ls">réflexions</text>`;
+}
+// encart : les 8 micros
+const ix = X(c[0]) - 56, iy = Y(0.62), ip = 16;
+g1 += `<line x1="${n(X(a0[0]))}" y1="${n(Y(c[1]) + 3)}" x2="${n(ix - 6)}" y2="${n(iy - 12)}" stroke="var(--border)" stroke-width="1"/>`;
+g1 += `<line x1="${n(X(a7[0]))}" y1="${n(Y(c[1]) + 3)}" x2="${n(ix + 7 * ip + 6)}" y2="${n(iy - 12)}" stroke="var(--border)" stroke-width="1"/>`;
+g1 += `<rect x="${n(ix - 6)}" y="${n(iy - 12)}" width="${7 * ip + 12}" height="44" rx="5" fill="var(--surface)" stroke="var(--border)"/>`;
+for (let i = 0; i < C8; i++) g1 += `<circle cx="${ix + i * ip}" cy="${iy}" r="${i === 0 ? 4.2 : 3.4}" fill="${i === 0 ? 'var(--text-2)' : 'var(--surface)'}" stroke="var(--text-2)" stroke-width="1.3"/>`;
+g1 += `<text x="${ix}" y="${iy + 17}" text-anchor="middle" class="ls">réf.</text>`;
+g1 += `<path d="M ${ix + ip} ${iy + 9} v 3 h ${ip} v -3" fill="none" stroke="var(--text-2)" stroke-width="0.9"/><text x="${ix + 1.5 * ip}" y="${iy + 23}" text-anchor="middle" class="ls">5 cm</text>`;
+g1 += `<text x="${ix + 7 * ip}" y="${iy + 17}" text-anchor="end" class="ls">8 micros</text>`;
+
+// ---------------------------------------------------------------- formes d'onde au micro de référence
+const F = formesOnde(), N = F.y.length, dureeMs = (N / FS) * 1000;
+const W2 = 352, xl = 22, xr = W2 - 58, pw = xr - xl, bandes = [
+  { v: F.s, col: CIBLE, t: `${sym('s')} : trajet direct, la cible`, op: '' },
+  { v: F.h, col: REV, t: 'réverbération de la cible', op: '+' },
+  { v: F.n, col: BRUIT, t: 'bruit (réverbéré lui aussi)', op: '+' },
+  { v: F.y, col: ONDE, t: `${sym('y', { sub: '0' })} : ce que capte le micro de référence`, op: '=' },
+];
+let amax = 0; for (const b of bandes) for (const v of b.v) amax = Math.max(amax, Math.abs(v));
+const pas = 58, demi = 21, haut = 6;
+let g2 = '';
+bandes.forEach((b, r) => {
+  const y0 = haut + r * pas, yc = y0 + 14 + demi;
+  g2 += `<text x="${xl}" y="${y0 + 10}" class="lt" style="fill:${r === 3 ? 'var(--text)' : b.col}">${b.t}</text>`;
+  g2 += `<line x1="${xl}" y1="${yc}" x2="${xr}" y2="${yc}" stroke="var(--border)" stroke-width="1"/>`;
+  if (b.op) g2 += `<text x="9" y="${yc + 5}" text-anchor="middle" class="op">${b.op}</text>`;
+  // enveloppe min/max par colonne de 1 px
+  const up: string[] = [], dn: string[] = [];
+  for (let px = 0; px < pw; px++) {
+    const t0 = Math.floor((px / pw) * N), t1 = Math.max(t0 + 1, Math.floor(((px + 1) / pw) * N));
+    let lo = 0, hi = 0;
+    for (let t = t0; t < t1; t++) { lo = Math.min(lo, b.v[t]); hi = Math.max(hi, b.v[t]); }
+    up.push(`${n(xl + px)},${n(yc - (hi / amax) * demi)}`); dn.push(`${n(xl + px)},${n(yc - (lo / amax) * demi)}`);
+  }
+  g2 += `<polygon points="${up.join(' ')} ${dn.reverse().join(' ')}" fill="${b.col}" stroke="${b.col}" stroke-width="0.6" stroke-linejoin="round"/>`;
+});
+// accolade v = h + n
+{
+  const yA = haut + pas + 14 + 2, yB = haut + 2 * pas + 14 + 2 * demi - 2, x = xr + 8;
+  g2 += `<path d="M ${x} ${yA} h 5 V ${yB} h -5" fill="none" stroke="var(--text-2)" stroke-width="1.2"/>`;
+  g2 += `<text x="${x + 10}" y="${(yA + yB) / 2 + 4}" class="lt">${sym('v', { sub: '0' })}</text>`;
+}
+// axe du temps
+const yAx = haut + 4 * pas + 2;
+for (let t = 0; t <= dureeMs; t += 50) {
+  const x = xl + (t / dureeMs) * pw;
+  g2 += `<line x1="${n(x)}" y1="${yAx}" x2="${n(x)}" y2="${yAx + 4}" stroke="var(--text-2)"/><text x="${n(x)}" y="${yAx + 15}" text-anchor="middle" class="ls">${t}</text>`;
+}
+g2 += `<line x1="${xl}" y1="${yAx}" x2="${xr}" y2="${yAx}" stroke="var(--text-2)"/><text x="${xr + 6}" y="${yAx + 15}" class="ls">ms</text>`;
+const H2 = yAx + 22;
+const nImages = images(PIECE, src, CENTRE).length;
+const syl = SYLLABE_SCENE[0], sylMs = Math.round((syl.t1 - syl.t0) * 1000);
+---
+<figure class="scnf">
+  <div class="scnf-cols">
+    <svg class="scnf-a" viewBox={`0 0 ${W1} ${H1}`} role="img" aria-label="Pièce vue de dessus : une antenne de 8 micros, la cible avec son trajet direct et quatre réflexions sur les murs, une source de bruit" set:html={g1} />
+    <svg class="scnf-b" viewBox={`0 0 ${W2} ${H2}`} role="img" aria-label="Au micro de référence, le signal reçu est la somme du trajet direct de la cible, de sa réverbération et du bruit" set:html={g2} />
+  </div>
+  <figcaption>Illustration calculée sur des signaux synthétiques : pièce de {fr(PIECE.L[0], 0)} × {fr(PIECE.L[1])} × {fr(PIECE.L[2], 0)} m simulée par la méthode des sources images (T60 ≈ {fr(F.t60, 2)} s), cible = une syllabe voisée de synthèse de {sylMs} ms, bruit blanc émis par la source de bruit. Seules les quatre réflexions du premier ordre sont dessinées ; le calcul en garde {Math.round(nImages / 1000)} 000 (trajets de moins de {fr(PIECE.tMax)} s). Les quatre formes d'onde sont à la même échelle. Sur ce micro, la réverbération de la cible porte plus d'énergie que son trajet direct (rapport direct / réverbéré : {fr(F.drrDb)} dB).</figcaption>
+</figure>
+
+<style is:global>
+  .scnf { margin: 1.5rem 0; }
+  .scnf .scnf-cols { display: flex; flex-wrap: wrap; gap: 10px 24px; justify-content: center; align-items: flex-start; }
+  .scnf svg.scnf-a { flex: 0 1 320px; min-width: 0; max-width: 330px; height: auto; display: block; }
+  .scnf svg.scnf-b { flex: 0 1 352px; min-width: 0; max-width: 368px; height: auto; display: block; }
+  .scnf svg.scnf-a text, .scnf svg.scnf-b text { font-family: var(--font); }
+  .scnf svg text.lt { font-size: 11.5px; font-weight: 600; fill: var(--text); }
+  .scnf svg text.ls { font-size: 11px; fill: var(--text-2); }
+  .scnf svg text.op { font-size: 15px; font-weight: 600; fill: var(--text-2); }
+</style>

@@ -1,0 +1,38 @@
+---
+// Chapitre 4 : cadre commun des schémas de fonctionnement (DsSchema, MvdrSchema, MbMvdrSchema, CsmMvdrSchema, McCsmSchema).
+// Rend la même chaîne deux fois avec schema.ts : de gauche à droite (colonnes communes, figure de 748 px ou plus) et empilée de haut
+// en bas (figure plus étroite que 740 px : requête de conteneur, pas de l'écran). legende : ajoute la légende des blocs (une seule
+// fois dans le chapitre). Fentes : « encart » (sous le schéma) et la légende de la figure (par défaut).
+import { renderPipeline, LEGENDE, legendSwatch, type Spec } from './schema';
+interface Props { spec: Spec; aria: string; legende?: boolean }
+const { spec, aria, legende = false } = Astro.props;
+const h = renderPipeline(spec, 'h'), v = renderPipeline(spec, 'v');
+---
+<figure class="bfsch" role="group" aria-label={aria}>
+  {legende && (
+    <div class="bfsch-lg">
+      {LEGENDE.map(([k, t]) => <span><Fragment set:html={legendSwatch(k)} />{t}</span>)}
+    </div>
+  )}
+  <svg class="bfsch-h" viewBox={`0 0 ${h.w} ${h.h}`} aria-hidden="true" set:html={h.svg} />
+  <svg class="bfsch-v" viewBox={`0 0 ${v.w} ${v.h}`} aria-hidden="true" set:html={v.svg} />
+  <slot name="encart" />
+  <figcaption><slot /></figcaption>
+</figure>
+
+<style is:global>
+  .bfsch { margin: 1.5rem 0; container-type: inline-size; }
+  .bfsch > svg.bfsch-h, .bfsch > svg.bfsch-v { display: block; width: 100%; height: auto; font-family: var(--font); overflow: visible; }
+  .bfsch > svg.bfsch-v { display: none; max-width: 420px; margin: 0 auto; }
+  .bfsch .bfsch-lg { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--text-2); margin: 0 0 10px; }
+  .bfsch .bfsch-lg span { display: inline-flex; align-items: center; gap: 6px; }
+  .bfsch .bfsch-lg svg.bfsch-sw { display: block; }
+  .bfsch .bfsch-enc { margin-top: 10px; padding: 6px 10px; border-radius: 8px; background: color-mix(in srgb, var(--text-2) 6%, transparent); font-size: 13px; color: var(--text-2); line-height: 1.5; }
+  .bfsch .bfsch-enc b { color: var(--text); font-weight: 600; }
+  .bfsch .bfsch-enc .katex { font-size: 1.02em; color: var(--text); }
+  .bfsch figcaption .katex { font-size: 1em; }
+  @container (max-width: 739px) {
+    .bfsch > svg.bfsch-h { display: none; }
+    .bfsch > svg.bfsch-v { display: block; }
+  }
+</style>

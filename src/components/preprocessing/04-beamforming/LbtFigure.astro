@@ -1,0 +1,106 @@
+---
+// Chapitre 4 : séparer deux locuteurs, quel ordre pour les sorties ? Article, section VI-C et fig. 7, p. 616-617.
+// uPIT (utterance-level permutation invariant training, réf. [25] de l'article) : on calcule la perte pour les deux appariements sorties ↔
+// locuteurs et on garde la plus petite. LBT (location-based training, proposé par l'article pour MC-CSM) : la sortie 1 reçoit d'office
+// le locuteur d'azimut le plus petit ; un seul appariement. Positions : 37 azimuts de −90° à 90° par pas de 5°, à 2 m du centre de
+// l'antenne (section V-B4, p. 611) ; −90° à gauche, 0° en face, comme la fig. 7. Les deux azimuts dessinés (−50°, 20°) sont un exemple.
+// Résultat : SI-SNR de MC-CSM (DC-CRN), tableaux XI (sans réverbération) et XII (avec), lignes uPIT et LBT (resultats.ts).
+// Couleurs : réseau et sorties ŝ en violet (appris), locuteurs = cibles vraies en --text (cadre pointillé : vérité terrain), positions
+// possibles et antenne en gris.
+import { T11, T12, ANTENNES, val } from './resultats';
+import { box, sym, poly, TONE } from './schema';
+
+const fr = (v: number) => v.toFixed(2).replace('.', ',').replace('-', '−');
+const sh = (k: string) => sym('ŝ', { sub: k });
+const sv = (k: string) => sym('s', { sub: k });
+const L = (k: string) => `ℒ<tspan dy="3.5" font-size="0.82em">${k}</tspan><tspan dy="-3.5">​</tspan>`;
+const T = (x: number, y: number, t: string, o: { a?: string; fs?: number; c?: string; w?: number } = {}) =>
+  `<text x="${x}" y="${y}" text-anchor="${o.a ?? 'middle'}" font-size="${o.fs ?? 12}"${o.w ? ` font-weight="${o.w}"` : ''} style="fill:${o.c ?? 'var(--text)'}">${t}</text>`;
+const VW = 358;
+
+// ---- uPIT ----
+let a = T(0, 15, 'uPIT : deux appariements, on garde le meilleur', { a: 'start', fs: 12.5, w: 600 });
+{
+  const ya = 62, yb = 112, xo = 100, xt = 262;
+  a += box('net', 0, ya - 26, 64, yb - ya + 52) + T(32, (ya + yb) / 2 - 4, 'réseau', { c: TONE.net, w: 600 }) + T(32, (ya + yb) / 2 + 12, 'F', { c: TONE.net, w: 600 });
+  a += poly([[64, ya], [xo - 18, ya]], 'net') + poly([[64, yb], [xo - 18, yb]], 'net');
+  a += T(xo - 4, ya + 4, sh('1'), { c: TONE.net, fs: 13 }) + T(xo - 4, yb + 4, sh('2'), { c: TONE.net, fs: 13 });
+  // cibles vraies, cadre pointillé
+  [[ya, 'A'], [yb, 'B']].forEach(([y, k]) => (a += `<rect x="${xt - 2}" y="${+y - 13}" width="30" height="24" rx="5" fill="none" stroke="var(--text)" stroke-width="1.1" stroke-dasharray="3 2.5"/>` + T(xt + 13, +y + 4, sv(k as string), { fs: 13 })));
+  // appariement 1 : droit ; appariement 2 : croisé
+  const x1 = xo + 12, x2 = xt - 6;
+  a += `<line x1="${x1}" y1="${ya}" x2="${x2}" y2="${ya}" stroke="var(--text-2)" stroke-width="1.4"/><line x1="${x1}" y1="${yb}" x2="${x2}" y2="${yb}" stroke="var(--text-2)" stroke-width="1.4"/>`;
+  a += `<line x1="${x1}" y1="${ya + 4}" x2="${x2}" y2="${yb - 4}" stroke="var(--text-2)" stroke-width="1.4" stroke-opacity="0.7"/><line x1="${x1}" y1="${yb - 4}" x2="${x2}" y2="${ya + 4}" stroke="var(--text-2)" stroke-width="1.4" stroke-opacity="0.7"/>`;
+  const xm = (x1 + x2) / 2;
+  a += T(xm, ya - 7, `${L('1')} : droit`, { fs: 11.5, c: 'var(--text-2)' }) + T(xm + 22, (ya + yb) / 2 + 4, `${L('2')} : croisé`, { fs: 11.5, c: 'var(--text-2)', a: 'start' });
+  a += T(0, yb + 42, `${L('1')} = ℒ(${sh('1')}, ${sv('A')}) + ℒ(${sh('2')}, ${sv('B')})`, { a: 'start' });
+  a += T(0, yb + 60, `${L('2')} = ℒ(${sh('1')}, ${sv('B')}) + ℒ(${sh('2')}, ${sv('A')})`, { a: 'start' });
+  a += T(0, yb + 82, `perte = min(${L('1')}, ${L('2')})`, { a: 'start', w: 600 });
+}
+const HA = 222;
+
+// ---- LBT ----
+let b = T(0, 15, 'LBT : la position fixe l\'ordre des sorties', { a: 'start', fs: 12.5, w: 600 });
+{
+  const cx = 180, cy = 166, R = 112, th1 = -40, th2 = 20;
+  const P = (deg: number, r = R) => [cx + r * Math.sin((deg * Math.PI) / 180), cy - r * Math.cos((deg * Math.PI) / 180)];
+  for (let d = -90; d <= 90; d += 5) { const [x, y] = P(d); b += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.1" fill="var(--surface)" stroke="var(--text-2)" stroke-width="0.9"/>`; }
+  // antenne (deux micros) et rayon de 2 m
+  b += `<circle cx="${cx - 6}" cy="${cy}" r="2.4" fill="var(--text-2)"/><circle cx="${cx + 6}" cy="${cy}" r="2.4" fill="var(--text-2)"/>`;
+  const [rx, ry] = P(70);
+  b += `<line x1="${cx}" y1="${cy}" x2="${rx.toFixed(1)}" y2="${ry.toFixed(1)}" stroke="var(--text-2)" stroke-width="0.9" stroke-dasharray="2 3"/>`;
+  const [mx, my] = P(70, R * 0.55);
+  b += T(mx + 4, my - 6, '2 m', { fs: 11, c: 'var(--text-2)', a: 'start' });
+  b += T(cx - R - 2, cy + 18, '−90°', { fs: 11, c: 'var(--text-2)' }) + T(cx + R + 2, cy + 18, '+90°', { fs: 11, c: 'var(--text-2)' }) + T(cx, cy - R - 8, '0°', { fs: 11, c: 'var(--text-2)' });
+  // les deux locuteurs (exemple) et leur sortie
+  const [x1, y1] = P(th1), [x2, y2] = P(th2);
+  b += `<circle cx="${x1.toFixed(1)}" cy="${y1.toFixed(1)}" r="5" fill="var(--text)"/><circle cx="${x2.toFixed(1)}" cy="${y2.toFixed(1)}" r="5" fill="var(--text)"/>`;
+  b += T(x1 - 9, y1 - 7, `locuteur 1 → ${sh('1')}`, { a: 'end', fs: 12 });
+  b += T(x2 + 10, y2 - 6, `locuteur 2 → ${sh('2')}`, { a: 'start', fs: 12 });
+  b += T(0, 33, 'sortie 1 ← le locuteur d\'azimut le plus petit', { a: 'start', fs: 11.5, c: 'var(--text-2)' });
+  b += T(0, cy + 46, `perte = ℒ(${sh('1')}, ${sv('1')}) + ℒ(${sh('2')}, ${sv('2')})`, { a: 'start', w: 600 });
+}
+// recolore « → ŝ₂ » dans l'étiquette du locuteur 2
+for (const k of ['1', '2']) b = b.replace(`locuteur ${k} → ${sh(k)}`, `locuteur ${k} <tspan style="fill:${TONE.net}">→ ${sh(k)}</tspan>`);
+const HB = 222;
+
+const ligne = (crit: string, t: typeof T11) => ANTENNES.map((A) => val(t, `MC-CSM (DC-CRN) ${crit}`, A.id, 'SI-SNR'));
+const res = ['uPIT', 'LBT'].map((c) => ({ c, an: ligne(c, T11), rev: ligne(c, T12) }));
+const ecartMax = Math.max(...[0, 1, 2].flatMap((i) => [Math.abs(res[0].an[i] - res[1].an[i]), Math.abs(res[0].rev[i] - res[1].rev[i])]));
+const ariaA = 'uPIT : les deux sorties du réseau sont comparées aux deux locuteurs dans les deux ordres possibles, et la perte retenue est la plus petite des deux.';
+const ariaB = 'LBT : 37 positions possibles sur un demi-cercle de 2 m, de −90° à +90° ; la sortie 1 reçoit toujours le locuteur d\'azimut le plus petit.';
+---
+<figure class="lbtf">
+  <div class="lbtf-p">
+    <svg viewBox={`0 0 ${VW} ${HA}`} role="img" aria-label={ariaA} set:html={a} />
+    <svg viewBox={`0 0 ${VW} ${HB}`} role="img" aria-label={ariaB} set:html={b} />
+  </div>
+  <div class="lbtf-t" role="table" aria-label="SI-SNR de MC-CSM (DC-CRN) selon le critère d'entraînement">
+    <div class="lbtf-r lbtf-h" role="row"><span role="columnheader">SI-SNR (dB)</span><span role="columnheader" class="g">sans réverbération</span><span role="columnheader" class="g">avec réverbération</span></div>
+    <div class="lbtf-r lbtf-h2" role="row"><span>micros</span>{[0, 1].map(() => ANTENNES.map((A) => <span role="columnheader">{A.C}</span>))}</div>
+    {res.map((r, i) => (
+      <div class={`lbtf-r lbtf-b${i % 2 ? ' alt' : ''}`} role="row"><span role="rowheader"><b>{r.c}</b></span>{[...r.an, ...r.rev].map((v) => <span role="cell">{fr(v)}</span>)}</div>
+    ))}
+  </div>
+  <figcaption>MC-CSM (DC-CRN) entraîné avec l'un ou l'autre critère (article, section VI-C, tableaux XI et XII). Positions possibles : 37 azimuts de −90° à 90° par pas de 5°, à 2 m de l'antenne ; les deux azimuts dessinés sont un exemple. Les deux critères restent à moins de {fr(Math.ceil(ecartMax * 10) / 10).replace(/0$/, '')} dB l'un de l'autre, sans gagnant constant. LBT ne s'applique pas à un seul micro : sans indice spatial, la position ne se voit pas.</figcaption>
+</figure>
+
+<style is:global>
+  .lbtf { margin: 1.5rem 0; }
+  .lbtf .lbtf-p { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 14px 20px; }
+  .lbtf .lbtf-p svg { display: block; flex: 1 1 300px; max-width: 358px; height: auto; margin: 0; }
+  .lbtf .lbtf-p svg text { font-family: var(--font); }
+  .lbtf .lbtf-t { margin-top: 12px; font-family: var(--font); font-size: 12.5px; color: var(--text); }
+  .lbtf .lbtf-r { display: grid; grid-template-columns: minmax(64px, 1.3fr) repeat(6, minmax(0, 1fr)); column-gap: 6px; align-items: baseline; padding: 0 10px; }
+  .lbtf .lbtf-h { grid-template-columns: minmax(64px, 1.3fr) minmax(0, 3fr) minmax(0, 3fr); font-size: 11.5px; font-weight: 600; padding-bottom: 2px; }
+  .lbtf .lbtf-h .g { text-align: center; border-bottom: 1px solid var(--border); padding-bottom: 2px; }
+  .lbtf .lbtf-h2 { font-size: 11.5px; color: var(--text-2); padding-bottom: 6px; padding-top: 2px; }
+  .lbtf .lbtf-h2 span, .lbtf .lbtf-b span { text-align: center; }
+  .lbtf .lbtf-h2 span:first-child, .lbtf .lbtf-b span:first-child { text-align: left; }
+  .lbtf .lbtf-b { border-radius: 8px; background: color-mix(in srgb, var(--text-2) 7%, transparent); padding-top: 5px; padding-bottom: 5px; margin-bottom: 4px; font-variant-numeric: tabular-nums; }
+  .lbtf .lbtf-b.alt { background: color-mix(in srgb, var(--text-2) 3.5%, transparent); }
+  .lbtf .lbtf-b b { font-weight: 600; color: var(--text); }
+  @media (max-width: 480px) {
+    .lbtf .lbtf-r { padding: 0 6px; column-gap: 3px; }
+  }
+</style>

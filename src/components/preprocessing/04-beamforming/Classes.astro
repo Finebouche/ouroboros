@@ -1,0 +1,115 @@
+---
+// Chapitre 4 : les classes de l'article côte à côte, en fin de chapitre. Même mise en forme que Methodes.astro (chapitre 3) et Families.astro
+// (RL, chapitre 1) : bandes arrondies, en-têtes, petits schémas. Mêmes noms de classes et mêmes familles que ClassesGrille.astro, qui montre
+// déjà ce qui est appris ou calculé à chaque étape : ce tableau ne le répète pas. Sources par cellule (Tan, Wang, Wang 2022) :
+//   À savoir d'avance : DS, direction d'arrivée et géométrie (III-A1, p. 607 ; oracle DS, V-D1, p. 611) ; MVDR oracle, la cible vraie
+//     (éq. 18-19, 21 avec le vrai V) ; MB et CSM, rien sur l'antenne (« assume an unknown array geometry », p. 606) ; MC-CSM, la géométrie
+//     fixée à l'entraînement (p. 606 ; « trained separately for each experimental configuration », p. 611 ; fig. 6).
+//   Passes du réseau par énoncé : « apply a DNN P+1 times, P times for mask or complex spectrum estimation in the P channels and once for
+//     post-filtering » (p. 612) ; MC-CSM : un réseau, une passe (section IV, fig. 1).
+//   Un seul micro : MC-CSM se réduit à SC-CSM (p. 612-613, section VII) ; la formation de voies classique et par masques « does not
+//     function for monaural inputs » (p. 613).
+//   Dans l'article : DS, p. 612, 613, 616 (« limited », « small margin ») ; oracle TV-MVDR devant MC-CSM (DC-CRN) en SI-SNR à 8 et 7 micros
+//     dans les tableaux I, IV, VII et XII ; MB : p. 612 (CSM TI : PESQ comparable, SI-SNR nettement plus haut) et tableau XII (SI-SNR de
+//     MB TI-MVDR sous le non traité aux trois antennes) ; CSM TI + PF contre MC-CSM (DC-CRN) : tableaux I, VI-VIII proches, III-V devant
+//     dans les trois mesures et les trois antennes, XI-XII loin derrière ; CSM TV : p. 612-613 (devant TI sans post-filtre, TV + PF sous
+//     TI + PF en rehaussement), p. 615 (sous TI sans réverbération) ; MC-CSM : mêmes tableaux, fig. 6.
+// Glyphe de la colonne « passes » : une petite boîte violette par passe du réseau (schema.ts : violet = appris), la passe du post-filtre
+// plus pâle.
+import katex from 'katex';
+import { TONE } from './schema';
+const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
+
+const fill = (pale = false) => `color-mix(in srgb, ${TONE.net} ${pale ? 5 : 11}%, var(--surface))`;
+// passes : 'zero' aucune ; 'C' une par micro (pile) + la passe facultative du post-filtre ; 'un' un seul réseau multicanal
+const glyph = (p: 'zero' | 'C' | 'un') => {
+  if (p === 'zero') return '';
+  let o = '', x = 1;
+  if (p === 'C') {
+    for (let k = 0; k < 4; k++) { o += `<rect x="${x}" y="3" width="9" height="12" rx="2" fill="${fill()}" stroke="${TONE.net}" stroke-width="1.1"/>`; x += 11; }
+    o += `<text x="${x + 1}" y="13" font-size="10" fill="var(--text-2)">…</text>`; x += 12;
+    o += `<rect x="${x}" y="3" width="9" height="12" rx="2" fill="${fill(true)}" stroke="${TONE.net}" stroke-width="0.9"/>`; x += 10;
+  } else { o += `<rect x="${x}" y="3" width="30" height="12" rx="2" fill="${fill()}" stroke="${TONE.net}" stroke-width="1.3"/>`; x += 31; }
+  return `<svg viewBox="0 0 ${x + 1} 18" class="clgl" style="width:${x + 1}px" aria-hidden="true">${o}</svg>`;
+};
+
+type Row = { nom: string; sub: string; avance: string; passes: string; glyph: 'zero' | 'C' | 'un'; mono: string; monoOn: boolean; article: string };
+const C = tx('C'), C1 = tx('C + 1');
+const groupes: { titre: string; rows: Row[] }[] = [
+  { titre: 'Classique', rows: [
+    { nom: 'DS', sub: 'somme après retard (delay-and-sum)', avance: 'la direction d\'arrivée de la cible et la géométrie de l\'antenne',
+      passes: 'aucune', glyph: 'zero', mono: 'non', monoOn: false,
+      article: 'gains limités dans toutes les tâches, même pointée sur la vraie direction' },
+    { nom: 'MVDR oracle', sub: 'TI ou TV, borne haute', avance: 'la cible vraie, connue seulement en simulation',
+      passes: 'aucune', glyph: 'zero', mono: 'non', monoOn: false,
+      article: 'avec réverbération, à 8 et 7 micros, TV-MVDR reste devant MC-CSM en SI-SNR' },
+  ] },
+  { titre: 'Guidée par un réseau', rows: [
+    { nom: 'MB-MVDR', sub: 'par masques (mask-based)', avance: 'rien sur l\'antenne : géométrie quelconque',
+      passes: `${C}, ${C1} avec post-filtre`, glyph: 'C', mono: 'non', monoOn: false,
+      article: 'en déréverbération, SI-SNR nettement sous CSM-MVDR (PESQ comparable) ; en séparation avec réverbération, SI-SNR sous le signal non traité' },
+    { nom: 'CSM-MVDR TI', sub: 'par projection spectrale complexe, une covariance par énoncé', avance: 'rien sur l\'antenne : géométrie quelconque',
+      passes: `${C}, ${C1} avec post-filtre`, glyph: 'C', mono: 'non', monoOn: false,
+      article: 'avec post-filtre, la meilleure voie guidée : au niveau de MC-CSM en déréverbération, devant lui avec un bruit ponctuel, loin derrière en séparation' },
+    { nom: 'CSM-MVDR TV', sub: 'covariance du bruit par trame', avance: 'rien sur l\'antenne : géométrie quelconque',
+      passes: `${C}, ${C1} avec post-filtre`, glyph: 'C', mono: 'non', monoOn: false,
+      article: 'devant TI sans post-filtre (déréverbération, rehaussement) ; avec post-filtre, sous TI en rehaussement ; sous TI sans réverbération' },
+  ] },
+  { titre: 'Réseau seul', rows: [
+    { nom: 'MC-CSM', sub: 'le réseau est le filtre', avance: 'la géométrie de l\'antenne, fixée à l\'entraînement',
+      passes: '1', glyph: 'un', mono: 'oui', monoOn: true,
+      article: 'au niveau des meilleures voies guidées en déréverbération et avec un bruit diffus, derrière avec un bruit ponctuel, loin devant en séparation ; baisse progressive si l\'écartement des micros change' },
+  ] },
+];
+---
+<figure class="cl">
+  <div class="clr clhd">
+    <div>classe</div>
+    <div>à savoir d'avance</div>
+    <div>passes du réseau</div>
+    <div>un seul micro</div>
+    <div>dans l'article</div>
+  </div>
+  {groupes.map((g) => (
+    <>
+      <div class="clgr">{g.titre}</div>
+      {g.rows.map((r, i) => (
+        <div class={`clr clg${i % 2 ? ' alt' : ''}`}>
+          <div class="cln"><b>{r.nom}</b><small>{r.sub}</small></div>
+          <div class="clt"><i class="cll">à savoir d'avance : </i>{r.avance}</div>
+          <div class="clps"><i class="cll">passes du réseau : </i><Fragment set:html={glyph(r.glyph)} /><span class="clpt" set:html={r.passes} /></div>
+          <div><i class="cll">un seul micro : </i><span class={`clp${r.monoOn ? ' on' : ''}`}>{r.mono}</span>{r.monoOn && <small class="cls">SC-CSM</small>}</div>
+          <div class="clt"><i class="cll">dans l'article : </i>{r.article}</div>
+        </div>
+      ))}
+    </>
+  ))}
+</figure>
+
+<style is:global>
+  .cl { margin: 1.5rem 0; font-family: var(--font); }
+  .cl .clr { display: grid; grid-template-columns: 150px minmax(0, 1fr) 132px 74px minmax(0, 1.7fr); column-gap: 12px; align-items: center; }
+  .cl .clhd { padding: 0 12px 6px; font-size: 11.5px; font-weight: 600; color: var(--text); line-height: 1.3; align-items: end; }
+  .cl .clgr { font-size: 11px; font-weight: 600; letter-spacing: 0.02em; color: var(--text-2); margin: 10px 0 4px 12px; }
+  .cl .clg { border-radius: 8px; background: color-mix(in srgb, var(--text-2) 7%, transparent); padding: 9px 12px; margin-bottom: 6px; }
+  .cl .clg.alt { background: color-mix(in srgb, var(--text-2) 3.5%, transparent); }
+  .cl .cln b { display: block; font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.3; }
+  .cl .cln small { display: block; font-size: 11.5px; color: var(--text-2); margin-top: 2px; line-height: 1.35; }
+  .cl .clt { font-size: 12.5px; color: var(--text); line-height: 1.45; }
+  .cl .clps .clgl { display: block; height: auto; margin-bottom: 3px; }
+  .cl .clpt { display: block; font-size: 12px; color: var(--text); line-height: 1.35; }
+  .cl .clpt .katex { font-size: 1em; }
+  .cl .clp { display: inline-block; font-size: 11.5px; padding: 1px 9px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-2); text-align: center; line-height: 1.5; }
+  .cl .clp.on { color: var(--text); border-color: var(--text-2); }
+  .cl .cls { display: block; font-size: 11.5px; color: var(--text-2); margin-top: 3px; }
+  .cl .cll { display: none; font-style: normal; font-size: 11.5px; color: var(--text-2); }
+  @media (max-width: 720px) {
+    .cl .clr { grid-template-columns: 1fr; row-gap: 6px; }
+    .cl .clhd { display: none; }
+    .cl .cll { display: inline; }
+    .cl .clps { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .cl .clps .clgl { margin-bottom: 0; }
+    .cl .clpt { display: inline; }
+    .cl .cls { display: inline; margin-left: 6px; }
+  }
+</style>

@@ -1,0 +1,170 @@
+---
+// Chapitre 4 (Preprocessing) : « Le réseau seul fait-il aussi bien que la formation de voies ? ». Graphique en points : une rangée par
+// classe, une colonne par antenne, une échelle commune aux trois colonnes. Chiffres recopiés des tableaux I, IV, VII et XII de l'article
+// (resultats.ts) ; le widget n'affiche que ces chiffres, plus l'écart de la pastille (différence de deux cases du même tableau).
+// Classes : oracle en rond creux pointillé --text (vérité terrain), formation de voies guidée par réseau (DC-CRN) en brun --p-mel (le filtre
+// est calculé), MC-CSM (DC-CRN) en violet --r-out (le réseau est le filtre), non traité en gris.
+// Libellés : ceux de ClassesGrille.astro (MB-MVDR, CSM-MVDR TI / TV) ; lignes de l'article : MB TI-MVDR (DC-CRN), CSM TI-MVDR (DC-CRN),
+// CSM TV-MVDR (DC-CRN), avec « + PF » sauf en séparation ; Oracle DS, Oracle TI-MVDR, Oracle TV-MVDR ; MC-CSM (DC-CRN) ; Unprocessed.
+// Mesure : SI-SNR ou PESQ (les deux seules présentes dans les quatre tableaux). Elles ne racontent pas la même chose : en PESQ, MC-CSM
+// dépasse les MVDR oracles presque partout ; en SI-SNR, l'oracle TV-MVDR reste devant à 8 et 7 micros (script scratchpad resultats/analyse.ts).
+// STOI (tableaux IV, VII) et SDR (tableau XII) donnent les mêmes verdicts que SI-SNR face à la meilleure voie guidée : non proposés.
+// Séparation (tableau XII) : pas de post-filtre (p. 615-616) ; MC-CSM = la ligne entraînée par LBT, le critère que l'article propose
+// pour MC-CSM (la ligne uPIT est dans LbtFigure).
+import { T1, T4, T7, T12, ANTENNES, val, type Tableau } from './resultats';
+
+type Kind = 'oracle' | 'guide' | 'mc' | 'brut';
+const taches: { id: string; bouton: string; titre: string; t: Tableau; pf: boolean; mc: string }[] = [
+  { id: 'dereverb', bouton: 'déréverbération', titre: 'déréverbération', t: T1, pf: true, mc: 'MC-CSM (DC-CRN)' },
+  { id: 'ponctuel', bouton: 'bruit ponctuel', titre: 'rehaussement, un bruit ponctuel à 0 dB', t: T4, pf: true, mc: 'MC-CSM (DC-CRN)' },
+  { id: 'diffus', bouton: 'bruit diffus', titre: 'rehaussement, un bruit quasi diffus à 0 dB', t: T7, pf: true, mc: 'MC-CSM (DC-CRN)' },
+  { id: 'sep', bouton: 'deux locuteurs', titre: 'séparation de deux locuteurs, avec réverbération', t: T12, pf: false, mc: 'MC-CSM (DC-CRN) LBT' },
+];
+const MESURES = ['SI-SNR', 'PESQ'];
+const payload = JSON.stringify({
+  antennes: ANTENNES.map((a) => ({ court: a.court, forme: a.id === 'c7' ? 'circulaire' : 'linéaire', C: a.C, id: a.id })),
+  mesures: MESURES,
+  taches: taches.map((k) => {
+    const P = k.pf ? ' + PF' : '';
+    const rows: { label: string; kind: Kind; v: number[][] }[] = [
+      { label: 'DS', kind: 'oracle', src: 'Oracle DS' },
+      { label: 'MVDR TI', kind: 'oracle', src: 'Oracle TI-MVDR' },
+      { label: 'MVDR TV', kind: 'oracle', src: 'Oracle TV-MVDR' },
+      { label: `MB-MVDR${P}`, kind: 'guide', src: `MB TI-MVDR (DC-CRN)${P}` },
+      { label: `CSM-MVDR TI${P}`, kind: 'guide', src: `CSM TI-MVDR (DC-CRN)${P}` },
+      { label: `CSM-MVDR TV${P}`, kind: 'guide', src: `CSM TV-MVDR (DC-CRN)${P}` },
+      { label: 'MC-CSM', kind: 'mc', src: k.mc },
+      { label: 'non traité', kind: 'brut', src: 'Unprocessed' },
+    ].map((r) => ({ label: r.label, kind: r.kind as Kind, v: MESURES.map((m) => ANTENNES.map((a) => val(k.t, r.src, a.id, m))) }));
+    return { bouton: k.bouton, sous: `tableau ${k.t.nom} (p. ${k.t.page}) · ${k.titre}`, rows };
+  }),
+});
+---
+<div class="widget pp rsw" data-widget="rsw" data-payload={payload}>
+  <div class="fhead">
+    <div class="ftitle"><b>Le réseau seul fait-il aussi bien que la formation de voies ?</b><span data-ref="sous"></span></div>
+    <div class="fstat"><span class="lead">MC-CSM − meilleure voie guidée</span><span data-ref="ecarts"></span></div>
+  </div>
+  <div class="ctl">
+    <div class="row"><span>Tâche</span><span class="seg" data-ref="tache"></span></div>
+    <div class="row"><span>Mesure</span><span class="seg" data-ref="mesure"></span></div>
+  </div>
+  <svg data-ref="svg" data-rsw role="img" aria-label="Scores de chaque classe de méthodes, pour trois antennes"></svg>
+  <p class="note">Moyennes sur le jeu de test, recopiées de l'article ; tous les réseaux sont des DC-CRN. Oracle : formules de la formation de voies appliquées à la vraie cible. + PF : le réseau monocanal réappliqué à la sortie du MVDR (pas de post-filtre en séparation, où MC-CSM est entraîné par LBT). SI-SNR : rapport en dB entre la part de la sortie alignée sur la cible et le reste, insensible au gain. PESQ : note de qualité perçue, calculée par un modèle d'écoute.</p>
+</div>
+
+<script>
+  type Row = { label: string; kind: 'oracle' | 'guide' | 'mc' | 'brut'; v: number[][] };
+  type Data = { antennes: { court: string; forme: string; C: number; id: string }[]; mesures: string[]; taches: { bouton: string; sous: string; rows: Row[] }[] };
+  document.querySelectorAll<HTMLElement>('[data-widget="rsw"]').forEach((root) => {
+    const $ = (r: string) => root.querySelector<HTMLElement>(`[data-ref="${r}"]`)!;
+    const D = JSON.parse(root.dataset.payload!) as Data;
+    const fr = (v: number, d = 2) => v.toFixed(d).replace('.', ',').replace('-', '−');
+    const sgn = (v: number) => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(2).replace('.', ',');
+    const st = { tache: 0, mesure: 0 };
+    const mk = (ref: 'tache' | 'mesure', labels: string[]) => labels.forEach((t, i) => {
+      const b = document.createElement('button'); b.type = 'button'; b.textContent = t; b.dataset.v = String(i);
+      b.addEventListener('click', () => { st[ref] = i; draw(); }); $(ref).appendChild(b);
+    });
+    mk('tache', D.taches.map((t) => t.bouton));
+    mk('mesure', D.mesures);
+    const svg = $('svg') as unknown as SVGSVGElement;
+    const COL = { oracle: 'var(--text)', guide: 'var(--p-mel)', mc: 'var(--r-out)', brut: 'var(--text-2)' };
+
+    // petite antenne : micros en gris, vue de dessus
+    const antenne = (id: string, cx: number, cy: number) => {
+      const pts: [number, number][] = id === 'l2' ? [[-6, 0], [6, 0]] : id === 'l8' ? Array.from({ length: 8 }, (_, k) => [-15.4 + 4.4 * k, 0]) : [[0, 0], ...Array.from({ length: 6 }, (_, k) => [7 * Math.cos((k * Math.PI) / 3), 7 * Math.sin((k * Math.PI) / 3)] as [number, number])];
+      return pts.map(([x, y]) => `<circle cx="${(cx + x).toFixed(1)}" cy="${(cy + y).toFixed(1)}" r="1.6" fill="var(--text-2)"/>`).join('');
+    };
+    const pas = (span: number) => { const raw = span / 4, p = 10 ** Math.floor(Math.log10(raw)), m = raw / p; return (m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10) * p; };
+
+    function draw() {
+      (['tache', 'mesure'] as const).forEach((r) => $(r).querySelectorAll('button').forEach((b) => {
+        const on = +b.dataset.v! === st[r]; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on));
+      }));
+      const T = D.taches[st.tache], m = st.mesure, mes = D.mesures[m];
+      $('sous').textContent = T.sous;
+      // écart de la pastille : MC-CSM moins la meilleure des trois voies guidées, antenne par antenne
+      const best = D.antennes.map((_, a) => Math.max(...T.rows.filter((r) => r.kind === 'guide').map((r) => r.v[m][a])));
+      const mc = T.rows.find((r) => r.kind === 'mc')!;
+      const unite = mes === 'PESQ' ? '' : ' dB';
+      $('ecarts').innerHTML = D.antennes.map((A, a) => `<span>${A.court} <b>${sgn(mc.v[m][a] - best[a])}</b></span>`).join('') + (unite ? `<span>${unite.trim()}</span>` : '');
+
+      const W = Math.max(300, Math.min(720, Math.round(svg.getBoundingClientRect().width) || 680)), narrow = W < 560;
+      const lab = narrow ? 92 : 150, gap = narrow ? 8 : 16, pw = (W - lab - 2 * gap) / 3;
+      const top = narrow ? 36 : 40, rh = narrow ? 21 : 22, gg = 14;
+      // rangées : trois oracles, trois voies guidées, MC-CSM, non traité ; un petit écart entre les groupes
+      const groupe = (k: string) => ({ oracle: 0, guide: 1, mc: 2, brut: 3 } as Record<string, number>)[k];
+      const ys = T.rows.map((r, i) => top + 14 + i * rh + groupe(r.kind) * gg);
+      const bas = ys[ys.length - 1] + 14, H = bas + 32;
+      const all = T.rows.flatMap((r) => r.v[m]);
+      const lo0 = Math.min(...all), hi0 = Math.max(...all), step = pas(hi0 - lo0);
+      const lo = Math.floor(lo0 / step) * step, hi = Math.ceil(hi0 / step) * step;
+      const pad = 9;
+      let s = '';
+      // étiquettes des rangées et des groupes
+      s += `<text x="0" y="${top + 2}" class="gp">${narrow ? 'classique, oracle' : 'classique, oracle (cible vraie)'}</text>`;
+      s += `<text x="0" y="${ys[3] - 14}" class="gp">${narrow ? 'guidée' : 'guidée par un réseau'}</text>`;
+      s += `<text x="0" y="${ys[6] - 14}" class="gp">réseau seul</text>`;
+      T.rows.forEach((r, i) => (s += `<text x="0" y="${ys[i] + 4}" class="rl ${r.kind}" style="fill:${COL[r.kind]}">${narrow ? r.label.replace(' + PF', '+PF').replace('-MVDR', '') : r.label}</text>`));
+      D.antennes.forEach((A, a) => {
+        const x0 = lab + a * (pw + gap), X = (v: number) => x0 + pad + ((v - lo) / (hi - lo)) * (pw - 2 * pad);
+        // en-tête : antenne dessinée, nom
+        s += narrow
+          ? antenne(A.id, x0 + pw / 2, 8) + `<text x="${x0 + pw / 2}" y="${top - 11}" text-anchor="middle" class="ah">${A.court}</text>`
+          : antenne(A.id, x0 + 16, 12) + `<text x="${x0 + 34}" y="16"><tspan class="ah">${A.court}</tspan><tspan class="ah2"> ${A.forme}</tspan></text>`;
+        // cadre léger, graduations verticales
+        s += `<rect x="${x0.toFixed(1)}" y="${top - 8}" width="${pw.toFixed(1)}" height="${(bas - top + 8).toFixed(1)}" rx="6" fill="color-mix(in srgb, var(--text-2) 5%, transparent)"/>`;
+        // graduations ; sur mobile, trois ou quatre étiquettes au plus
+        const nT = Math.round((hi - lo) / step), saut = narrow ? Math.max(1, Math.ceil(nT / 3)) : 1;
+        for (let k = 0; k <= nT; k++) {
+          const v = lo + k * step, x = X(v).toFixed(1);
+          s += `<line x1="${x}" y1="${top - 8}" x2="${x}" y2="${bas}" stroke="var(--border)" stroke-dasharray="${Math.abs(v) < 1e-9 ? '' : '2 3'}"/>`;
+          if (k % saut === 0) s += `<text x="${x}" y="${bas + 13}" text-anchor="middle" class="ax">${fr(v, step < 1 ? 1 : 0)}</text>`;
+        }
+        // points et valeurs
+        const meilleur = Math.max(...T.rows.filter((r) => r.kind === 'guide').map((r) => r.v[m][a]));
+        T.rows.forEach((r, i) => {
+          const v = r.v[m][a], x = X(v), y = ys[i];
+          if (r.kind === 'oracle') s += `<circle cx="${x.toFixed(1)}" cy="${y}" r="4.6" fill="var(--surface)" stroke="var(--text)" stroke-width="1.3" stroke-dasharray="2.2 1.6"/>`;
+          else s += `<circle cx="${x.toFixed(1)}" cy="${y}" r="${r.kind === 'mc' ? 5.6 : r.kind === 'brut' ? 3.8 : 4.6}" fill="${COL[r.kind]}"/>`;
+          const fort = r.kind === 'mc' || (r.kind === 'guide' && v === meilleur);
+          const droite = x < x0 + pw / 2, tx = droite ? x + 8 : x - 8;
+          s += `<text x="${tx.toFixed(1)}" y="${y + 4}" text-anchor="${droite ? 'start' : 'end'}" class="vl${fort ? ' f' : ''}" style="fill:${r.kind === 'mc' ? 'var(--r-out)' : r.kind === 'guide' ? 'var(--p-mel)' : 'var(--text-2)'}">${fr(v)}</text>`;
+        });
+      });
+      s += `<text x="${lab + (W - lab) / 2}" y="${bas + 28}" text-anchor="middle" class="ax">${mes === 'PESQ' ? 'PESQ (plus haut = mieux)' : 'SI-SNR en dB (plus haut = mieux)'}</text>`;
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      svg.innerHTML = s;
+    }
+    draw();
+    let w0 = 0;
+    new ResizeObserver(() => { const w = Math.round(svg.getBoundingClientRect().width); if (Math.abs(w - w0) > 4) { w0 = w; draw(); } }).observe(svg);
+  });
+</script>
+
+<style is:global>
+  .rsw .fhead { line-height: 1.4; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .rsw .ftitle { flex: 1 1 300px; }
+  .rsw .ftitle b { display: block; font-size: 15px; font-weight: 600; }
+  .rsw .ftitle > span { font-size: 12.5px; color: var(--text-2); }
+  .rsw .fstat { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 10px; background: var(--surface-2); border-radius: 8px; padding: 4px 10px; max-width: 100%; }
+  .rsw .fstat span { font-size: 12px; color: var(--text-2); white-space: nowrap; }
+  .rsw .fstat span.lead { flex-basis: 100%; }
+  .rsw .fstat [data-ref="ecarts"] { display: inline-flex; flex-wrap: wrap; gap: 0 12px; }
+  .rsw .fstat b { font-size: 14px; font-weight: 600; color: var(--r-out); margin-left: 3px; }
+  .rsw .ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px; margin-bottom: 8px; }
+  .rsw .ctl .row { margin: 0; font-size: 13px; gap: 8px; }
+  .rsw .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .rsw .seg button { font-size: 13px; padding: 4px 9px; }
+  .rsw svg[data-rsw] { display: block; width: 100%; height: auto; margin: 0; }
+  .rsw svg[data-rsw] text { font-family: var(--font); }
+  .rsw svg[data-rsw] text.ax { font-size: 11px; fill: var(--text-2); }
+  .rsw svg[data-rsw] .ah { font-size: 12px; font-weight: 600; fill: var(--text); }
+  .rsw svg[data-rsw] .ah2 { font-size: 11px; font-weight: 400; fill: var(--text-2); }
+  .rsw svg[data-rsw] text.gp { font-size: 11px; font-style: italic; fill: var(--text-2); }
+  .rsw svg[data-rsw] text.rl { font-size: 12px; }
+  .rsw svg[data-rsw] text.rl.mc { font-weight: 600; }
+  .rsw svg[data-rsw] text.vl { font-size: 11px; }
+  .rsw svg[data-rsw] text.vl.f { font-weight: 700; }
+</style>

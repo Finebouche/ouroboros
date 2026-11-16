@@ -1,0 +1,30 @@
+---
+// Chapitre 4 : schéma de fonctionnement du MVDR guidé par masques (mask-based, MB) de l'article.
+// Réseau monocanal F appliqué à chacun des C micros (le même) → masques m̂_i (cible d'entraînement : masque idéal, éq. 20, p. 611)
+// → poids η = médiane des m̂_i, ξ = médiane des 1 − m̂_i (éq. 8-9) → covariances pondérées R̂_s, R̂_v calculées sur y (éq. 6-7)
+// → d̂ = vecteur propre principal de R̂_s ÷ sa composante au micro de référence (éq. 10) → MVDR (éq. 5) → post-filtre facultatif :
+// le même réseau appliqué une fois de plus, à la sortie (p. 607 et V-D2, p. 611). Toutes les formules : section III-B1, p. 607.
+import katex from 'katex';
+import SchemaFigure from './SchemaFigure.astro';
+import { NODES, SY, sym, icMats, mvdrEdges, type Spec } from './schema';
+interface Props { legende?: boolean }
+const { legende = false } = Astro.props;
+const irm = katex.renderToString('m_i^* = \\frac{|s_i|}{|s_i| + |y_i - s_i|}', { throwOnError: false });
+const spec: Spec = {
+  nodes: [
+    NODES.entree(),
+    NODES.reseau('mask'),
+    { id: 'stats', col: 2, kind: 'calc', icon: icMats([SY.Rhs, SY.Rhv]), lines: [{ t: `${sym('η')} = méd ${SY.mi}` }, { t: `${sym('ξ')} = méd (1 − ${SY.mi})` }] },
+    NODES.pointage(),
+    NODES.mvdr(),
+    NODES.postFiltre('mask'),
+    NODES.sortie(),
+  ],
+  edges: [{ from: 'in', to: 'net', label: SY.yi }, { from: 'net', to: 'stats', label: SY.mi }, ...mvdrEdges(false, true)],
+  bus: { from: 'in', to: ['stats', 'filtre'], label: SY.y },
+};
+const aria = "MVDR guidé par masques : le même réseau monocanal, appliqué à chaque micro, prédit un masque m̂_i ; les médianes η et ξ des masques pondèrent les covariances R̂_s et R̂_v calculées sur le mélange ; vecteur propre principal de R̂_s, puis MVDR ; post-filtre facultatif par le même réseau.";
+---
+<SchemaFigure spec={spec} aria={aria} legende={legende}>
+  MVDR guidé par masques (article, section III-B1, éq. 6-10). méd : médiane sur les C micros, case temps-fréquence par case. Le réseau apprend le masque idéal (éq. 20).
+</SchemaFigure>

@@ -1,0 +1,56 @@
+---
+// Chapitre 4 : le vecteur RTF d(f) en petites figures répétées. Valeurs exactes (sim.ts : rtfLibre, rtfPiece), aucun tirage.
+// À gauche : champ libre, onde plane d'azimut 30° sur l'antenne de 8 micros espacés de 5 cm (fig. 5b de l'article) :
+//   d_i(f) = exp(−2πi f τ_i), τ_i = −i · 5 cm · sin 30° / c ; module 1, la phase avance de 360 f · 5 cm · sin 30° / c degrés par micro.
+// À droite : même antenne et même direction dans la pièce de SceneFigure (source à 1,2 m) : rapport des fonctions de transfert complètes
+//   H_i(f) / H_0(f) (trajet direct + 56 000 sources images). Module et phase quelconques, qui changent d'une fréquence à l'autre.
+// Dans l'éq. 1 de l'article, d ne porte que le trajet direct ; la réverbération de la cible est dans H, donc dans v : le panneau de droite
+// montre ce que serait « d » si l'on y mettait aussi la réverbération.
+// Convention des phaseurs : chapitre 3 (flèche = module et phase, 0° vers la droite). Cible en --text ; ce qu'ajoute la pièce en gris.
+import { rtfLibre, rtfPiece, C8, PAS8, AZ_CIBLE, CSON, PIECE, R_CIBLE, t60Eyring } from './sim';
+import { phaseur, fr } from './phaseurs';
+
+const FREQS = [1000, 2000, 4000], R = 12, U = 34, ox = 46, oy = 40, rowH = 58;
+const W = ox + C8 * U + 4, H = oy + FREQS.length * rowH + 2;
+const pasDeg = (f: number) => (360 * f * PAS8 * Math.sin((AZ_CIBLE * Math.PI) / 180)) / CSON;
+
+function panneau(titre: string, sous: string, vecs: Float64Array[], col: string, modules: boolean) {
+  let s = `<text x="0" y="13" class="lt">${titre}</text><text x="0" y="27" class="ls">${sous}</text>`;
+  for (let i = 0; i < C8; i++) s += `<text x="${ox + (i + 0.5) * U}" y="${oy}" text-anchor="middle" class="ls">${i === 0 ? '0 réf.' : i}</text>`;
+  FREQS.forEach((f, r) => {
+    const cy = oy + 10 + r * rowH + R + 4;
+    s += `<text x="0" y="${cy + 4}" class="lf">${f / 1000} kHz</text>`;
+    for (let i = 0; i < C8; i++) {
+      const re = vecs[r][2 * i], im = vecs[r][2 * i + 1], cx = ox + (i + 0.5) * U;
+      s += phaseur(cx, cy, R, re, im, col, { borne: 1.4, w: 1.7 });
+      if (modules) {
+        const m = Math.hypot(re, im);
+        s += `<text x="${cx}" y="${cy + R + 13}" text-anchor="middle" class="lm${m > 1.4 ? ' fort' : ''}">${fr(m)}</text>`;
+      }
+    }
+    if (!modules) s += `<text x="${ox + (C8 * U) / 2}" y="${cy + R + 13}" text-anchor="middle" class="lm">la phase avance de ${Math.round(pasDeg(f))}° d'un micro au suivant</text>`;
+  });
+  return s;
+}
+const gauche = panneau('Champ libre : d(f)', `onde plane, azimut ${AZ_CIBLE}°, module 1`, FREQS.map((f) => rtfLibre(C8, PAS8, AZ_CIBLE, f)), 'var(--text)', false);
+const droite = panneau('Dans la pièce, réverbération comprise', 'Hᵢ(f) / H₀(f) ; sous chaque flèche, son module', FREQS.map((f) => rtfPiece(f, true)), 'var(--text-2)', true);
+---
+<figure class="rtff">
+  <div class="rtff-cols">
+    <svg class="rtff-svg" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Vecteur RTF en champ libre : sur chaque micro une flèche de longueur 1 dont l'angle avance d'un pas constant, d'autant plus grand que la fréquence est haute" set:html={gauche} />
+    <svg class="rtff-svg" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Rapport des fonctions de transfert complètes dans une pièce : modules et phases irréguliers" set:html={droite} />
+  </div>
+  <figcaption>Valeurs exactes, antenne de {C8} micros espacés de 5 cm, source à {AZ_CIBLE}° de la perpendiculaire. Flèche : module (cercle = 1, flèche tronquée au-delà de 1,4) et phase. « Dans la pièce » : même direction, source à {fr(R_CIBLE)} m, pièce simulée de la scène ({PIECE.L.map((v) => fr(v, v % 1 ? 1 : 0)).join(' × ')} m, T60 ≈ {fr(t60Eyring(PIECE), 2)} s).</figcaption>
+</figure>
+
+<style is:global>
+  .rtff { margin: 1.5rem 0; }
+  .rtff .rtff-cols { display: flex; flex-wrap: wrap; gap: 14px 40px; justify-content: center; }
+  .rtff svg.rtff-svg { flex: 0 1 330px; min-width: 0; max-width: 340px; height: auto; display: block; }
+  .rtff svg.rtff-svg text { font-family: var(--font); }
+  .rtff svg.rtff-svg text.lt { font-size: 11.5px; font-weight: 600; fill: var(--text); }
+  .rtff svg.rtff-svg text.ls { font-size: 11px; fill: var(--text-2); }
+  .rtff svg.rtff-svg text.lf { font-size: 11.5px; font-weight: 600; fill: var(--text-2); }
+  .rtff svg.rtff-svg text.lm { font-size: 11px; fill: var(--text-2); }
+  .rtff svg.rtff-svg text.lm.fort { fill: var(--text); font-weight: 600; }
+</style>

@@ -1,0 +1,70 @@
+---
+// Chapitre 4 : le coût. Article, section VI-A, p. 612 : « the number of MAC operations is 168.8 billion for "CSM TI-MVDR (DC-CRN) + PF"
+// and 18.9 billion for "MC-CSM (DC-CRN)" », « on a 4-second reverberant signal in the 8-channel condition ». La raison, même page :
+// les formations de voies avec post-filtre « apply a DNN P+1 times, P times for mask or complex spectrum estimation in the P channels
+// and once for post-filtering ». billion = milliard (10⁹). Deux versions : large (748 px, 1 px de viewBox = 1 px) et étroite (358 px).
+// Barres : brun = formation de voies guidée par réseau, violet = MC-CSM (mêmes couleurs que ResultatsWidget) ; passes du réseau :
+// petites boîtes 'net' de schema.ts (le réseau, appris).
+import { COUT } from './resultats';
+import { box, TONE, it } from './schema';
+
+const fr = (v: number) => v.toFixed(1).replace('.', ',');
+const C = COUT.micros;
+const rows = [
+  { nom: 'CSM TI-MVDR + PF', sous: 'formation de voies guidée par réseau', v: COUT.csmTiPf, col: 'var(--p-mel)', passes: C + 1,
+    raison: `${it('C')} + 1 = ${C + 1} passes du réseau`, raison2: `une par micro, une pour le post-filtre` },
+  { nom: 'MC-CSM', sous: 'le réseau est le filtre', v: COUT.mcCsm, col: 'var(--r-out)', passes: 1,
+    raison: '1 passe du réseau', raison2: `les ${C} micros entrent ensemble` },
+];
+function draw(W: number) {
+  const narrow = W < 500, lab = narrow ? 0 : 236, bw = W - lab - (narrow ? 96 : 120);
+  const vmax = Math.max(...rows.map((r) => r.v));
+  const rowH = narrow ? 120 : 90;
+  let s = '';
+  rows.forEach((r, i) => {
+    const y0 = 6 + i * rowH;
+    // nom de la classe (à gauche en large, au-dessus en étroit)
+    const ny = narrow ? y0 + 12 : y0 + 17, by = narrow ? y0 + 36 : y0 + 4;
+    s += `<text x="0" y="${ny}" font-size="13" font-weight="600" style="fill:${r.col}">${r.nom}</text>`;
+    s += `<text x="0" y="${ny + 15}" font-size="11.5" style="fill:var(--text-2)">${r.sous}</text>`;
+    // barre et valeur
+    const w = (r.v / vmax) * bw;
+    s += `<rect x="${lab}" y="${by}" width="${w.toFixed(1)}" height="18" rx="3" style="fill:${r.col}"/>`;
+    s += `<text x="${(lab + w + 8).toFixed(1)}" y="${by + 13.5}" font-size="13" font-weight="600" style="fill:var(--text)">${fr(r.v)}<tspan font-size="11.5" font-weight="400" style="fill:var(--text-2)"> milliards</tspan></text>`;
+    // passes du réseau : une petite boîte par passe, puis la raison écrite
+    const py = by + 27, bx = 15, gap = 3;
+    for (let k = 0; k < r.passes; k++) {
+      const x = lab + k * (bx + gap) + (k === C ? 5 : 0);
+      s += box('net', x, py, bx, 11, { optional: k === C }).replace('rx="7"', 'rx="2.5"');
+    }
+    const tx = lab + r.passes * (bx + gap) + (r.passes > C ? 5 : 0) + 6;
+    if (narrow) {
+      s += `<text x="${lab}" y="${py + 27}" font-size="12" style="fill:${TONE.net}">${r.raison}</text>`;
+      s += `<text x="${lab}" y="${py + 42}" font-size="11.5" style="fill:var(--text-2)">${r.raison2}</text>`;
+    } else {
+      s += `<text x="${tx}" y="${py + 9.5}" font-size="12" style="fill:${TONE.net}">${r.raison}</text>`;
+      s += `<text x="${lab}" y="${py + 27}" font-size="11.5" style="fill:var(--text-2)">${r.raison2}</text>`;
+    }
+  });
+  const H = 6 + rows.length * rowH - (narrow ? 10 : 18);
+  return { s, W, H };
+}
+const L = draw(748), N = draw(358);
+const aria = `Multiplications-additions pour traiter 4 s de signal sur 8 micros : ${fr(COUT.csmTiPf)} milliards pour CSM TI-MVDR (DC-CRN) + PF, qui passe ${C + 1} fois dans le réseau, contre ${fr(COUT.mcCsm)} milliards pour MC-CSM (DC-CRN), qui y passe une fois.`;
+---
+<figure class="coutf">
+  <svg class="coutf-l" viewBox={`0 0 ${L.W} ${L.H}`} role="img" aria-label={aria} set:html={L.s} />
+  <svg class="coutf-n" viewBox={`0 0 ${N.W} ${N.H}`} role="img" aria-label={aria} set:html={N.s} />
+  <figcaption>Nombre de multiplications-additions (MAC) pour traiter un signal réverbérant de {COUT.secondes} s capté par l'antenne linéaire de {C} micros, réseaux DC-CRN (article, section VI-A). La boîte plus pâle est le post-filtre.</figcaption>
+</figure>
+
+<style is:global>
+  .coutf { margin: 1.5rem 0; }
+  .coutf svg { display: block; width: 100%; height: auto; margin: 0; font-family: var(--font); }
+  .coutf svg text { font-family: var(--font); }
+  .coutf svg.coutf-n { display: none; max-width: 358px; }
+  @media (max-width: 600px) {
+    .coutf svg.coutf-l { display: none; }
+    .coutf svg.coutf-n { display: block; }
+  }
+</style>

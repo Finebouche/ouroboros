@@ -1,0 +1,30 @@
+---
+// Chapitre 4 : schéma de fonctionnement de la somme après retard (delay-and-sum, DS), formation de voies fixe.
+// Article (Tan, Wang, Wang 2022) : section III-A1, p. 607 ; baseline « oracle DS » pointée sur la vraie direction de la cible (V-D1, p. 611).
+// Les poids ne dépendent que de la direction d'arrivée θ et de la géométrie : aucune statistique du signal.
+// h = d/C avec d le vecteur de pointage en champ libre (|d_i| = 1, d_0 = 1) : hᴴd = 1, la cible passe sans déformation (forme du cours).
+import SchemaFigure from './SchemaFigure.astro';
+import { NODES, SY, it, sym, icVec, type Spec } from './schema';
+interface Props { legende?: boolean }
+const { legende = false } = Astro.props;
+const spec: Spec = {
+  nodes: [
+    NODES.entree(),
+    { id: 'doa', col: 1, kind: 'oracle', lines: [{ t: 'oracle', b: true }, { t: 'direction' }, { t: `d'arrivée ${SY.th}` }] },
+    { id: 'none', col: 2, kind: 'note', lines: [{ t: 'aucune :' }, { t: 'poids fixes' }] },
+    { id: 'point', col: 3, kind: 'calc', icon: icVec('calc', SY.d), lines: [{ t: `retards ${sym('τ', { sub: 'i' })}(${SY.th})` }, { t: 'géométrie', g: true }] },
+    { id: 'filtre', col: 4, kind: 'calc', icon: icVec('calc', SY.h), lines: [{ t: `${SY.h} = ${SY.d} / ${it('C')}` }, { t: `${SY.sh} = ${SY.hH}${SY.y}` }] },
+    NODES.sortie(),
+  ],
+  edges: [
+    { from: 'doa', to: 'point', label: SY.th },
+    { from: 'point', to: 'filtre', label: SY.d },
+    { from: 'filtre', to: 'out', label: SY.sh },
+  ],
+  bus: { from: 'in', to: ['filtre'], label: SY.y },
+};
+const aria = "Somme après retard : la direction d'arrivée vraie et la géométrie de l'antenne donnent les retards, donc le vecteur de pointage d ; les poids h = d / C sont fixes, appliqués au mélange y.";
+---
+<SchemaFigure spec={spec} aria={aria} legende={legende}>
+  Somme après retard (article, section III-A1). Chaque micro est recalé du retard de la cible puis les C voies sont moyennées.
+</SchemaFigure>

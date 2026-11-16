@@ -1,0 +1,67 @@
+---
+// Chapitre 4 : la limite de MC-CSM, une géométrie fixe. Article, section VI-A et fig. 6, p. 612-613 : le DC-CRN de MC-CSM entraîné sur
+// l'antenne de 2 micros à 10 cm, testé (déréverbération) sur des antennes de 2 micros écartés de 5 à 15 cm par pas de 1 cm.
+// Les valeurs ne sont données que par un graphique en barres : FIG6 dans resultats.ts, relevées sur le dessin vectoriel du PDF
+// (script scratchpad resultats/fig6.py, précision de lecture d'environ 0,02 dB), affichées ici au dixième de dB.
+// Repère gris pointillé : le même réseau sur un seul micro (SC-CSM, tableau II, colonne 1ch, ligne CSM (DC-CRN), ΔSI-SNR = 7,97 dB),
+// mesuré sur le jeu de test de l'antenne de 10 cm (un réseau à un micro ne voit pas l'écartement).
+// Couleurs : points en violet (sortie de MC-CSM, appris), repère en gris.
+import { FIG6, T2 } from './resultats';
+
+const fr = (v: number, d = 1) => v.toFixed(d).replace('.', ',');
+const sc = T2['CSM (DC-CRN)'][1];
+function draw(W: number) {
+  const narrow = W < 500, ox = 34, rm = narrow ? 64 : 112, top = 44, ph = narrow ? 170 : 180, pw = W - ox - rm, H = top + ph + 42;
+  const d0 = 5, d1 = 15, v0 = 7, v1 = 10.5;
+  const X = (d: number) => ox + ((d - d0) / (d1 - d0)) * pw, Y = (v: number) => top + ph - ((v - v0) / (v1 - v0)) * ph;
+  const n = (v: number) => v.toFixed(1);
+  let s = '';
+  for (let v = 7; v <= 10.5; v += 0.5) {
+    s += `<line x1="${ox}" y1="${n(Y(v))}" x2="${ox + pw}" y2="${n(Y(v))}" stroke="var(--border)" stroke-dasharray="${v === 7 ? '' : '2 4'}"/>`;
+    if (Number.isInteger(v)) s += `<text x="${ox - 6}" y="${n(Y(v) + 3.5)}" text-anchor="end" class="ax">${v}</text>`;
+  }
+  s += `<text x="${ox - 30}" y="${top - 28}" class="ax">gain de SI-SNR sur le signal non traité (dB)</text>`;
+  FIG6.distances.forEach((d) => (s += `<text x="${n(X(d))}" y="${top + ph + 15}" text-anchor="middle" class="ax${d === FIG6.entraine ? ' em' : ''}">${d}</text>`));
+  s += `<text x="${ox + pw / 2}" y="${top + ph + 33}" text-anchor="middle" class="ax">écartement des deux micros au test (cm)</text>`;
+  // repère : un seul micro
+  s += `<line x1="${ox}" y1="${n(Y(sc))}" x2="${ox + pw}" y2="${n(Y(sc))}" stroke="var(--text-2)" stroke-width="1.3" stroke-dasharray="5 3"/>`;
+  s += `<text x="${ox + pw + 8}" y="${n(Y(sc) + 4)}" class="lb" style="fill:var(--text-2)">${narrow ? '1 micro' : 'un seul micro'}</text>`;
+  s += `<text x="${ox + pw + 8}" y="${n(Y(sc) + 18)}" class="lb" style="fill:var(--text-2)">(SC-CSM)</text>`;
+  // MC-CSM : ligne fine et points
+  const pts = FIG6.distances.map((d, i) => `${n(X(d))},${n(Y(FIG6.dSiSnr[i]))}`).join(' ');
+  s += `<polyline points="${pts}" fill="none" stroke="var(--r-out)" stroke-width="1.3" stroke-opacity="0.6"/>`;
+  FIG6.distances.forEach((d, i) => {
+    const on = d === FIG6.entraine, x = X(d), y = Y(FIG6.dSiSnr[i]);
+    if (on) s += `<circle cx="${n(x)}" cy="${n(y)}" r="8" fill="none" stroke="var(--r-out)" stroke-width="1.2"/>`;
+    s += `<circle cx="${n(x)}" cy="${n(y)}" r="${on ? 4.6 : 3.4}" fill="var(--r-out)"/>`;
+  });
+  // valeurs lues : aux deux bouts et au point d'entraînement
+  const iE = FIG6.distances.indexOf(FIG6.entraine), last = FIG6.distances.length - 1;
+  s += `<text x="${n(X(FIG6.entraine))}" y="${n(Y(FIG6.dSiSnr[iE]) - 13)}" text-anchor="middle" class="lb" style="fill:var(--r-out);font-weight:600">${fr(FIG6.dSiSnr[iE])}, entraîné à ${FIG6.entraine} cm</text>`;
+  s += `<text x="${n(X(5))}" y="${n(Y(FIG6.dSiSnr[0]) - 10)}" text-anchor="start" class="lb" style="fill:var(--r-out)">${fr(FIG6.dSiSnr[0])}</text>`;
+  s += `<text x="${n(X(15) - 8)}" y="${n(Y(FIG6.dSiSnr[last]) + 4)}" text-anchor="end" class="lb" style="fill:var(--r-out)">${fr(FIG6.dSiSnr[last])}</text>`;
+  return { s, W, H };
+}
+const L = draw(560), N = draw(358);
+const aria = `Gain de SI-SNR de MC-CSM entraîné sur 2 micros à 10 cm, testé de 5 à 15 cm : maximum à 10 cm (${fr(FIG6.dSiSnr[5])} dB), ${fr(FIG6.dSiSnr[0])} dB à 5 cm, ${fr(FIG6.dSiSnr[10])} dB à 15 cm ; un seul micro : ${fr(sc, 2)} dB.`;
+---
+<figure class="geof">
+  <svg class="geof-l" viewBox={`0 0 ${L.W} ${L.H}`} role="img" aria-label={aria} set:html={L.s} />
+  <svg class="geof-n" viewBox={`0 0 ${N.W} ${N.H}`} role="img" aria-label={aria} set:html={N.s} />
+  <figcaption>Déréverbération, MC-CSM (DC-CRN) entraîné sur deux micros à 10 cm, testé sur d'autres écartements (article, section VI-A et fig. 6). Valeurs lues sur la figure de l'article, qui ne les donne qu'en barres : approximatives, au dixième de dB près. Pointillé gris : le même réseau sur un seul micro (tableau II : {fr(sc, 2)} dB), mesuré sur l'antenne de 10 cm.</figcaption>
+</figure>
+
+<style is:global>
+  .geof { margin: 1.5rem 0; }
+  .geof svg { display: block; width: 100%; height: auto; margin: 0 auto; }
+  .geof svg text { font-family: var(--font); }
+  .geof svg text.ax { font-size: 11px; fill: var(--text-2); }
+  .geof svg text.ax.em { font-weight: 600; fill: var(--r-out); }
+  .geof svg text.lb { font-size: 11.5px; }
+  .geof svg.geof-l { max-width: 560px; }
+  .geof svg.geof-n { display: none; max-width: 358px; }
+  @media (max-width: 600px) {
+    .geof svg.geof-l { display: none; }
+    .geof svg.geof-n { display: block; }
+  }
+</style>

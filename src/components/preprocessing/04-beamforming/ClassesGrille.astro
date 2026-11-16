@@ -1,0 +1,88 @@
+---
+// Chapitre 4, ouverture : carte des classes de l'article (Tan, Wang, Wang 2022). Figure statique : 6 classes × les 7 étapes communes
+// (COLS de schema.ts, mêmes colonnes que les schémas DsSchema … McCsmSchema), toutes visibles. Porte la légende des couleurs du chapitre.
+// Familles : classique (section III-A, p. 607), guidée par un réseau (III-B, p. 607 ; TI et TV : V-D2-3, p. 611), réseau seul (IV, p. 608).
+// Post-filtre « facultatif » sur MB et CSM seulement (p. 607, V-D2, p. 611-612 ; tableaux I-V : aucun pour l'oracle DS, les MVDR oracles, MC-CSM).
+// Sous 600 px (largeur de la figure) : la grille garde sa forme et défile dans son propre conteneur, première colonne figée.
+import { COLS, LEGENDE, legendSwatch } from './schema';
+type K = 'in' | 'net' | 'calc' | 'oracle' | 'none' | 'opt';
+type Cell = [K, string] | [K, string, number]; // [sens, texte HTML, colonnes couvertes]
+const C = '<i>C</i>', ix = (b: string) => `<i>${b}</i><sub><i>i</i></sub>`;
+const Rh = (s: string) => `<b>R̂</b><sub>${s}</sub>`, R = (s: string) => `<b>R</b><sub>${s}</sub>`;
+const entree: Cell = ['in', `${C} micros`], sortie: Cell = ['in', 'ŝ'], vide: Cell = ['none', '—'];
+const pf: Cell = ['opt', 'réseau F, facultatif'];
+const point: Cell = ['calc', `vecteur propre de ${Rh('s')} → <b>d̂</b>`];
+const groupes: { titre: string; rangs: { nom: string; cells: Cell[] }[] }[] = [
+  { titre: 'Classique', rangs: [
+    { nom: 'DS', cells: [entree, ['oracle', "direction d'arrivée <i>θ</i> vraie"], vide, ['calc', '<b>d</b> tiré de <i>θ</i> et de la géométrie'], ['calc', `<b>h</b> = <b>d</b> / ${C}`], vide, sortie] },
+    { nom: 'MVDR oracle', cells: [entree, ['oracle', `cible vraie ${ix('s')}`], ['calc', `${ix('v')} = ${ix('y')} − ${ix('s')} → ${R('s')}, ${R('v')}`], ['calc', `vecteur propre de ${R('s')} → <b>d̂</b>`], ['calc', 'MVDR, <b>h</b>(<i>f</i>)'], vide, sortie] },
+  ] },
+  { titre: 'Guidée par un réseau', rangs: [
+    { nom: 'MB-MVDR', cells: [entree, ['net', `réseau F ×${C} → masques ${ix('m̂')}`], ['calc', `médianes <i>η</i>, <i>ξ</i> → ${Rh('s')}, ${Rh('v')}`], point, ['calc', 'MVDR, <b>h</b>(<i>f</i>)'], pf, sortie] },
+    { nom: 'CSM-MVDR TI', cells: [entree, ['net', `réseau F ×${C} → ${ix('ŝ')} complexes`], ['calc', `${ix('v̂')} = ${ix('y')} − ${ix('ŝ')} → ${Rh('s')}, ${Rh('v')} par énoncé`], point, ['calc', 'MVDR, <b>h</b>(<i>f</i>)'], pf, sortie] },
+    { nom: 'CSM-MVDR TV', cells: [entree, ['net', `réseau F ×${C} → ${ix('ŝ')} complexes`], ['calc', `${Rh('v')}(<i>j</i>, <i>f</i>) par trame`], point, ['calc', 'MVDR, <b>h</b>(<i>j</i>, <i>f</i>)'], pf, sortie] },
+  ] },
+  { titre: 'Réseau seul', rangs: [
+    { nom: 'MC-CSM', cells: [entree, ['net', `un seul réseau F : Re, Im des ${C} micros en entrée, Re, Im de ŝ au micro 0 en sortie ; il tient lieu de statistiques, de pointage et de filtre`, 4], vide, sortie] },
+  ] },
+];
+let row = 2;
+const html: string[] = [`<div class="bfcg-nm bfcg-hd" style="--r:1"></div>`, ...COLS.map((c, i) => `<div class="bfcg-h" style="--c:${i + 2};--r:1">${c.h}</div>`)];
+for (const g of groupes) {
+  html.push(`<div class="bfcg-gr" style="--r:${row++}"><span>${g.titre}</span></div>`);
+  for (const r of g.rangs) {
+    html.push(`<div class="bfcg-nm" style="--r:${row}">${r.nom}</div>`);
+    let c = 2;
+    r.cells.forEach((cell, k) => {
+      const s = cell[2] ?? 1, last = k === r.cells.length - 1;
+      html.push(`<div class="bfcg-c ${cell[0]}${last ? ' z' : ''}" style="--c:${c};--s:${s};--r:${row}"><span>${cell[1]}</span></div>`);
+      c += s;
+    });
+    row++;
+  }
+}
+const absent = `<svg class="bfcg-sw" viewBox="0 0 22 14" width="22" height="14" aria-hidden="true"><rect x="1" y="1" width="20" height="12" rx="4" style="fill:color-mix(in srgb, var(--text-2) 12%, transparent)"/></svg>`;
+const aria = "Carte des classes : pour chaque méthode, ce qui remplit chacune des sept étapes (entrée, estimation, statistiques, pointage, filtre, post-filtre, sortie), et si c'est appris, calculé, donné par l'oracle ou absent.";
+---
+<figure class="bfcg" role="group" aria-label={aria}>
+  <div class="bfcg-lg">
+    {LEGENDE.map(([k, t]) => <span><Fragment set:html={legendSwatch(k)} />{t}</span>)}
+    <span><Fragment set:html={absent} />étape absente</span>
+  </div>
+  <p class="bfcg-hint">La grille défile vers la droite.</p>
+  <div class="bfcg-sc" tabindex="0" aria-label="Grille des classes (défile horizontalement sur petit écran)">
+    <div class="bfcg-g" set:html={html.join('')} />
+  </div>
+  <figcaption>Les sept étapes de la chaîne, classe par classe ; chaque classe a son schéma détaillé plus loin. Post-filtre : le même réseau monocanal, appliqué une fois de plus à la sortie du MVDR.</figcaption>
+</figure>
+
+<style is:global>
+  .bfcg { margin: 1.5rem 0; container-type: inline-size; }
+  .bfcg .bfcg-lg { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--text-2); margin: 0 0 10px; }
+  .bfcg .bfcg-lg > span { display: inline-flex; align-items: center; gap: 6px; }
+  .bfcg .bfcg-lg svg.bfsch-sw, .bfcg .bfcg-lg svg.bfcg-sw { display: block; }
+  .bfcg .bfcg-sc { overflow-x: auto; }
+  .bfcg .bfcg-hint { display: none; font-size: 12px; color: var(--text-2); margin: 0 0 6px; }
+  .bfcg .bfcg-g { display: grid; grid-template-columns: 6.4em 0.6fr 1.2fr 1.25fr 1.2fr 1fr 0.95fr 0.45fr; gap: 6px 12px; align-items: stretch; }
+  .bfcg .bfcg-h { grid-column: var(--c); grid-row: var(--r); font-size: 11px; color: var(--text-2); text-align: center; border-bottom: 1px solid var(--border); padding-bottom: 3px; align-self: end; }
+  .bfcg .bfcg-nm { grid-column: 1; grid-row: var(--r); align-self: center; font-size: 12.5px; font-weight: 600; color: var(--text); line-height: 1.25; background: var(--bg); }
+  .bfcg .bfcg-gr { grid-column: 1 / -1; grid-row: var(--r); font-size: 11px; color: var(--text-2); margin-top: 6px; }
+  .bfcg .bfcg-gr span { font-weight: 600; letter-spacing: 0.02em; }
+  .bfcg .bfcg-c { grid-column: var(--c) / span var(--s); grid-row: var(--r); position: relative; display: flex; align-items: center; justify-content: center; text-align: center;
+    font-size: 12px; line-height: 1.3; color: var(--text); padding: 6px 5px; border-radius: 7px; border: 1.5px solid transparent; min-height: 48px; }
+  .bfcg .bfcg-c sub { font-size: 0.8em; line-height: 0; }
+  .bfcg .bfcg-c:not(.z)::after { content: ''; position: absolute; right: -11.5px; top: 50%; width: 10px; height: 1.5px; background: var(--text-2); opacity: 0.7; }
+  .bfcg .bfcg-c.in { border: 1.2px solid var(--text-2); background: var(--surface); color: var(--text-2); }
+  .bfcg .bfcg-c.net { border-color: var(--r-out); background: color-mix(in srgb, var(--r-out) 11%, var(--surface)); }
+  .bfcg .bfcg-c.opt { border: 1.1px solid var(--r-out); background: color-mix(in srgb, var(--r-out) 5%, var(--surface)); color: var(--text-2); }
+  .bfcg .bfcg-c.calc { border-color: var(--p-mel); background: color-mix(in srgb, var(--p-mel) 14%, var(--surface)); }
+  .bfcg .bfcg-c.oracle { border: 1.5px dashed var(--text); background: var(--surface); }
+  .bfcg .bfcg-c.none { background: color-mix(in srgb, var(--text-2) 7%, transparent); color: var(--text-2); }
+  @container (max-width: 599px) {
+    .bfcg .bfcg-g { min-width: 660px; }
+    .bfcg .bfcg-nm { position: sticky; left: 0; z-index: 1; align-self: stretch; display: flex; align-items: center; box-shadow: 6px 0 6px -4px color-mix(in srgb, var(--text) 18%, transparent); }
+    .bfcg .bfcg-gr span { position: sticky; left: 0; }
+    .bfcg .bfcg-sc { padding-bottom: 4px; }
+    .bfcg .bfcg-hint { display: block; }
+  }
+</style>

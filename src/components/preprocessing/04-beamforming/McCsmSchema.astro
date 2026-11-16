@@ -1,0 +1,42 @@
+---
+// Chapitre 4 : schéma de fonctionnement de la projection spectrale complexe multicanal (MC-CSM), section IV et fig. 1 de l'article (p. 608).
+// Parties réelle et imaginaire des C micros concaténées → UN réseau (DC-CRN ou BLSTM, section IV-B) → parties réelle et imaginaire de la cible
+// au micro de référence (éq. 13) → TFCT inverse. Système MISO ; aucun bloc brun : le réseau couvre les colonnes estimation à filtre.
+import SchemaFigure from './SchemaFigure.astro';
+import { NODES, SY, it, icStack, icSpec, poly, type Spec } from './schema';
+interface Props { legende?: boolean }
+const { legende = false } = Astro.props;
+const T = (x: number, y: number, t: string, o: { a?: string; fs?: number; c?: string; w?: number } = {}) =>
+  `<text x="${x}" y="${y}" text-anchor="${o.a ?? 'middle'}" font-size="${o.fs ?? 11.5}"${o.w ? ` font-weight="${o.w}"` : ''} style="fill:${o.c ?? 'var(--text)'}">${t}</text>`;
+const st = icStack(), out = icSpec('net', 2, 17);
+const inner = (x: number, y: number, w: number, h: number, o: 'h' | 'v') => {
+  let s = '';
+  if (o === 'h') {
+    const cy = y + h / 2, xl = x + 14, xr = x + w - 14 - 84;
+    s += st.draw(xl + (84 - st.w) / 2, cy - st.h / 2 - 12) + T(xl + 42, cy + 20, 'Re, Im') + T(xl + 42, cy + 34, `des ${it('C')} micros`, { c: 'var(--text-2)' });
+    s += out.draw(xr + (84 - out.w) / 2, cy - out.h / 2 - 12) + T(xr + 42, cy + 20, `Re, Im de ${SY.sh}`) + T(xr + 42, cy + 34, 'micro 0', { c: 'var(--text-2)' });
+    const xm = (xl + 84 + xr) / 2;
+    s += T(xm, cy - 14, 'réseau F', { fs: 12.5, w: 600, c: 'var(--r-out)' }) + T(xm, cy + 3, `multicanal : ${it('C')} entrées, 1 sortie`) + T(xm, cy + 19, 'le réseau est le filtre', { c: 'var(--text-2)' });
+    s += poly([[xl + 84, cy - 12], [xl + 104, cy - 12]], 'net') + poly([[xr - 20, cy - 12], [xr, cy - 12]], 'net');
+  } else {
+    const xl = x + 12;
+    s += st.draw(xl, y + 12) + T(xl + st.w + 12, y + 26, 'Re, Im des ' + it('C') + ' micros', { a: 'start' }) + T(xl + st.w + 12, y + 40, 'concaténés', { a: 'start', c: 'var(--text-2)' });
+    s += T(xl, y + 76, 'réseau F', { a: 'start', fs: 12.5, w: 600, c: 'var(--r-out)' }) + T(xl, y + 92, `multicanal : ${it('C')} entrées, 1 sortie`, { a: 'start' }) + T(xl, y + 107, 'le réseau est le filtre', { a: 'start', c: 'var(--text-2)' });
+    s += poly([[xl + 16, y + 49], [xl + 16, y + 62]], 'net') + poly([[xl + 16, y + 112], [xl + 16, y + 123]], 'net');
+    s += out.draw(xl + 4, y + 126) + T(xl + st.w + 12, y + 135, `Re, Im de ${SY.sh}`, { a: 'start' }) + T(xl + st.w + 12, y + 149, 'micro 0', { a: 'start', c: 'var(--text-2)' });
+  }
+  return s;
+};
+const spec: Spec = {
+  nodes: [
+    NODES.entree(),
+    { id: 'net', col: 1, span: 4, kind: 'net', lines: [], custom: inner, vH: 168, vHead: 'estimation à filtre' },
+    NODES.sortie(),
+  ],
+  edges: [{ from: 'in', to: 'net', label: SY.yi }, { from: 'net', to: 'out', label: SY.sh }],
+};
+const aria = "Projection spectrale complexe multicanal : les parties réelle et imaginaire des C micros, concaténées, entrent dans un seul réseau qui sort les parties réelle et imaginaire de la cible au micro de référence ; TFCT inverse. Pas de covariance, pas de vecteur propre, pas de MVDR : le réseau est le filtre.";
+---
+<SchemaFigure spec={spec} aria={aria} legende={legende}>
+  Projection spectrale complexe multicanal, MC-CSM (article, section IV, éq. 13). Avec un seul micro, la même chaîne donne SC-CSM.
+</SchemaFigure>

@@ -1,0 +1,25 @@
+---
+// Chapitre 4 : schéma de fonctionnement du MVDR « oracle » de l'article (V-D2, p. 611) : R_s et R_v calculées avec la vraie cible
+// (éq. 18-19, v = y − s), RTF d̂ = vecteur propre principal de R_s divisé par sa composante au micro de référence (éq. 10), poids MVDR (éq. 5),
+// sortie ŝ = hᴴy (éq. 3). Même chaîne que MB et CSM : seule la colonne « estimation » change (ici l'oracle, là un réseau).
+import SchemaFigure from './SchemaFigure.astro';
+import { NODES, SY, icMats, mvdrEdges, type Spec } from './schema';
+interface Props { legende?: boolean }
+const { legende = false } = Astro.props;
+const spec: Spec = {
+  nodes: [
+    NODES.entree(),
+    { id: 'or', col: 1, kind: 'oracle', lines: [{ t: 'oracle', b: true }, { t: 'cible vraie' }, { t: 'simulation', g: true }] },
+    { id: 'stats', col: 2, kind: 'calc', icon: icMats([SY.Rs, SY.Rv]), lines: [{ t: `${SY.vi} = ${SY.yi} − ${SY.si}` }] },
+    NODES.pointage(true),
+    NODES.mvdr(),
+    NODES.sortie(),
+  ],
+  edges: [{ from: 'or', to: 'stats', label: SY.si }, ...mvdrEdges(true, false)],
+  bus: { from: 'in', to: ['stats', 'filtre'], label: SY.y },
+};
+const aria = "MVDR oracle : la vraie cible s_i sur chaque micro donne v_i = y_i − s_i, puis les covariances R_s et R_v ; le vecteur propre principal de R_s donne d̂ ; le MVDR calcule h avec d̂ et R_v et l'applique au mélange y.";
+---
+<SchemaFigure spec={spec} aria={aria} legende={legende}>
+  MVDR oracle (article, éq. 18-19, 10, 5). La cible vraie <i>s<sub>i</sub></i> n'existe qu'en simulation : ce MVDR sert de borne haute. <b>d̂</b> est le vecteur propre principal de <b>R</b><sub>s</sub>, divisé par sa composante au micro de référence.
+</SchemaFigure>

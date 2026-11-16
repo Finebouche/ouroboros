@@ -1,0 +1,35 @@
+---
+// Chapitre 4 : schéma de fonctionnement du MVDR guidé par projection spectrale complexe (CSM) de l'article.
+// Réseau monocanal F appliqué à chacun des C micros → spectrogramme complexe ŝ_i (parties réelle et imaginaire) → v̂_i = y_i − ŝ_i
+// → R̂_s = moyenne de ŝŝᴴ, R̂_v = moyenne de v̂v̂ᴴ (éq. 11-12, section III-B2, p. 607) → d̂ par l'éq. 10 → MVDR (éq. 5) → post-filtre
+// facultatif (le même réseau). Encart : TI (une covariance par énoncé) contre TV (éq. 21-22, p. 611, β = 0,5 « réglé empiriquement » ;
+// le RTF reste calculé sur tout l'énoncé dans les deux cas).
+import katex from 'katex';
+import SchemaFigure from './SchemaFigure.astro';
+import { NODES, SY, icMats, mvdrEdges, type Spec } from './schema';
+interface Props { legende?: boolean }
+const { legende = false } = Astro.props;
+const tx = (s: string) => katex.renderToString(s, { throwOnError: false });
+const tv = tx('\\hat{\\mathbf R}_v(j,f) = (1-\\beta)\\,\\frac{\\hat{\\mathbf v}_j\\hat{\\mathbf v}_j^{\\mathsf H}}{\\operatorname{tr}(\\hat{\\mathbf v}_j\\hat{\\mathbf v}_j^{\\mathsf H})/C} + \\beta\\,\\frac{\\hat{\\mathbf R}_v(f)}{\\operatorname{tr}\\hat{\\mathbf R}_v(f)/C}');
+const spec: Spec = {
+  nodes: [
+    NODES.entree(),
+    NODES.reseau('csm'),
+    { id: 'stats', col: 2, kind: 'calc', icon: icMats([SY.Rhs, SY.Rhv]), lines: [{ t: `${SY.vhi} = ${SY.yi} − ${SY.shi}` }] },
+    NODES.pointage(),
+    NODES.mvdr(),
+    NODES.postFiltre('csm'),
+    NODES.sortie(),
+  ],
+  edges: [{ from: 'in', to: 'net', label: SY.yi }, { from: 'net', to: 'stats', label: SY.shi }, ...mvdrEdges(false, true)],
+  bus: { from: 'in', to: ['stats', 'filtre'], label: SY.y },
+};
+const aria = "MVDR guidé par projection spectrale complexe : le même réseau monocanal, appliqué à chaque micro, prédit le spectrogramme complexe de la cible ŝ_i ; v̂_i = y_i − ŝ_i ; covariances R̂_s et R̂_v ; vecteur propre principal de R̂_s, puis MVDR ; post-filtre facultatif par le même réseau.";
+---
+<SchemaFigure spec={spec} aria={aria} legende={legende}>
+  <div class="bfsch-enc" slot="encart">
+    <div><b>TI</b> (invariant dans le temps) : une covariance <span set:html={tx('\\hat{\\mathbf R}_v(f)')} /> par énoncé, un filtre <span set:html={tx('\\mathbf h(f)')} />.</div>
+    <div><b>TV</b> (variable dans le temps) : <span set:html={tv} />, avec <span set:html={tx('\\beta = 0{,}5')} /> ; un filtre <span set:html={tx('\\mathbf h(j,f)')} /> par trame. <span set:html={tx('\\hat{\\mathbf d}')} /> reste calculé sur tout l'énoncé.</div>
+  </div>
+  MVDR guidé par projection spectrale complexe (article, section III-B2, éq. 11-12 ; TV : éq. 21-22). Le réseau prédit les parties réelle et imaginaire de la cible sur chaque micro.
+</SchemaFigure>
